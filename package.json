@@ -1,0 +1,72 @@
+{
+  "name": "sharpjs",
+  "version": "1.61.0",
+  "description": "Interactive Skew-T / hodograph sounding analysis for the browser, with a headless calculation core.",
+  "keywords": [
+    "meteorology",
+    "sounding",
+    "skew-t",
+    "hodograph",
+    "sharppy",
+    "weather",
+    "radiosonde",
+    "cape"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Michael-Barletta/sharpjs.git"
+  },
+  "homepage": "https://michael-barletta.github.io/sharpjs/",
+  "bugs": {
+    "url": "https://github.com/Michael-Barletta/sharpjs/issues"
+  },
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./core": {
+      "types": "./src/core.d.ts",
+      "default": "./src/core.js"
+    },
+    "./calc": {
+      "types": "./src/calc/index.d.ts",
+      "default": "./src/calc/index.js"
+    },
+    "./sources": {
+      "types": "./src/sources/index.d.ts",
+      "default": "./src/sources/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node test/e2e/run.mjs",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.13.0",
+    "playwright": "1.63.0",
+    "vite": "^8.3.2"
+  }
+}

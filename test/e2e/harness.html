@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SharpJS test harness</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>body { margin: 0; background: #000; } #chart { width: 1500px; }</style>
+  </head>
+  <body>
+    <div id="chart"></div>
+    <script type="module">
+      import * as SJS from '../../src/index.js';
+      import * as sources from '../../src/sources/index.js';
+      window.SJS = SJS;
+      window.sources = sources;
+      window.harnessReady = true;
+    </script>
+  </body>
+</html>

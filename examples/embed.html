@@ -1,0 +1,39 @@
+<!doctype html>
+<!--
+  Minimal host page. Serve the repository root (e.g. `npx vite`) and open /examples/embed.html.
+  In your own project: `npm install sharpjs` and `import { SharpJS } from 'sharpjs'`.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SharpJS embed example</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <style>body { margin: 16px; background: #07090b; color: #e8eef2; font-family: system-ui, sans-serif; }</style>
+  </head>
+  <body>
+    <div id="chart"></div>
+    <script type="module">
+      import { SharpJS } from '../src/index.js';
+
+      // A profile you already have in memory: pass arrays (any vertical order, gaps as null).
+      const profile = {
+        pressure:    [1000, 925, 850, 700, 500, 400, 300, 250, 200, 150],
+        temperature: [  29,  24,  20,   9, -10, -21, -35, -44, -54, -62],
+        dewpoint:    [  21,  19,  15,   0, -25, -35, -48, -56, -65, -75],
+        windDirection: [150, 170, 200, 230, 245, 250, 255, 255, 260, 265],
+        windSpeed:     [ 12,  32,  38,  40,  52,  60,  72,  80,  85,  70],
+      };
+
+      const chart = SharpJS('#chart', {
+        sounding: { ...profile, title: 'Example profile', location: { lat: 36.0, lon: -97.5 } },
+        persist: 'cookie',            // remember the reader's settings in a cookie
+        onChange: (state) => console.log('parcel', state.parcel, 'motion', state.motion),
+      });
+
+      // Same element, new props: the chart updates in place.
+      setTimeout(() => SharpJS('#chart', { settings: { units: 'metric' } }), 2000);
+      window.chart = chart;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,42 @@
+:root {
+  color-scheme: dark;
+  --app-bg: #07090b;
+  --app-text: #e8eef2;
+  --app-muted: #8ea3b3;
+  --app-header-h: 52px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--app-bg); color: var(--app-text); font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif; }
+
+.app-header {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  min-height: var(--app-header-h); padding: 8px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.brand { display: flex; align-items: baseline; gap: 8px; }
+.brand h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.02em; }
+.logo { width: 18px; height: 18px; align-self: center; border-radius: 4px; background:
+  linear-gradient(135deg, transparent 45%, #ff4d4d 45%, #ff4d4d 55%, transparent 55%),
+  linear-gradient(125deg, transparent 47%, #00d26a 47%, #00d26a 57%, transparent 57%), #000; }
+.version { color: var(--app-muted); font-size: 0.78rem; }
+.sample-picker { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--app-muted); }
+.sample-picker select {
+  max-width: min(360px, 60vw); padding: 5px 8px; border-radius: 4px;
+  color: var(--app-text); background: #161b21; border: 1px solid rgba(255, 255, 255, 0.14); font: inherit;
+}
+.links { margin-left: auto; display: flex; gap: 14px; font-size: 0.85rem; }
+.links a { color: #7db9e8; text-decoration: none; }
+.links a:hover { text-decoration: underline; }
+
+.app-main { padding: 10px 16px 16px; }
+
+/* Fit the 3:2 chart to the viewport height on wide screens. */
+@media (min-width: 901px) {
+  .app-main .sharpjs { --sjs-controls-max-height: calc(100vh - var(--app-header-h) - 34px); }
+  .app-main .sjs-stage { max-width: calc((100vh - var(--app-header-h) - 34px) * 1.5); }
+}
+@media (max-width: 600px) {
+  .app-header { gap: 10px; }
+  .links { margin-left: 0; }
+  .app-main { padding: 8px; }
+}

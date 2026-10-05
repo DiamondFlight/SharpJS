@@ -1,0 +1,42 @@
+[
+  {
+    "file": "koun-1999-05-04-00z.txt",
+    "label": "Norman, OK — 00Z 4 May 1999 (3 May 1999 outbreak)",
+    "location": {
+      "lat": 35.22,
+      "lon": -97.4
+    }
+  },
+  {
+    "file": "koax-2014-06-16-19z.txt",
+    "label": "Omaha, NE — 19Z 16 Jun 2014 (Pilger special launch)",
+    "location": {
+      "lat": 41.32,
+      "lon": -95.6
+    }
+  },
+  {
+    "file": "koun-2013-05-20-12z.txt",
+    "label": "Norman, OK — 12Z 20 May 2013 (morning of the Moore tornado)",
+    "location": {
+      "lat": 35.22,
+      "lon": -97.4
+    }
+  },
+  {
+    "file": "kbuf-2014-11-18-12z.txt",
+    "label": "Buffalo, NY — 12Z 18 Nov 2014 (lake-effect snow)",
+    "location": {
+      "lat": 42.93,
+      "lon": -78.7
+    }
+  },
+  {
+    "file": "kdnr-2021-12-30-12z.txt",
+    "label": "Denver, CO — 12Z 30 Dec 2021 (Marshall Fire)",
+    "location": {
+      "lat": 39.78,
+      "lon": -104.8
+    }
+  }
+]
