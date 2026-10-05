@@ -5,7 +5,7 @@ calculation core for Node and workers.
 
 ![SharpJS showing the 00Z 4 May 1999 Norman, OK sounding](docs/screenshot.jpg)
 
-**Try it:** <https://michael-barletta.github.io/sharpjs/>. Open a sounding file or drop it on the chart, pick a sample, or pull archived data.
+**Try it:** <https://diamondflight.github.io/sharpjs/>. Open a sounding file or drop it on the chart, pick a sample, or pull archived data.
 
 This repository is the standalone, open-source SharpJS sounding viewer: no accounts, no servers, no API keys.
 
@@ -39,7 +39,7 @@ This repository is the standalone, open-source SharpJS sounding viewer: no accou
 ### 1. The standalone site
 
 ```sh
-git clone https://github.com/Michael-Barletta/sharpjs.git
+git clone https://github.com/diamondflight/sharpjs.git
 cd sharpjs
 npm install
 npm run dev        # http://localhost:5173
