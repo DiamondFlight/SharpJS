@@ -11,29 +11,6 @@
   selections update the forecast hour from the same file; VWP archives can be loaded for a chosen
   date and hour, covering the preceding three hours.
 - Function documentation throughout the viewer engine and reusable canvas path/line helpers.
-
-### Changed
-- BUFKIT archive downloads now load and cache all forecast hours together, reducing repeat requests
-  when selecting different hours from the same run. VWP location maps are shown in the panel above
-  the wind-barb display, and VWP timeline playback is disabled.
-- Bunkers right/left storm motions now use the parcel-based method described by Bunkers et al. (2014),
-  with the SHARPpy non-parcel calculation retained as a fallback; related kinematic reference values
-  and tests were updated.
-- Updated parcel, layer-interpolation, thermodynamic, SRH, and severe-weather calculation logic as part
-  of the analysis alignment and verification work.
-- Updated package and chart versioning to `v1.7.0` and refreshed repository links and release guidance.
-
-### Fixed
-- Corrected ECAPE supporting calculations, including storm-relative wind components and NCAPE
-  integration over the sounding's height grid.
-- Corrected parcel and thermodynamic edge cases in LCL, virtual-temperature, layer, and buoyancy
-  calculations.
-
-## 1.61.0 — 2026-10-02
-
-First open-source release of SharpJS.
-
-### Added
 - `SharpJS(element, props)`: one call draws an interactive sounding with its controls. Calling it again with
   new props updates the same chart. Several charts can share a page.
 - Headless `sharpjs/core`: `parseSounding`, `fromArrays`, `analyze`, `levelAt`, `exportSounding` — runs in Node.
@@ -45,6 +22,15 @@ First open-source release of SharpJS.
 - TypeScript declarations, unit tests and browser tests.
 
 ### Changed
+- BUFKIT archive downloads now load and cache all forecast hours together, reducing repeat requests
+  when selecting different hours from the same run. VWP location maps are shown in the panel above
+  the wind-barb display, and VWP timeline playback is disabled.
+- Bunkers right/left storm motions now use the parcel-based method described by Bunkers et al. (2014),
+  with the SHARPpy non-parcel calculation retained as a fallback; related kinematic reference values
+  and tests were updated.
+- Updated parcel, layer-interpolation, thermodynamic, SRH, and severe-weather calculation logic as part
+  of the analysis alignment and verification work.
+- Updated package and chart versioning to `v1.7.0` and refreshed repository links and release guidance.
 - No hosted services, data or branding. Hosts set their own credit with `brandLabel`, `savedBy` and
   `filePrefix`.
 - The map inset in the hodograph is now supplied by the host through `mapImage` (there was a Mapbox call).
@@ -52,7 +38,11 @@ First open-source release of SharpJS.
 - Help text: arrow left/right on the Skew-T subtract/add 1 °C (the text had them swapped).
 
 ### Fixed
-- The Skew-T skew reset to Default on every full redraw.
+- Corrected ECAPE supporting calculations, including storm-relative wind components and NCAPE
+  integration over the sounding's height grid.
+- Corrected parcel and thermodynamic edge cases in LCL, virtual-temperature, layer, and buoyancy
+  calculations.
+  - The Skew-T skew reset to Default on every full redraw.
 - ECAPE and the custom 0–2 km SRH used the *previous* storm motion when a sounding was first drawn (often
   showing "--").
 - A custom storm motion was replaced by 0°/10 kt whenever the chart fully redrew.
