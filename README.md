@@ -200,7 +200,7 @@ app/                  the standalone site
 ```
 
 ## Business Inquiries
-For all business or related inquiries, contact the developers through sharpjs.project@gmail.com
+For all business or related inquiries, contact the developers through sharpjsteam@gmail.com
 
 ## Credits
 Thanks to Amelia Urquhart ([@a-urq](https://github.com/a-urq)) for help with the ECAPE parcel calculations. Thanks to Michael Barletta ([@michael-barletta](https://github.com/michael-barletta)) for help with maintenence and porting. Parts of the
