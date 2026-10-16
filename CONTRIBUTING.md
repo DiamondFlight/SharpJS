@@ -69,11 +69,11 @@ Renaming or changing the meaning of a key: bump `SETTINGS_VERSION` and add a ste
 ### Releasing
 
 Bump `version` in `package.json` **and** `src/version.js` (a unit test checks they match). The chart credit shows
-the major.minor part ("SharpJS v1.61"). Add a CHANGELOG entry.
+the major.minor part ("SharpJS v1.7"). Add a CHANGELOG entry.
 
 ## How the port was verified
 
-The open-source engine was checked against the previous SharpJS 1.61 chart by drawing both in the same
+The open-source engine was checked against the previous SharpJS v1.7 chart by drawing both in the same
 headless Chromium and comparing every chart canvas pixel by pixel. The check covered:
 
 - the five samples, the BUFKIT, IEM RAOB and VWP pipelines;
@@ -100,7 +100,7 @@ Ideas for continuing the cleanup, roughly in order of payoff:
 
 ## Known issues (not changed during the port)
 
-These behave the same as SharpJS 1.61. They are listed here so they can be fixed deliberately.
+These behave the same as SharpJS v1.7. They are listed here so they can be fixed deliberately.
 
 - **ECAPE is hidden for many very unstable soundings.** `LiftParcel` shows ECAPE as "--" when `MPL <= EL`, and
   `MPL` is accumulated as an integral that can come out negative (e.g. −9407 m for KOUN 00Z 4 May 1999).

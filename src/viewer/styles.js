@@ -42,6 +42,16 @@ export const SHARPJS_CSS = `
   width: 100%;
 }
 
+.sharpjs .sjs-timeslider {
+  position: fixed;
+  min-width: 0;
+  aspect-ratio: 20;
+  width: 0%;
+  background: #fff;
+  margin: 0;
+  padding: 0;
+}
+
 /* ───────── Chart box ───────── */
 .sharpjs .sjs-viz {
   position: relative;
@@ -76,7 +86,7 @@ ${v('verticalBar')} {
   position: absolute; top: 5%; left: 82%; width: 18%; height: 90%;
   background: #000; border-right: 1px solid rgba(255, 255, 255, 0.3);
 }
-${v('barbs')} { position: absolute; top: 5%; left: 75.5%; width: 8%; height: 90%; background: #000; }
+${v('barbs')} { position: absolute; top: 5%; left: 75.5%; width: 8%; height: 90%; }
 ${v('skewTNumbers')} { position: absolute; top: 95%; left: 0; width: 83.5%; height: 5.5%; background: #000; }
 ${v('skewTOverHang')}, ${v('skewTOverHang2')} {
   position: absolute; top: 5%; left: 0; width: 77%; height: 90%;

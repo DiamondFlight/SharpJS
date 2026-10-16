@@ -2,34 +2,126 @@ import { calc_ecape_ncape, calc_sr_wind, linear_interp, spechum_from_dwp, rev_li
 import { ecape_parcel, density_temperature } from './ecape.js';
 const globalFont = '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
 
+
+export function ConvertToRaw(N, SP){
+  return [N.P, N.H, N.T, N.D, N.WD, N.WS, N.WB];
+}
+
+/**
+ * Function to calculate the natural logarithm of a number using log identities
+ * @param {number} x 
+ * @returns Natural Logarithm of X
+ */
 function ln(x) {
   return Math.log(x) / Math.log(Math.E);
 }
 
+/**
+ * Retrieves the layers within the specified pressure or height bounds.
+ * @param {*} Sounding 
+ * @param {*} lowerBound 
+ * @param {*} upperBound 
+ * @param {*} unit 
+ * @returns 
+ */
+function getLayersWithinBounds(Sounding, lowerBound, upperBound, unit) {
+  let Lower;
+  let Upper;
+  if (unit == "Pres"){
+    Lower = GetLayerByPres(Sounding, lowerBound);
+    Upper = GetLayerByPres(Sounding, upperBound);
+  } else {
+    Lower = GetLayerByHght(Sounding, lowerBound);
+    Upper = GetLayerByHght(Sounding, upperBound);
+  }
+
+  let firstLevel = 0;
+  let P = Sounding.Slice[0];
+  if (QCCheck(P[0]) && QCCheck(P[1]) && QCCheck(P[2]) && QCCheck(P[3]) && QCCheck(P[4]) && QCCheck(P[5]) && QCCheck(P[6])) {
+    firstLevel = 0;
+  } else {
+    firstLevel = 1;
+  }
+
+  let Layers = [Lower];
+
+  for (let i = 0; i < Sounding.Slice.length; i++) {
+    if (Sounding.Slice[i][0] < Lower.P && Sounding.Slice[i][0] > Upper.P) {
+      Layers.push(ConvertToInfo(Sounding.Slice[i], Sounding.Slice[firstLevel][0]));
+    }
+  }
+
+  Layers.push(Upper);
+  return Layers;
+}
+
+
+/**
+ * Estimates dew-point temperature from air temperature and relative humidity using a
+ * Magnus-form Clausius–Clapeyron approximation.
+ * @param {number} T Air temperature (in C).
+ * @param {number} Rh Relative humidity (in %).
+ * @returns {number} Dew-point temperature (in C).
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 export function DewFromTRh(T, Rh) {
-  let N = (ln(Rh / 100) + ((17.27 * T) / (237.3 + T))) / 17.27;
+  let N = (ln(Rh / 100) + ((17.27 * T) / (237.7 + T))) / 17.27;
   return (237.7 * N) / (1 - N);
 }
 
+/**
+ * Calculates the Euclidean magnitude of a two-dimensional vector.
+ * @param {{x: number, y: number}} N Vector components, in a shared unit (in ANY).
+ * @returns {number} Vector magnitude, in the same unit as the components (in ANY).
+ */
 export function Mag(N) {
   return Math.sqrt(Math.pow(N.x, 2) + Math.pow(N.y, 2));
 }
 
+/**
+ * Converts a vector direction to a meteorological angle in degrees.
+ * @param {{x: number, y: number}} B Vector components (in ANY).
+ * @returns {number} Direction angle (in deg).
+ */
 export function GetAngleFromVector(B) {
   return Math.atan2(-B.x, -B.y) * (180 / Math.PI);
 }
 
+
+/**
+ * Converts a speed from metres per second to knots.
+ * @param {number} N Speed (in m/s).
+ * @returns {number} Speed (in kt).
+ */
 export function M2TOKTS(N) {
   return N / 0.514444444;
 }
 
+
+/**
+ * Tests whether a scalar is neither the missing-data sentinel nor NaN.
+ * @param {number} N Value to test.
+ * @returns {boolean} True when the value passes the missing-data check (in 1).
+ */
 function QCCheck(N) {
   return (N != -9999 && !isNaN(N))
 }
 
 
-export function VirtTemp(Slice, SP, Thing = false, Conv = false) {
-  if (Thing) {
+/**
+ * Calculates virtual temperature for either a raw-array or object-form sounding
+ * layer, and limits it to at least the layer temperature.
+ * @param {Array|object} Slice Sounding layer; raw fields or named fields, temperatures (in C).
+ * @param {number} SP Layer pressure used for mixing-ratio calculation (in hPa).
+ * @param {boolean} isRaw Whether Slice uses raw-array rather than object fields (in 1).
+ * @param {boolean} Conv Legacy mode flag; currently does not change the calculation (in 1).
+ * @returns {number} Virtual temperature (in C).
+ * @see American Meteorological Society, Glossary of Meteorology, "virtual temperature",
+ * https://glossary.ametsoc.org/wiki/virtual-temperature/
+ */
+export function VirtTemp(Slice, SP, isRaw = false, Conv = false) {
+  if (isRaw) {
     let w = 0;
     if (Slice[3] != -9999) {
       w = 0.001 * mixratio(SP, Slice[3]);
@@ -56,6 +148,17 @@ export function VirtTemp(Slice, SP, Thing = false, Conv = false) {
   }
 }
 
+
+/**
+ * Maps a raw sounding row into the named layer-object representation and computes
+ * its virtual temperature.
+ * @param {Array<number>} N Raw sounding row: pressure (hPa), height (m), temperatures (C),
+ * wind direction (deg), wind speed (kt), and remaining source fields (in ANY).
+ * @param {number} SP Pressure supplied to the virtual-temperature calculation (in hPa).
+ * @param {boolean} isAbove Marks whether the layer is above the surface (in 1).
+ * @returns {object} Layer object with pressure (hPa), height (m), temperatures (C),
+ * wind direction (deg), wind speed (kt), and source-dependent fields (in ANY).
+ */
 export function ConvertToInfo(N, SP, isAbove=false) {
   return {
     P: N[0],
@@ -71,30 +174,84 @@ export function ConvertToInfo(N, SP, isAbove=false) {
   }
 }
 
-function GetLerpFactor(a, b, g) {
-  return (1 - (g - b) / (a - b));
+/**
+ * Computes the interpolation fraction at which a linear segment reaches a target.
+ * @param {number} minimum Lower endpoint value
+ * @param {number} maximum Upper endpoint value
+ * @param {number} goal Target value between the endpoints
+ * @returns {number} Dimensionless interpolation fraction from zero to one (in 1).
+ */
+function GetLerpFactor(minimum, maximum, goal) {
+  return (1 - (goal - maximum) / (minimum - maximum));
 }
 
+
+/**
+ * Converts an angle from degrees to radians.
+ * @param {number} degrees Angle (in deg).
+ * @returns {number} Angle (in rad).
+ */
 export function degtoRad(degrees) {
   return degrees * (Math.PI / 180);
 }
 
-function PolarToCartesianDeg(Spd, Tta) {
-  return { x: Spd * Math.cos(degtoRad(Tta)), y: Spd * Math.sin(degtoRad(Tta)) };
+/**
+ * Converts polar coordinates to Cartesian components.
+ * @param {number} speed Vector magnitude
+ * @param {number} theta Direction angle (in deg).
+ * @returns {{x: number, y: number}} Cartesian components, in the same unit as speed
+ */
+function PolarToCartesianDeg(speed, theta) {
+  return { 
+    x: speed * Math.cos(degtoRad(theta)), 
+    y: speed * Math.sin(degtoRad(theta)) 
+  };
 }
 
+
+/**
+ * Converts an angle from radians to degrees.
+ * @param {number} rad Angle (in rad).
+ * @returns {number} Angle (in deg).
+ */
 function RadToDeg(rad) {
   return rad * (180 / Math.PI);
 }
 
-function CartesianToPolarDeg(T) {
-  return { r: Math.sqrt(Math.pow(T.x, 2) + Math.pow(T.y, 2)), theta: RadToDeg(Math.atan2(T.y, T.x)) };
+/**
+ * Converts Cartesian components to polar magnitude and direction.
+ * @param {{x: number, y: number}} cartesian Components in the same unit
+ * @returns {{r: number, theta: number}} Magnitude in the component unit and
+ * direction (in deg).
+ */
+function CartesianToPolarDeg(cartesian) {
+  return { 
+    r: Math.sqrt(Math.pow(cartesian.x, 2) + Math.pow(cartesian.y, 2)), 
+    theta: RadToDeg(Math.atan2(cartesian.y, cartesian.x)) 
+  };
 }
 
-export function Lerp(a, b, t) {
-  return a + (b - a) * t;
+
+/**
+ * Linearly interpolates between two values.
+ * @param {number} minimum First endpoint
+ * @param {number} maximum Second endpoint
+ * @param {number} time Interpolation fraction from zero to one (in 1).
+ * @returns {number} Interpolated value, in the endpoint unit
+ */
+export function Lerp(minimum, maximum, time) {
+  return minimum + (maximum - minimum) * time;
 }
 
+/**
+ * Retrieves or interpolates a sounding layer at a requested height; "SFC" selects
+ * the first valid surface layer, and out-of-range heights use a boundary layer.
+ * @param {object} Sounding Sounding profile containing pressure, height and layer data (hPa, m).
+ * @param {number|string} Level Requested height above the first sounding level (in m), or "SFC".
+ * @param {boolean} addTo Whether to offset Level by the first row's height (in 1).
+ * @returns {object|false} Interpolated/named sounding layer with its field-specific units,
+ * or false when no bracketing layer is found (in ANY).
+ */
 export function GetLayerByHght(Sounding, Level, addTo = true) {
   if (Level == "SFC") {
     let P = Sounding.Slice[0];
@@ -169,15 +326,28 @@ export function GetLayerByHght(Sounding, Level, addTo = true) {
   }
 }
 
+/**
+ * Converts a meteorological wind direction and speed into the module's Cartesian
+ * hodograph convention, rotated by 90 degrees.
+ * @param {{WD: number, WS: number}} Slice Wind direction (in deg) and speed (in kt).
+ * @returns {{x: number, y: number}} Cartesian wind components (in kt).
+ */
 export function ConvertPolartoCart(Slice) {
-  // // console.log(Slice);
   return {
     x: Slice.WS * Math.cos(degtoRad((Slice.WD + 90) % 360)),
     y: Slice.WS * Math.sin(degtoRad((Slice.WD + 90) % 360))
   }
 }
 
-
+/**
+ * Retrieves or interpolates a sounding layer at a requested pressure; "SFC" and
+ * "Last" select boundary layers, and Type can skip wind interpolation.
+ * @param {object} Sounding Sounding profile containing pressure and layer data (hPa).
+ * @param {number|string} Level Requested pressure (in hPa), "SFC", or "Last".
+ * @param {string} Type Layer calculation mode; "Thermo" and "ThermoOnly" skip wind vector work (in 1).
+ * @returns {object} Layer object with field-specific units, including pressure (hPa),
+ * height (m), temperatures (C), wind direction (deg), and wind speed (kt).
+ */
 export function GetLayerByPres(Sounding, Level, Type = "All") {
   if (Level == "SFC") {
     let P = Sounding.Slice[0];
@@ -265,27 +435,70 @@ export function GetLayerByPres(Sounding, Level, Type = "All") {
   return ConvertToInfo(Sounding.Slice[Sounding.Slice.length - 1], Sounding.Slice[FirstLvl][0], Type, true);
 }
 
+/**
+ * Computes a sample-count-weighted mean Cartesian wind over a pressure interval.
+ * @param {object} Sounding Sounding profile (pressure in hPa; wind in kt).
+ * @param {number} PBot Bottom pressure (in hPa).
+ * @param {number} PTop Top pressure (in hPa).
+ * @param {number} Inc Pressure sampling interval (in hPa).
+ * @returns {{x: number, y: number}} Mean Cartesian wind components (in kt).
+ */
 export function MeanWindNW(Sounding, PBot, PTop, Inc) {
   let WX = 0;
   let WY = 0;
   let Vals = 0;
 
-  for (let i = PBot; i >= PTop; i -= Inc) {
-    let Layer = GetLayerByPres(Sounding, i);
-    let Wind = ConvertPolartoCart(Layer);
+  if (Inc == 1){
+    let Layers = getLayersWithinBounds(Sounding, PBot, PTop, "Pres");
 
-    Vals += 1;
-    WX += Wind.x;
-    WY += Wind.y;
+    for (let i = 0; i < Layers.length; i++) {
+      let Layer = Layers[i];
+      let Wind = ConvertPolartoCart(Layer);
+
+      Vals += 1;
+      WX += Wind.x;
+      WY += Wind.y;
+    }
+  } else {
+    for (let i = PBot; i >= PTop; i -= Inc) {
+      let Layer = GetLayerByPres(Sounding, i);
+      let Wind = ConvertPolartoCart(Layer);
+
+      Vals += 1;
+      WX += Wind.x;
+      WY += Wind.y;
+    }
   }
-
+  
   return { x: WX / Vals, y: WY / Vals };
 }
 
+
+/**
+ * Subtracts a lower-level wind vector from an upper-level wind vector.
+ * @param {{x: number, y: number}} L1 Lower wind vector (in kt).
+ * @param {{x: number, y: number}} L2 Upper wind vector (in kt).
+ * @returns {{x: number, y: number}} Wind-shear vector (in kt).
+ */
 export function WindShear(L1, L2) {
   return { x: L2.x - L1.x, y: L2.y - L1.y };
 }
 
+
+/**
+ * Calculates parcel-based Bunkers right/left storm motions when the MU parcel
+ * and effective-inflow layer are valid, otherwise falls back to the classic
+ * non-parcel method. Also calculates mean wind, Corfidi upshear/downshear
+ * motions, and deviant tornado motions.
+ * @param {object} Sounding Sounding profile (pressure in hPa, height in m, wind in kt).
+ * @returns {object} Named storm-motion vectors RM, LM, MM, US, DS, DTMR, and DTML;
+ * each x/y component is in kt.
+ * @see Bunkers et al. (2000), Predicting supercell motion using a new hodograph technique,
+ * https://doi.org/10.1175/1520-0434(2000)015%3C0061:PSMUAN%3E2.0.CO;2
+ * @see Bunkers et al. (2014), https://www.weather.gov/media/unr/soo/scm/2014-JOM11.pdf
+ * @see Corfidi et al. (2003), A proposed methodology for the prediction of mesoscale convective system movement,
+ * https://doi.org/10.1175/1520-0434(2003)018%3C0997:CPAMPF%3E2.0.CO;2
+ */
 export function GetBM(Sounding) {
   let d = M2TOKTS(7.5);
 
@@ -299,67 +512,66 @@ export function GetBM(Sounding) {
   let hght6km = GetLayerByHght(Sounding, 6000, true);
 
   let Mean6km = MeanWindNW(Sounding, hght0km.P, hght6km.P, 1);
+  let MeanWeighted6km = MeanWind(Sounding, hght0km.P, hght6km.P, 1);
   let Shear6km = WindShear(ConvertPolartoCart(hght0km), ConvertPolartoCart(hght6km));
 
   let Mean850300 = MeanWind(Sounding, Math.min(850, hght0km.P), 300, 1);
   let Mean015km = MeanWind(Sounding, hght0km.P, hght15km.P, 1);
   let Mean0500m = MeanWind(Sounding, hght0km.P, hght500m.P, 1);
 
-  let RST; let LST;
+  // SHARPpy's non-parcel Bunkers calculation is the fallback: 0–6-km
+  // non-pressure-weighted mean wind, with the 7.5 m/s deviation normal to
+  // the surface-to-6-km bulk-shear vector.
+  let RST = { ...Mean6km };
+  let LST = { ...Mean6km };
+  let ShearMag = Mag(Shear6km);
 
-  /*if (MUPrcl.Cape > 100 && qc(MUPrcl.EL)){
-    let BotLyr = GetLayerByPres(Sounding, Eff.Bot);
-    let dpth = MUPrcl.EL - BotLyr.H;
-    let hTop = BotLyr.H + 0.65 * dpth;
-    let pTop = GetLayerByHght(Sounding, hTop, true);
-    let MnWind = MeanWind(Sounding, Eff.Bot, pTop.P, 1);
-    let WndShr = WindShear(
-      ConvertPolartoCart(GetLayerByPres(Sounding, Eff.Bot)),
-      ConvertPolartoCart(GetLayerByPres(Sounding, pTop)),
-    )
-
-
-    let srMag = Mag(WndShr);
-    let uchg = (d / srMag) * WndShr.y;
-    let vchg = (d / srMag) * WndShr.x;
-
-    Mean6km = MnWind;
-    RST = {
-      x: MnWind.x + uchg,
-      y: MnWind.y - vchg,
-    }
+  if (ShearMag > 0 && Number.isFinite(ShearMag)) {
+    let tmp = d / ShearMag;
     LST = {
-      x: MnWind.x - uchg,
-      y: MnWind.y + vchg,
-    }
-    /*
-  
-        ptop = interp.pres(prof, interp.to_msl(prof, htop))
-        mnu, mnv = winds.mean_wind(prof, pbot, ptop)
-        sru, srv = winds.wind_shear(prof, pbot, ptop)
-        srmag = utils.mag(sru, srv)
-        uchg = d / srmag * srv
-        vchg = d / srmag * sru
-        rstu = mnu + uchg
-        rstv = mnv - vchg
-        lstu = mnu - uchg
-        lstv = mnv + vchg
-      */
-  //} else {
-    let SHRU = Shear6km.x;
-    let SHRV = Shear6km.y;
-
-    let tmp = d / (Math.sqrt(Math.pow(SHRU, 2) + Math.pow(SHRV, 2)));
-
-    LST = {
-      x: Mean6km.x + (tmp * SHRV),
-      y: Mean6km.y - (tmp * SHRU),
+      x: Mean6km.x + (tmp * Shear6km.y),
+      y: Mean6km.y - (tmp * Shear6km.x),
     };
     RST = {
-      x: Mean6km.x - (tmp * SHRV),
-      y: Mean6km.y + (tmp * SHRU),
+      x: Mean6km.x - (tmp * Shear6km.y),
+      y: Mean6km.y + (tmp * Shear6km.x),
     };
-  //}
+  }
+
+  // SHARPpy's parcel-based Bunkers method (Bunkers et al., 2014) uses the
+  // effective-inflow base and a pressure-weighted mean wind/shear layer that
+  // extends through 65% of the most-unstable parcel's EL depth. Fall back to
+  // the non-parcel 0–6-km motions when the parcel/layer is not usable.
+  const MUParcel = LiftParcel(Sounding, "MU", 0, false);
+  const EffInflow = EffInflowCalc(Sounding, hght0km);
+
+  if (MUParcel.Cape > 100 && qc(MUParcel.EL) && EffInflow) {
+    const EffBase = GetLayerByPres(Sounding, EffInflow.Bot);
+    const ELDepth = MUParcel.EL - EffBase.H;
+
+    if (ELDepth > 0) {
+      const TopHeight = EffBase.H + (0.65 * ELDepth);
+      const EffTop = GetLayerByHght(Sounding, TopHeight, false);
+      const ParcelMeanWind = MeanWind(Sounding, EffBase.P, EffTop.P, 1);
+      const ParcelShear = WindShear(
+        ConvertPolartoCart(EffBase),
+        ConvertPolartoCart(EffTop),
+      );
+      const ParcelShearMag = Mag(ParcelShear);
+
+      if (ParcelShearMag > 0 && Number.isFinite(ParcelShearMag)) {
+        const ParcelDeviation = d / ParcelShearMag;
+        LST = {
+          x: ParcelMeanWind.x + (ParcelDeviation * ParcelShear.y),
+          y: ParcelMeanWind.y - (ParcelDeviation * ParcelShear.x),
+        };
+        RST = {
+          x: ParcelMeanWind.x - (ParcelDeviation * ParcelShear.y),
+          y: ParcelMeanWind.y + (ParcelDeviation * ParcelShear.x),
+        };
+      }
+    }
+  }
 
   let US = {
     x: Mean850300.x - Mean015km.x,
@@ -381,9 +593,17 @@ export function GetBM(Sounding) {
     y: (Mean0500m.y + LST.y) / 2,
   };
 
-  return { RM: RST, LM: LST, MM: Mean6km, US: US, DS: DS, DTMR: DTMR, DTML: DTML };
+  return { RM: RST, LM: LST, MM: MeanWeighted6km, US: US, DS: DS, DTMR: DTMR, DTML: DTML };
 }
 
+
+/**
+ * Calculates the arithmetic mean potential temperature over a pressure layer.
+ * @param {object} Sounding Sounding profile (pressure in hPa; temperatures in C).
+ * @param {number} pb Bottom pressure (in hPa).
+ * @param {number} pt Top pressure (in hPa).
+ * @returns {number} Mean potential temperature (in C).
+ */
 function mean_theta(Sounding, pb, pt) {
   let Tt = 0;
   let Cout = 0;
@@ -405,6 +625,15 @@ function mean_theta(Sounding, pb, pt) {
 export const ROCP = 0.28571426;
 export const RMISSD = -9999;
 
+/**
+ * Calculates potential temperature using Poisson's equation.
+ * @param {number} pres Parcel pressure (in hPa).
+ * @param {number} temp Parcel temperature (in C).
+ * @param {number} pres2 Reference pressure (in hPa).
+ * @returns {number} Potential temperature (in C), or the missing-data sentinel (in ANY).
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 export function theta(pres, temp, pres2) {
   if (!qc(pres) || !qc(temp)) return RMISSD;
 
@@ -412,37 +641,44 @@ export function theta(pres, temp, pres2) {
   return (temp * Math.pow(pres2 / pres, ROCP)) - 273.15;
 }
 
-export function pot_temp(pres, temp, pres2) {
-  if (!qc(pres) || !qc(temp)) return RMISSD;
-
-  var temp = temp + 273.15;
-  return (temp * Math.pow(pres2 / pres, ROCP)) - 273.15;
-}
-
+/**
+ * Calculates a pressure-weighted mean mixing ratio for a layer.
+ * @param {object} Sounding Sounding profile (pressure in hPa; dew point in C).
+ * @param {number} pb Bottom pressure (in hPa).
+ * @param {number} pt Top pressure (in hPa).
+ * @returns {number} Mean mixing ratio (in g/kg).
+ */
 function mean_mixratio(Sounding, pb, pt) {
-  let Cout = 0;
-  let Dwpt = 0;
+  let MMR = 0;
   let Pres = 0;
 
   for (let i = pb; pt <= i; i -= 1) {
     let Slice = GetLayerByPres(Sounding, i);
 
-    Cout += 1;
     Pres += i;
-    Dwpt += Slice.D;
+    MMR += mixratio(i, Slice.D) * i;
   }
 
-  Dwpt /= 2;
-  Pres /= 2;
-  Cout /= 2;
-
-  return mixratio(Pres / Cout, Dwpt / Cout);
+  return MMR / Pres;
 }
 
+/**
+ * Calculates the base-10 logarithm of a positive scalar.
+ * @param {number} val Input scalar (in 1).
+ * @returns {number} Base-10 logarithm (in 1).
+ */
 function log10(val) {
   return Math.log(val) / Math.log(10);
 }
 
+/**
+ * Inverts the mixing-ratio relationship to estimate temperature at a pressure.
+ * @param {number} mr Mixing ratio (in g/kg).
+ * @param {number} pres Pressure (in hPa).
+ * @returns {number} Temperature (in C), or the missing-data sentinel (in ANY).
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 export function temp_at_mixrat(mr, pres) {
   if (!qc(mr) || !qc(pres)) return RMISSD;
 
@@ -460,6 +696,17 @@ export function temp_at_mixrat(mr, pres) {
 
 const eps = 0.62197;
 
+
+/**
+ * Calculates virtual temperature from pressure, temperature, and dew point using
+ * the water-vapour mixing ratio.
+ * @param {number} pres Pressure (in hPa).
+ * @param {number} temp Air temperature (in C).
+ * @param {number} dwpt Dew-point temperature (in C).
+ * @returns {number} Virtual temperature (in C), or a supplied temperature/missing sentinel.
+ * @see American Meteorological Society, Glossary of Meteorology, "virtual temperature",
+ * https://glossary.ametsoc.org/wiki/virtual-temperature/
+ */
 export function virtemp(pres, temp, dwpt) {
   if (!qc(dwpt)) return temp;
   if (!qc(temp) || !qc(pres)) return RMISSD;
@@ -470,15 +717,33 @@ export function virtemp(pres, temp, dwpt) {
   return (tk * (1.0 + w / eps) / (1.0 + w) - cta);
 }
 
+/**
+ * Converts a Celsius temperature to kelvins (despite the legacy function name).
+ * @param {number} N Temperature (in C).
+ * @returns {number} Temperature (in K).
+ */
 export function CtoK(N) {
   return N + 273.15;
 }
 
+/**
+ * Checks whether a value lies within the accepted non-missing numerical range.
+ * @param {number} val Value to validate (in ANY).
+ * @returns {number} 1 when accepted and 0 otherwise (in 1).
+ */
 export function qc(val) {
   if (val < -998.0 || val > 2.0E+05) return 0;
   return 1;
 }
 
+/**
+ * Estimates the temperature of a parcel at its lifting-condensation level.
+ * @param {number} temp Parcel temperature (in C).
+ * @param {number} dwpt Parcel dew-point temperature (in C).
+ * @returns {number} LCL temperature (in C), or the missing-data sentinel (in ANY).
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 function lcltemp(temp, dwpt) {
   if (!qc(temp) || !qc(dwpt)) return RMISSD;
 
@@ -488,18 +753,39 @@ function lcltemp(temp, dwpt) {
   return temp - dlt;
 }
 
+/**
+ * Calculates the pressure at which a specified temperature lies on a dry adiabat.
+ * @param {number} thta Potential temperature (in C).
+ * @param {number} temp Parcel temperature (in C).
+ * @returns {number} Pressure (in hPa), or the missing-data sentinel (in ANY).
+ */
 function thalvl(thta, temp) {
-  if (!qc(temp || !qc(thta))) return RMISSD;
+  if (!qc(temp) || !qc(thta)) return RMISSD;
 
   var temp = temp + 273.15;
   var thta = thta + 273.15;
   return 1000.0 / Math.pow((thta / temp), (1 / ROCP));
 }
 
+
+/**
+ * Converts a Fahrenheit temperature to Celsius.
+ * @param {number} N Temperature (in F).
+ * @returns {number} Temperature (in C).
+ */
 export function FtoC(N) {
   return (N - 32) * (5 / 9);
 }
 
+/**
+ * Lifts a parcel dry adiabatically to its LCL and returns the LCL pressure and temperature.
+ * @param {number} p1 Initial parcel pressure (in hPa).
+ * @param {number} t1 Initial parcel temperature (in C).
+ * @param {number} td1 Initial parcel dew-point temperature (in C).
+ * @returns {[number, number]} [LCL pressure (hPa), LCL temperature (C)].
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 function drylift(p1, t1, td1) {
   var p2 = -9999;
   var t2 = -9999;
@@ -511,6 +797,12 @@ function drylift(p1, t1, td1) {
   return Array(p2, t2);
 }
 
+/**
+ * Evaluates the Wobus polynomial approximation used to solve moist-adiabatic
+ * temperature transformations.
+ * @param {number} temp Temperature (in C).
+ * @returns {number} Wobus-function temperature correction (in C).
+ */
 function Wobf(temp) {
   let x = temp - 20.0;
 
@@ -532,6 +824,13 @@ function Wobf(temp) {
 
 const ZEROCNK = 273.15;
 
+/**
+ * Iteratively solves for the temperature of a saturated parcel at a pressure level.
+ * @param {number} p Target pressure (in hPa).
+ * @param {number} thetam Moist-adiabatic potential-temperature parameter (in C).
+ * @param {number} conv Iteration convergence tolerance (in C).
+ * @returns {number} Saturated parcel temperature (in C), or the missing-data sentinel (in ANY).
+ */
 function satlift(p, thetam, conv = 0.1) {
   if (!qc(p) || !qc(thetam)) return RMISSD;
 
@@ -561,6 +860,14 @@ function satlift(p, thetam, conv = 0.1) {
 }
 
 
+/**
+ * Lifts a parcel moist adiabatically from its starting pressure and temperature
+ * to a target pressure.
+ * @param {number} p Starting pressure (in hPa).
+ * @param {number} t Starting temperature (in C).
+ * @param {number} p2 Target pressure (in hPa).
+ * @returns {number} Parcel temperature at p2 (in C), or the missing-data sentinel (in ANY).
+ */
 function wetlift(p, t, p2) {
   if (!qc(p) || !qc(t) || !qc(p2)) return RMISSD;
   let thta = theta(p, t, 1000.);
@@ -568,11 +875,29 @@ function wetlift(p, t, p2) {
   return satlift(p2, thetam);
 }
 
+/**
+ * Calculates equivalent potential temperature by lifting a parcel dry to its LCL
+ * and moist adiabatically to the reference pressure.
+ * @param {number} p Parcel pressure (in hPa).
+ * @param {number} t Parcel temperature (in C).
+ * @param {number} td Parcel dew-point temperature (in C).
+ * @returns {number} Equivalent potential temperature (in C).
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 export function thetae(p, t, td) {
   let P = drylift(p, t, td);
   return theta(100, wetlift(P[0], P[1], 100), 1000);
 }
 
+/**
+ * Generates dry-adiabatic parcel temperatures along a sequence of sounding levels.
+ * @param {Array<object>} l Sounding levels (pressure in hPa, height in m).
+ * @param {object} ST Parcel starting layer (pressure in hPa, height in m, temperatures in C).
+ * @param {[number, number]} P Dry-lift result [LCL pressure (hPa), LCL temperature (C)].
+ * @param {object|false} eSlice Optional interpolated environmental layer (height in m; temperature in C).
+ * @returns {Array<number>} Parcel temperatures aligned with l (in C).
+ */
 function GetDryLapse(l, ST, P, eSlice=false) {
   let r = []
   let lr = 9.8;
@@ -604,6 +929,14 @@ function GetDryLapse(l, ST, P, eSlice=false) {
 }
 
 
+/**
+ * Generates moist-adiabatic parcel temperatures at the supplied sounding levels.
+ * @param {Array<object>} l Sounding levels with pressure (in hPa).
+ * @param {number} t Starting parcel temperature (in C).
+ * @param {number} td Starting parcel dew-point temperature (in C).
+ * @param {number} p Starting parcel pressure (in hPa).
+ * @returns {Array<number>} Parcel virtual temperatures aligned with l (in C).
+ */
 function GetMoistLapse(l, t, td, p) {
   let dl = drylift(p, t, td);
   let plcl = dl[0];
@@ -621,14 +954,32 @@ function GetMoistLapse(l, t, td, p) {
   return r
 }
 
+/**
+ * Rounds a value to the nearest multiple of a requested increment.
+ * @param {number} N Value to round
+ * @param {number} V Rounding increment, in the same unit as N
+ * @returns {number} Rounded value (in the same unit as N).
+ */
 function RoundTo(N, V) {
   return Math.round(N / V) * V;
 }
 
+/**
+ * Restricts a scalar to an inclusive lower and upper bound.
+ * @param {number} n Value to restrict
+ * @param {number} m Lower bound (in the same unit as n).
+ * @param {number} a Upper bound (in the same unit as n).
+ * @returns {number} Clamped value (in the same unit as n).
+ */
 export function clamp(n, m, a) {
   return Math.max(Math.min(n, a), m);
 }
 
+/**
+ * Determines whether a value is a non-null object with no own enumerable keys.
+ * @param {*} obj Value to inspect (in 1).
+ * @returns {boolean} True only for an empty, non-array object (in 1).
+ */
 function isEmptyObject(obj) {
   return typeof obj === 'object' && obj !== null && !Array.isArray(obj) && Object.keys(obj).length === 0;
 }
@@ -655,14 +1006,36 @@ let Presets = {
   "Vertical": "Default",
 }
 
+/**
+ * Replaces the configured custom storm-motion vector.
+ * @param {object} CSMOT Storm-motion Cartesian vector (components in kt).
+ * @returns {void} No value (in 1).
+ */
 export function UpdateCSMotStorm(CSMOT) {
   CSMot = CSMOT;
 }
 
+/**
+ * Replaces the active visualization preset configuration when a value is supplied.
+ * @param {object} next Preset configuration object (in 1).
+ * @returns {void} No value (in 1).
+ */
 export function UpdatePresets(next) {
   if (next) Presets = next;
 }
 
+/**
+ * Lifts a surface-based, mixed-layer, most-unstable, or specified parcel; computes
+ * CAPE/CIN and characteristic levels, and optionally calculates entraining CAPE.
+ * @param {object} Sounding Sounding profile (pressure in hPa, height in m, temperatures in C).
+ * @param {string} type Parcel source selector: "SB", "ML", "MU", or a specified/effective parcel (in 1).
+ * @param {number} start Starting pressure for a specified parcel, or source-specific start value (in hPa).
+ * @param {boolean} doEcape Whether to calculate entraining CAPE when applicable (in 1).
+ * @param {Array<object>|null} FastProfile Optional integer-pressure lookup of sounding layers (hPa keys).
+ * @returns {object} Parcel profile: temperature path (C), CAPE/CIN and related buoyancy measures
+ * (in J/kg), LCL/LFC/EL/MPL heights (in m), level count (in 1), starting layer, and ECAPE
+ * path/value (C and J/kg, or the documented sentinel values).
+ */
 export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = null) {
   let ReturnTable = {
     Path: [],
@@ -853,7 +1226,7 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
         let lyr3 = GetLayerByPres(Sounding, pe3);
 
         if (virtemp(lyr3.P, lyr3.T, lyr3.D) < virtemp(pe3, wetlift(pe2, tp3, pe3), wetlift(pe2, tp3, pe3))) {
-            ReturnTable.LFC = Math.max(ReturnTable.LCL, Math.round(lyr3.H - StartSlice.H) );
+            ReturnTable.LFC = Math.max(ReturnTable.LCL, Math.round(lyr3.H - StartSlice.H));
         } else {
             while (
                 virtemp(lyr3.P, lyr3.T, lyr3.D) > virtemp(pe3, wetlift(pe2, tp3, pe3), wetlift(pe2, tp3, pe3))
@@ -898,6 +1271,10 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
         break;
       }
 
+      // Previous interpolation used only upper-level buoyancy over environmental temperature difference.
+      // (ReturnTable.Path[i] - N.VT) / (NP.VT - N.VT)
+      const lowerBuoyancy = ReturnTable.Path[i - 1] - NP.VT;
+      const upperBuoyancy = ReturnTable.Path[i] - N.VT;
       let Lrp = Lerp(NP.H, N.H, clamp((ReturnTable.Path[i] - N.VT) / (NP.VT - N.VT), 0, 1));
 
       ReturnTable.EL = Lrp;
@@ -1129,6 +1506,13 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
 }
 
 
+/**
+ * Calculates the arithmetic mean equivalent potential temperature over a pressure layer.
+ * @param {object} Sounding Sounding profile (pressure in hPa; temperatures in C).
+ * @param {number} pb Bottom pressure (in hPa).
+ * @param {number} pt Top pressure (in hPa).
+ * @returns {number} Mean equivalent potential temperature (in C).
+ */
 function mean_thetae(Sounding, pb, pt) {
   let Tt = 0;
   let Cout = 0;
@@ -1147,11 +1531,26 @@ function mean_thetae(Sounding, pb, pt) {
   return Tt;
 }
 
+/**
+ * Calculates wet-bulb temperature by lifting the parcel to saturation and returning
+ * it to the original pressure.
+ * @param {number} pres Pressure (in hPa).
+ * @param {number} tmp Air temperature (in C).
+ * @param {number} dew Dew-point temperature (in C).
+ * @returns {number} Wet-bulb temperature (in C).
+ */
 export function wetbulb(pres, tmp, dew) {
   let P = drylift(pres, tmp, dew);
   return wetlift(P[0], P[1], pres);
 }
 
+/**
+ * Estimates downdraft CAPE from the minimum mean equivalent potential temperature
+ * layer and integrates negative buoyancy during the parcel's descent.
+ * @param {object} Sound Sounding profile (pressure in hPa, height in m, temperatures in C).
+ * @returns {object} Downdraft CAPE (in J/kg), downburst temperature (in F), starting
+ * layer object, and parcel temperature/pressure traces (C and hPa).
+ */
 export function GetDCape(Sound) {
   let mine = 1000;
   let minp = -999;
@@ -1210,6 +1609,15 @@ export function GetDCape(Sound) {
 }
 
 
+/**
+ * Calculates the mean virtual-temperature lapse rate between two heights, either
+ * directly or by averaging fixed-height increments.
+ * @param {object} Sounding Sounding profile (height in m, temperature in C).
+ * @param {number|string} hb Bottom height above ground or "SFC" (in m).
+ * @param {number} ht Top height above ground (in m).
+ * @param {boolean} type Whether to average incremental lapse rates (in 1).
+ * @returns {number|string} Lapse rate (in C/km), or "--" when unavailable.
+ */
 export function LapseRateHght(Sounding, hb, ht, type = false) {
   if (!type) {
     let Bot = GetLayerByHght(Sounding, hb);
@@ -1237,6 +1645,15 @@ export function LapseRateHght(Sounding, hb, ht, type = false) {
   }
 }
 
+/**
+ * Calculates the mean virtual-temperature lapse rate between pressure levels,
+ * either directly or by averaging layer increments.
+ * @param {object} Sounding Sounding profile (pressure in hPa, height in m, temperature in C).
+ * @param {number} PBot Bottom pressure (in hPa).
+ * @param {number} PTop Top pressure (in hPa).
+ * @param {boolean} type Whether to average incremental lapse rates (in 1).
+ * @returns {number|string} Lapse rate (in C/km), or "--" when unavailable.
+ */
 export function LapseRatePres(Sounding, PBot, PTop, type = false) {
   if (!type) {
     let S = GetLayerByPres(Sounding, "SFC");
@@ -1266,6 +1683,14 @@ export function LapseRatePres(Sounding, PBot, PTop, type = false) {
 }
 
 
+/**
+ * Finds the bottom and top pressure bounds of the effective-inflow layer by
+ * testing parcels against the module's effective-inflow criteria.
+ * @param {object} Sounding Sounding profile (pressure in hPa, height in m, temperatures in C).
+ * @param {object} sfc Surface sounding layer, including pressure (in hPa).
+ * @returns {{Bot: number, Top: number, isSfc: boolean}|false} Effective-inflow base/top pressures
+ * (in hPa) and whether the base is at the surface, or false when no qualifying layer is found (in 1).
+ */
 export function EffInflowCalc(Sounding, sfc) {
   let Bot = 0;
   let Top = 999;
@@ -1321,10 +1746,26 @@ export function EffInflowCalc(Sounding, sfc) {
   return { Bot, Top, isSfc };
 }
 
+/**
+ * Calculates the component-wise average of two Cartesian wind vectors.
+ * @param {{x: number, y: number}} L1 First wind vector (in kt).
+ * @param {{x: number, y: number}} L2 Second wind vector (in kt).
+ * @returns {{x: number, y: number}} Mean Cartesian wind vector (in kt).
+ */
 function WindShearAvg(L1, L2) {
   return { x: (L2.x + L1.x) / 2, y: (L2.y + L1.y) / 2 };
 }
 
+/**
+ * Retrieves winds at two pressure levels and calculates their shear vector, or
+ * their average vector when modify is true.
+ * @param {object} Sounding Sounding profile (pressure in hPa; wind in kt).
+ * @param {number} L1 Lower-level pressure (in hPa).
+ * @param {number} L2 Upper-level pressure (in hPa).
+ * @param {boolean} modify Return the mean of the endpoint winds instead of their difference (in 1).
+ * @returns {{x: number, y: number}} Mean wind or wind-shear components (in kt); components are NaN
+ * when the requested upper level lies outside the sounding.
+ */
 export function WindShearFindP(Sounding, L1, L2, modify = false) {
   let Lower = GetLayerByPres(Sounding, L1);
   let Higher = GetLayerByPres(Sounding, L2);
@@ -1341,10 +1782,28 @@ export function WindShearFindP(Sounding, L1, L2, modify = false) {
   return WindShear(ConvertPolartoCart(Lower), ConvertPolartoCart(Higher));
 }
 
+/**
+ * Converts a speed from knots to metres per second.
+ * @param {number} N Wind speed (in kt).
+ * @returns {number} Wind speed (in m/s).
+ */
 function KTSTOM2(N) {
   return N * 0.514444444;
 }
 
+/**
+ * Integrates positive and negative storm-relative environmental helicity over a
+ * pressure- or height-bounded sounding layer.
+ * @param {object} Sounding Sounding profile (pressure in hPa, height in m, wind in kt).
+ * @param {number} Hbot Bottom pressure (in hPa) for type "Pres", or height (in m) for "Hght".
+ * @param {number} Htop Top pressure (in hPa) for type "Pres", or height (in m) for "Hght".
+ * @param {"Pres"|"Hght"} type Selects pressure-coordinate or height-coordinate bounds (in 1).
+ * @param {{x: number, y: number}|false} RMot Optional storm-motion vector; uses configured motion if false (in kt).
+ * @returns {{SRHP: number, SRHM: number}} Positive and negative storm-relative helicity contributions
+ * (in m2/s2); either is NaN when the requested layer is out of sounding bounds.
+ * @see Davies-Jones, R., Burgess, D., and Foster, M. (1990), Test of helicity as a tornado forecast parameter,
+ * 16th Conference on Severe Local Storms, 588–592.
+ */
 export function GetSRH(Sounding, Hbot, Htop, type, RMot = false) {
   let SRHP = 0;
   let SRHM = 0;
@@ -1364,15 +1823,12 @@ export function GetSRH(Sounding, Hbot, Htop, type, RMot = false) {
     if (Htop < Top.P){
       return {SRHM: NaN, SRHP: NaN}
     }
-    for (let i = Hbot; i >= Htop; i--) {
-      if (i <= Top.P){
-        break;
-      };
-      if (i - 1 <= Htop && i > Htop) {
-        i = Htop;
-      }
-      let Sect1 = ConvertPolartoCart(GetLayerByPres(Sounding, i, "Wind"));
-      let Sect2 = ConvertPolartoCart(GetLayerByPres(Sounding, i - 1, "Wind"));
+
+    let Layers = getLayersWithinBounds(Sounding, Hbot, Htop, "Pres");
+
+    for (let i = 0; i < Layers.length - 1; i++) {
+      let Sect1 = ConvertPolartoCart(Layers[i]);
+      let Sect2 = ConvertPolartoCart(Layers[i + 1]);
       Sect1.y = -Sect1.y;
       Sect2.y = -Sect2.y;
 
@@ -1396,15 +1852,11 @@ export function GetSRH(Sounding, Hbot, Htop, type, RMot = false) {
       return {SRHM: NaN, SRHP: NaN}
     }
 
-    for (let ir = Hbot; ir < Htop; ir += 10) {
-      if (ir >= Top.H){
-        break;
-      };
-      if (ir + 10 >= Htop && ir < Htop) {
-        ir = Htop;
-      }
-      let Sect1 = ConvertPolartoCart(GetLayerByHght(Sounding, ir));
-      let Sect2 = ConvertPolartoCart(GetLayerByHght(Sounding, ir + 10));
+    let Layers = getLayersWithinBounds(Sounding, Hbot, Htop, "Hght");
+
+    for (let i = 0; i < Layers.length - 1; i++) {
+      let Sect1 = ConvertPolartoCart(Layers[i]);
+      let Sect2 = ConvertPolartoCart(Layers[i + 1]);
       Sect1.y = -Sect1.y;
       Sect2.y = -Sect2.y;
 
@@ -1427,6 +1879,16 @@ export function GetSRH(Sounding, Hbot, Htop, type, RMot = false) {
   return { SRHP, SRHM };
 }
 
+/**
+ * Retrieves winds at two height levels and calculates their shear vector, or
+ * their average vector when modify is true.
+ * @param {object} Sounding Sounding profile (height in m; wind in kt).
+ * @param {number} L1 Lower-level height above ground (in m).
+ * @param {number} L2 Upper-level height above ground (in m).
+ * @param {boolean} modify Return the mean of the endpoint winds instead of their difference (in 1).
+ * @returns {{x: number, y: number}} Mean wind or wind-shear components (in kt); components are NaN
+ * when the requested upper level lies outside the sounding.
+ */
 export function WindShearFind(Sounding, L1, L2, modify = false) {
   let Lower = GetLayerByHght(Sounding, L1);
   let Higher = GetLayerByHght(Sounding, L2);
@@ -1444,6 +1906,15 @@ export function WindShearFind(Sounding, L1, L2, modify = false) {
 }
 
 
+/**
+ * Retrieves or interpolates a sounding layer at a specified temperature or wet-bulb
+ * temperature; "SFC" selects the first valid surface layer.
+ * @param {object} Sounding Sounding profile (temperatures in C, pressure in hPa, height in m).
+ * @param {number|string} Level Requested temperature (in C), or "SFC".
+ * @param {boolean} wetbulb Match the wet-bulb temperature field rather than air temperature (in 1).
+ * @returns {object} Interpolated or boundary sounding layer with pressure (hPa), height (m),
+ * temperatures (C), wind direction (deg), and wind speed (kt).
+ */
 export function GetLayerByTemp(Sounding, Level, wetbulb = false) {
   if (Level == "SFC") {
     let P = Sounding.Slice[0];
@@ -1509,24 +1980,55 @@ export function GetLayerByTemp(Sounding, Level, wetbulb = false) {
 }
 
 
+/**
+ * Calculates a pressure-weighted mean Cartesian wind between two pressure levels.
+ * @param {object} Sounding Sounding profile (pressure in hPa; wind in kt).
+ * @param {number} PBot Bottom pressure (in hPa).
+ * @param {number} PTop Top pressure (in hPa).
+ * @param {number} Inc Pressure sampling interval (in hPa).
+ * @returns {{x: number, y: number}} Pressure-weighted mean Cartesian wind components (in kt).
+ */
 export function MeanWind(Sounding, PBot, PTop, Inc) {
   let TWeight = 0;
   let WX = 0;
   let WY = 0;
   let Values = [];
 
-  for (let i = PBot; i > PTop; i -= Inc) {
-    let Layer = GetLayerByPres(Sounding, i);
-    let Wind = ConvertPolartoCart(Layer);
+  if (Inc == 1){
+    for (let i = PBot; i > PTop; i -= Inc) {
+      let Layer = GetLayerByPres(Sounding, i);
+      let Wind = ConvertPolartoCart(Layer);
 
-    TWeight += i;
-    WX += Wind.x * i;
-    WY += Wind.y * i;
+      TWeight += Layer.P;
+      WX += Wind.x * Layer.P;
+      WY += Wind.y * Layer.P;
+    }
+    let TopLayer = GetLayerByPres(Sounding, PTop);
+    let TopWind = ConvertPolartoCart(TopLayer);
+    TWeight += TopLayer.P;
+    WX += TopWind.x * TopLayer.P;
+    WY += TopWind.y * TopLayer.P;
+  } else {
+    for (let i = PBot; i > PTop; i -= Inc) {
+      let Layer = GetLayerByPres(Sounding, i);
+      let Wind = ConvertPolartoCart(Layer);
+
+      TWeight += i;
+      WX += Wind.x * i;
+      WY += Wind.y * i;
+    }
   }
 
   return { x: WX / TWeight, y: WY / TWeight };
 }
 
+/**
+ * Estimates saturation vapour pressure from temperature using a polynomial fit.
+ * @param {number} temp Temperature (in C).
+ * @returns {number} Saturation vapour pressure (in hPa), or the missing-data sentinel (in ANY).
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 export function VaporPressure(temp) {
   if (!qc(temp)) return RMISSD;
   // Polynomial approximation for Vapor Pressure
@@ -1540,6 +2042,11 @@ export function VaporPressure(temp) {
   return 6.1078 / (pol * pol);
 }
 
+/**
+ * Converts Cartesian wind components to meteorological wind direction and speed.
+ * @param {{x: number, y: number}} V1 Cartesian wind components (in kt).
+ * @returns {{WD: number, WS: number}} Rounded wind direction (in deg) and speed (in kt).
+ */
 function ConvertCartToPolarReal(V1) {
   const dy = V1.y - 0;
   const dx = V1.x - 0;
@@ -1548,11 +2055,25 @@ function ConvertCartToPolarReal(V1) {
   return { WD: Math.round((degrees + 270) % 360), WS: Mag(V1) };
 }
 
+/**
+ * Calculates the signed shortest angular difference from angle2 to angle1.
+ * @param {number} angle1 First direction (in deg).
+ * @param {number} angle2 Second direction (in deg).
+ * @returns {number} Signed shortest angular difference in the range [-180, 180) (in deg).
+ */
 function getAngleDifference(angle1, angle2) {
     let diff = (angle1 - angle2 + 180) % 360 - 180;
     return diff < -180 ? diff + 360 : diff;
 }
 
+/**
+ * Estimates water-vapour mixing ratio from pressure and dew-point temperature.
+ * @param {number} pres Pressure (in hPa).
+ * @param {number} temp Dew-point temperature (in C).
+ * @returns {number} Mixing ratio (in g/kg), or the missing-data sentinel (in ANY).
+ * @see Bolton, D. (1980), The Computation of Equivalent Potential Temperature,
+ * https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2
+ */
 export function mixratio(pres, temp) {
   if (!qc(pres) || !qc(temp)) return RMISSD;
   // Calculate mixing ratio given Pressure (mb) and Temp/Dewpoint (C)
@@ -1563,14 +2084,34 @@ export function mixratio(pres, temp) {
   return 621.97 * (fwesw / (pres - fwesw));
 }
 
+/**
+ * Converts wind speed from knots to miles per hour.
+ * @param {number} k Wind speed (in kt).
+ * @returns {number} Wind speed (in mph).
+ */
 function KTStoMPH(k){
   return k * 1.15078;
 }
 
+/**
+ * Converts wind speed from miles per hour to knots.
+ * @param {number} k Wind speed (in mph).
+ * @returns {number} Wind speed (in kt).
+ */
 function MPHtoKTS(k){
   return k/1.15078;
 }
 
+/**
+ * Integrates water-vapour mixing ratio through the valid sounding column to estimate
+ * precipitable water, skipping invalid layers and levels above 400 hPa.
+ * @param {Array<number>} pressures Pressure profile, paired with dewpoints (in hPa).
+ * @param {Array<number>} dewpoints Dew-point temperatures paired with pressures (in C).
+ * @returns {number|null} Precipitable water (in in), rounded to two decimal places, or null
+ * when arrays are missing or have different lengths.
+ * @see American Meteorological Society, Glossary of Meteorology, "precipitable water",
+ * https://glossary.ametsoc.org/wiki/precipitable_water/
+ */
 export function calculatePWAT(pressures, dewpoints) {
   if (!pressures || !dewpoints || pressures.length !== dewpoints.length) return null;
 
@@ -1599,6 +2140,27 @@ export function calculatePWAT(pressures, dewpoints) {
   return parseFloat(pwat.toFixed(2));
 }
 
+/**
+ * Calculates the requested severe-weather, fire-weather, winter-weather, fog, or
+ * apparent-temperature parameter from sounding, parcel, and wind analysis results.
+ * Supported Type values include SCP, STPF, STPC, VTPC, SHIP, WNDG, PWAT,
+ * DerechoComp, EHI, SigSvr, ttadiff, KI, TT, HDWI, BRN, Rot, DewDP1km, LCLRH,
+ * RFTI, Fosberg, MaxT, TEHI, TTS, MaxWB, SnowSquall, ConvT, LHP, RFP, FSI, FTV,
+ * FeelsLike, and WBGT.
+ * @param {object} Info Analysis inputs, including sounding, parcel, wind, and thermodynamic profiles
+ * (with field-specific units).
+ * @param {string} Type Name of the parameter to calculate (in 1).
+ * @param {boolean} STPF Legacy optional flag; it does not affect the current calculations (in 1).
+ * @returns {number|string|null|undefined} Requested parameter. Units depend on Type: temperatures
+ * are in F or C as applicable; temperature differences are in C; PWAT is in in; Rot is in deg;
+ * LCLRH is in %; BRN and composite/severe indices are in 1; other specialized index units are
+ * (in ANY). Returns "--" for some unavailable temperature outputs, null for invalid PWAT
+ * inputs, or undefined for an unsupported Type.
+ * @see National Weather Service, Heat Index,
+ * https://www.weather.gov/safety/heat-index
+ * @see National Weather Service, Wind Chill,
+ * https://www.weather.gov/safety/cold-wind-chill-chart
+ */
 export function GetParams(Info, Type, STPF = false) {
   if (Type == "SCP") {
     let scp = 0;
@@ -2148,6 +2710,19 @@ export function GetParams(Info, Type, STPF = false) {
   }
 }
 
+/**
+ * Draws a label and its value in a column of the sounding-parameter canvas.
+ * @param {string} TitleText Label text (in 1).
+ * @param {string} otherText Value text (in 1).
+ * @param {string} fillStyle CSS canvas fill style (in 1).
+ * @param {number} coloumn One-based display column (in 1).
+ * @param {number} mColoumn Total number of display columns (in 1).
+ * @param {number} Scaley Vertical position multiplier (in 1).
+ * @param {number} MScaleY Vertical layout scale (in 1).
+ * @param {HTMLCanvasElement} Canv Canvas used to determine drawing dimensions (in px).
+ * @param {CanvasRenderingContext2D} ctx Canvas 2D drawing context (in 1).
+ * @returns {number} Next vertical position multiplier (in 1).
+ */
 function CreateInsetParams(TitleText, otherText, fillStyle, coloumn, mColoumn, Scaley, MScaleY, Canv, ctx) {
   ctx.font = `normal 600 ${Canv.width / 55}px ${globalFont}`;
   ctx.fillStyle = "rgba(255,255,255,1)";
@@ -2162,10 +2737,26 @@ function CreateInsetParams(TitleText, otherText, fillStyle, coloumn, mColoumn, S
   return Scaley + 1;
 }
 
+/**
+ * Estimates relative humidity as the ratio of actual to saturation vapour pressure.
+ * @param {number} tmp Air temperature (in C).
+ * @param {number} dew Dew-point temperature (in C).
+ * @returns {number} Relative humidity (in %).
+ * @see American Meteorological Society, Glossary of Meteorology, "relative humidity",
+ * https://glossary.ametsoc.org/wiki/relative_humidity/
+ */
 export function RelHum(tmp, dew) {
   return 100 * VaporPressure(dew) / VaporPressure(tmp);//(E/ES)*100;
 }
 
+/**
+ * Calculates the arithmetic mean relative humidity over pressure-interpolated
+ * sounding samples in a layer.
+ * @param {object} Sounding Sounding profile (pressure in hPa; temperatures in C).
+ * @param {number} pbot Bottom-layer pressure (in hPa).
+ * @param {number} ptop Top-layer pressure (in hPa).
+ * @returns {number} Mean relative humidity (in %), or NaN when the layer has no valid samples.
+ */
 export function mean_rh_in_layer(Sounding, pbot, ptop) {
   let totalRH = 0;
   let count = 0;
@@ -2192,10 +2783,20 @@ export function mean_rh_in_layer(Sounding, pbot, ptop) {
   return count > 0 ? totalRH / count : NaN;
 }
 
+/**
+ * Converts a Celsius temperature to Fahrenheit.
+ * @param {number} N Temperature (in C).
+ * @returns {number} Temperature (in F).
+ */
 export function CToF(N) {
   return (N * (9 / 5)) + 32;
 }
 
+/**
+ * Selects a display color from the mixing-ratio value bands.
+ * @param {number|string} N Mixing ratio (in g/kg), or "--" for unavailable data.
+ * @returns {string} CSS RGBA/RGB color string (in 1).
+ */
 function MixRatioColor(N) {
   if (N == "--") {
     return "rgba(125,125,125,1)";
@@ -2220,6 +2821,11 @@ function MixRatioColor(N) {
   }
 }
 
+/**
+ * Selects a display color from the significant-tornado-parameter value bands.
+ * @param {number} N Significant tornado parameter (in 1).
+ * @returns {string} CSS RGBA/RGB color string (in 1).
+ */
 function GetSTPColor(N) {
   if (N <= 1) {
     return "rgba(125,125,125,1)";
@@ -2236,6 +2842,11 @@ function GetSTPColor(N) {
   }
 }
 
+/**
+ * Selects a display color from the supercell-composite-parameter value bands.
+ * @param {number} N Supercell composite parameter (in 1).
+ * @returns {string} CSS RGBA color string (in 1).
+ */
 function GetSCPColor(N) {
   if (N <= 5) {
     return "rgba(125,125,125,1)";
@@ -2251,6 +2862,11 @@ function GetSCPColor(N) {
 }
 
 
+/**
+ * Selects a display color from CAPE value bands, using white for missing values.
+ * @param {number|string|null|undefined} N Convective available potential energy (in J/kg).
+ * @returns {string} CSS RGBA/RGB color string (in 1).
+ */
 export function GetCapeColor(N) {
   // Add check for non-numeric values
   if (N === "--" || N === undefined || N === null || isNaN(N)) {
@@ -2270,6 +2886,24 @@ export function GetCapeColor(N) {
   }
 }
 
+/**
+ * Computes sounding indices and either returns a parameter summary or draws the
+ * selected preset's parameter labels and values into a canvas.
+ * @param {object} Sounding Sounding analysis object containing the profile (pressure in hPa,
+ * height in m, temperatures in C).
+ * @param {object} Wnd Wind analysis and storm-relative parameters (wind in kt, direction in deg).
+ * @param {object} TProf Thermodynamic profile and downdraft analysis (field-specific units).
+ * @param {object} SB Surface-based parcel analysis (CAPE/CIN in J/kg, levels in m).
+ * @param {object} ML Mixed-layer parcel analysis (CAPE/CIN in J/kg, levels in m).
+ * @param {object} MU Most-unstable parcel analysis (CAPE/CIN in J/kg, levels in m).
+ * @param {boolean} retrn Return the computed subset as an object instead of drawing (in 1).
+ * @param {object|false} f Optional preset configuration to activate before rendering (in 1).
+ * @param {HTMLCanvasElement|null} canvas Destination canvas; uses the default values canvas when null (in px).
+ * @returns {object|void} When retrn is true, an object of named analysis values with their
+ * field-specific units (including CAPE/DCAPE in J/kg, heights in m, temperatures in F or C,
+ * PWAT in in, mixing ratio in g/kg, and relative humidity in %); otherwise draws to the canvas
+ * and returns no value (in 1).
+ */
 export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false, f = false, canvas = null) {
   let Parcels = { SB, ML, MU };
   let Scalex = 0;
@@ -2529,6 +3163,18 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   }
 }
 
+/**
+ * Calculates a layer mean statistic between two temperature-defined levels.
+ * Supports mean vertical motion, relative humidity, precipitable water, and mixing ratio.
+ * @param {object} Sounding Sounding analysis object containing the profile and auxiliary data
+ * (pressure in hPa, temperatures in C).
+ * @param {number} Temp1 First bounding air temperature (in C).
+ * @param {number} Temp2 Second bounding air temperature (in C).
+ * @param {"Omega"|"RH"|"PWAT"|"MixRat"} Stat Statistic selector (in 1).
+ * @returns {number|null|undefined} Mean omega (in ANY), relative humidity (in %),
+ * precipitable water (in in), or mixing ratio (in g/kg); null/undefined follows the selected
+ * statistic's underlying calculation.
+ */
 export function mean_layer_temp(Sounding, Temp1, Temp2, Stat) {
   let Snding = Sounding.Sounding;
   let Top = GetLayerByTemp(Snding, Temp1);
@@ -2578,11 +3224,26 @@ export function mean_layer_temp(Sounding, Temp1, Temp2, Stat) {
   }
 }
 
+/**
+ * Calculates relative humidity from temperature and dew point; pressure is accepted
+ * for compatibility but is not used in the calculation.
+ * @param {number} p Pressure (in hPa).
+ * @param {number} t Air temperature (in C).
+ * @param {number} td Dew-point temperature (in C).
+ * @returns {number} Relative humidity (in %).
+ */
 function relh(p, t, td) {
   return 100 * VaporPressure(td) / VaporPressure(t);
 }
 
 
+/**
+ * Calculates a pressure-weighted mean relative humidity between two pressure levels.
+ * @param {object} Sounding Sounding profile (pressure in hPa; temperatures in C).
+ * @param {number} pbot Bottom pressure (in hPa).
+ * @param {number} ptop Top pressure (in hPa).
+ * @returns {number} Pressure-weighted mean relative humidity (in %).
+ */
 export function mean_relh(Sounding, pbot, ptop) {
   let RH = 0;
   let Cout = 0;
@@ -2598,6 +3259,15 @@ export function mean_relh(Sounding, pbot, ptop) {
   return (RH / Cout);
 }
 
+/**
+ * Integrates the hypsometric equation through pressure levels to derive heights
+ * relative to the lowest profile level.
+ * @param {Array<number>} pressureLevels Ordered profile pressures (in hPa).
+ * @param {Array<number>} temperatures Layer temperatures paired with pressureLevels (in K).
+ * @returns {Array<number>} Heights above the lowest profile level, paired with pressureLevels (in m).
+ * @see American Meteorological Society, Glossary of Meteorology, "hypsometric equation",
+ * https://glossary.ametsoc.org/wiki/hypsometric_equation/
+ */
 export function calculateHeightsAboveGround(pressureLevels, temperatures) {
   const R = 287.05;
   const g = 9.80665;

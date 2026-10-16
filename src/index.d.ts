@@ -286,7 +286,7 @@ export interface SharpJSProps {
   controls?: boolean | { raobStation?: string; bufkitStation?: string; vwpRadar?: string };
   /** Public data loaders for the controls' Archive section, e.g. `import * as sources from 'sharpjs/sources'`. */
   sources?: Sources | null;
-  /** Your label in the chart credit: "<label> - powered by SharpJS v1.61". */
+  /** Your label in the chart credit: "<label> - powered by SharpJS v1.7". */
   brandLabel?: string;
   /** "Saved by:" line in exported text. */
   savedBy?: string;

@@ -30,6 +30,213 @@ import numbs2 from '../data/climo/CasesEF2.js';
 // The cache is shared by every chart on the page.
 let tornadoClimo = null;
 let tornadoClimoLoading = null;
+const HODO_MAP_TILE_SIZE = 256;
+const HODO_MAP_ZOOM = 5;
+const HODO_MAP_TILE_URL = 'https://tile.openstreetmap.org';
+const hodographMapTiles = new Map();
+
+/**
+ * Begins, traces, and strokes a single line.
+ * @param {CanvasRenderingContext2D} ctx Canvas drawing context.
+ * @param {number} x1 Starting x-coordinate.
+ * @param {number} y1 Starting y-coordinate.
+ * @param {number} x2 Ending x-coordinate.
+ * @param {number} y2 Ending y-coordinate.
+ * @returns {void}
+ */
+function strokeCanvasLine(ctx, x1, y1, x2, y2) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+/**
+ * Begins, traces, and optionally closes, strokes, and fills a path.
+ * @param {CanvasRenderingContext2D} ctx Canvas drawing context.
+ * @param {Array<{x: number, y: number}>} points Points in drawing order.
+ * @param {boolean} closePath Whether to close the path.
+ * @param {boolean} stroke Whether to stroke the path.
+ * @param {boolean} fill Whether to fill the path.
+ * @returns {void}
+ */
+function drawCanvasPath(ctx, points, closePath = false, stroke = true, fill = false) {
+  if (!points.length) return;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i].y);
+  }
+  if (closePath) ctx.closePath();
+  if (stroke) ctx.stroke();
+  if (fill) ctx.fill();
+}
+
+/**
+ * Begins and strokes independent line segments in a single canvas path.
+ * @param {CanvasRenderingContext2D} ctx Canvas drawing context.
+ * @param {Array<[number, number, number, number]>} segments [x1, y1, x2, y2] segments.
+ * @returns {void}
+ */
+function strokeCanvasSegments(ctx, segments) {
+  if (!segments.length) return;
+  ctx.beginPath();
+  for (const [x1, y1, x2, y2] of segments) {
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+  }
+  ctx.stroke();
+}
+
+/**
+ * Projects latitude and longitude into Web Mercator world pixels.
+ * @param {number} lat Latitude in degrees.
+ * @param {number} lon Longitude in degrees.
+ * @param {number} zoom Slippy-map zoom level.
+ * @returns {{x:number, y:number}} Projected world-pixel coordinates.
+ */
+function projectHodographMapCoordinate(lat, lon, zoom) {
+  const worldSize = HODO_MAP_TILE_SIZE * (2 ** zoom);
+  const clampedLat = Math.max(-85.05112878, Math.min(85.05112878, lat));
+  const sinLat = Math.sin(clampedLat * Math.PI / 180);
+  return {
+    x: ((lon + 180) / 360) * worldSize,
+    y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * worldSize,
+  };
+}
+
+/**
+ * Loads or retrieves a cached OpenStreetMap tile.
+ * @param {number} zoom Slippy-map zoom level.
+ * @param {number} x Tile x-coordinate before world wrapping.
+ * @param {number} y Tile y-coordinate.
+ * @param {Window} view Window that supplies the Image constructor.
+ * @param {() => void} onReady Schedules a hodograph redraw after loading completes.
+ * @returns {{image:HTMLImageElement|null, state:string}} Tile image and load state.
+ */
+function getHodographMapTile(zoom, x, y, view, onReady) {
+  const tileCount = 2 ** zoom;
+  if (y < 0 || y >= tileCount) return { image: null, state: 'outside' };
+  const wrappedX = ((x % tileCount) + tileCount) % tileCount;
+  const key = `${zoom}/${wrappedX}/${y}`;
+  let tile = hodographMapTiles.get(key);
+  if (tile) {
+    if (tile.state === 'loading') tile.listeners.add(onReady);
+    return tile;
+  }
+
+  const ImageConstructor = view?.Image;
+  if (!ImageConstructor) return { image: null, state: 'unavailable' };
+
+  tile = { image: new ImageConstructor(), state: 'loading', listeners: new Set([onReady]) };
+  hodographMapTiles.set(key, tile);
+  tile.image.crossOrigin = 'anonymous';
+  tile.image.onload = () => {
+    tile.state = 'loaded';
+    for (const listener of tile.listeners) listener();
+    tile.listeners.clear();
+  };
+  tile.image.onerror = () => {
+    tile.state = 'error';
+    for (const listener of tile.listeners) listener();
+    tile.listeners.clear();
+  };
+  tile.image.src = `${HODO_MAP_TILE_URL}/${zoom}/${wrappedX}/${y}.png`;
+  return tile;
+}
+
+/**
+ * Draws a 100-pixel OpenStreetMap inset centered on a sounding's coordinates.
+ * OpenStreetMap tiles include mapped state and county administrative boundaries.
+ * @param {CanvasRenderingContext2D} ctx Hodograph drawing context.
+ * @param {HTMLCanvasElement} canvas Hodograph canvas.
+ * @param {object} sounding Current sounding object.
+ * @param {() => void} onTilesReady Schedules a redraw when pending tiles finish.
+ * @returns {void}
+ */
+function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady) {
+  const location = sounding?.Coords;
+  const lat = Number(location?.lat ?? sounding?.Location?.[0]);
+  const lon = Number(location?.lon ?? sounding?.Location?.[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+
+  const insetSize = 200;
+  const insetX = canvas.width - insetSize;
+  const insetY = canvas.height - insetSize;
+  const center = projectHodographMapCoordinate(lat, lon, HODO_MAP_ZOOM);
+  const north = projectHodographMapCoordinate(Math.min(85.05112878, lat + 2.5), lon, HODO_MAP_ZOOM);
+  const south = projectHodographMapCoordinate(Math.max(-85.05112878, lat - 2.5), lon, HODO_MAP_ZOOM);
+  const worldSpan = Math.max(
+    HODO_MAP_TILE_SIZE * (2 ** HODO_MAP_ZOOM) * (5 / 360),
+    south.y - north.y,
+  );
+  const scale = insetSize / worldSpan;
+  const left = center.x - worldSpan / 2;
+  const top = center.y - worldSpan / 2;
+  const firstTileX = Math.floor(left / HODO_MAP_TILE_SIZE);
+  const lastTileX = Math.floor((left + worldSpan) / HODO_MAP_TILE_SIZE);
+  const firstTileY = Math.floor(top / HODO_MAP_TILE_SIZE);
+  const lastTileY = Math.floor((top + worldSpan) / HODO_MAP_TILE_SIZE);
+  let failedTiles = 0;
+  let loadedTiles = 0;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#17232c';
+  ctx.fillRect(insetX, insetY, insetSize, insetSize);
+  ctx.beginPath();
+  ctx.rect(insetX, insetY, insetSize, insetSize);
+  ctx.clip();
+
+  for (let tileY = firstTileY; tileY <= lastTileY; tileY++) {
+    for (let tileX = firstTileX; tileX <= lastTileX; tileX++) {
+      const tile = getHodographMapTile(HODO_MAP_ZOOM, tileX, tileY, canvas.ownerDocument.defaultView, onTilesReady);
+      if (tile.state === 'loaded' && tile.image) {
+        const x = insetX + (tileX * HODO_MAP_TILE_SIZE - left) * scale;
+        const y = insetY + (tileY * HODO_MAP_TILE_SIZE - top) * scale;
+        const size = HODO_MAP_TILE_SIZE * scale;
+        ctx.drawImage(tile.image, x, y, size, size);
+        loadedTiles++;
+      } else if (tile.state === 'error' || tile.state === 'unavailable') {
+        failedTiles++;
+      }
+    }
+  }
+
+  ctx.restore();
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (loadedTiles === 0 && failedTiles > 0) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.fillRect(insetX, insetY, insetSize, insetSize);
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Map unavailable', insetX + insetSize / 2, insetY + insetSize / 2);
+  }
+  ctx.beginPath();
+  ctx.arc(insetX + insetSize / 2, insetY + insetSize / 2, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#f04438';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(insetX + 1, insetY + 1, insetSize - 2, insetSize - 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(insetX + insetSize - 27, insetY + insetSize - 12, 25, 10);
+  ctx.fillStyle = '#fff';
+  ctx.font = '7px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('© OSM', insetX + insetSize - 4, insetY + insetSize - 4);
+  ctx.restore();
+}
+
+/** Lazily loads and caches tornado climatology tables.
+ * @returns {*} Result of the function.
+ */
 function loadTornadoClimo() {
   tornadoClimoLoading ??= Promise.all([
     import('../data/climo/EffSRHClimo.js'),
@@ -60,6 +267,8 @@ function loadTornadoClimo() {
  * @param {string} [options.savedBy]     "Saved by:" line in exported text
  * @param {string} [options.filePrefix]  exported file name prefix
  * @param {(event: string, detail?: any) => void} [options.emit]  state-change notifications
+
+ * @returns {*} Result of the function.
  */
 export function createEngine(root, options = {}) {
 // ---------------------------------------------------------------------------------------------
@@ -67,7 +276,10 @@ export function createEngine(root, options = {}) {
 // single-file script so changes can be compared side by side with older SharpJS builds.
 // ---------------------------------------------------------------------------------------------
 const elementCache = new Map();
-/** Root-scoped replacement for document.getElementById (elements carry data-sjs="<id>"). */
+/** Root-scoped replacement for document.getElementById (elements carry data-sjs="<id>").
+ * @param {*} id Parameter for $.
+ * @returns {*} Result of the function.
+ */
 function $(id) {
   let el = elementCache.get(id);
   if (!el || !el.isConnected) {
@@ -80,7 +292,10 @@ const emit = typeof options.emit === 'function' ? options.emit : () => {};
 
 const globalFont = options.font || '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
 const verString = DISPLAY_VERSION;
-/** "SharpJS v1.61", or "<label><sep>SharpJS v1.61" when the host sets options.brandLabel. */
+/** "SharpJS v1.7", or "<label><sep>SharpJS v1.7" when the host sets options.brandLabel.
+ * @param {*} sep Parameter for brandLine.
+ * @returns {*} Result of the function.
+ */
 function brandLine(sep) {
   const label = typeof options.brandLabel === 'string' ? options.brandLabel.trim() : '';
   return label ? `${label}${sep}SharpJS v${verString}` : `SharpJS v${verString}`;
@@ -125,10 +340,19 @@ const MAX_VALID_PRES_MB = 1100;
 var PRESSURE_LABEL_CANDIDATES = [1000, 925, 850, 700, 500, 400, 300, 250, 200, 150, 100, 50];
 var PRESSURE_TOP_CANDIDATES = [850, 700, 500, 400, 300, 250, 200, 150, 100, 50];
 
+/** Checks is valid sounding pressure.
+ * @param {*} p Parameter for isValidSoundingPressure.
+ * @returns {*} Result of the function.
+ */
 function isValidSoundingPressure(p) {
   return Number.isFinite(p) && p >= MIN_VALID_PRES_MB && p <= MAX_VALID_PRES_MB;
 }
 
+/** Get the top layer for pressure
+ * @param {*} desiredTop Parameter for pickPressureTop.
+ * @param {*} observedTop Parameter for pickPressureTop.
+ * @returns {*} Result of the function.
+ */
 function pickPressureTop(desiredTop, observedTop) {
   const usable = (p) => Number.isFinite(p) && p >= MIN_PTOP && p < DEFAULT_PBOT;
   let ptop = PRESSURE_TOP_CANDIDATES.find((p) => usable(p) && p <= desiredTop) ?? DEFAULT_PTOP;
@@ -139,6 +363,10 @@ function pickPressureTop(desiredTop, observedTop) {
   return ptop;
 }
 
+/** Quality Check
+ * @param {*} val Parameter for tqc.
+ * @returns {*} Result of the function.
+ */
 function tqc(val){
   if (val < -998.0 || val > 2.0E+05 || isNaN(val)) return 0;
   return 1;
@@ -150,10 +378,20 @@ function tqc(val){
  */
 let useImperialUnits = 0;
 
+/** Returns position scale data.
+ * @param {*} x Parameter for GetPositionScale.
+ * @param {*} y Parameter for GetPositionScale.
+ * @param {*} canvas Parameter for GetPositionScale.
+ * @returns {*} Result of the function.
+ */
 function GetPositionScale(x, y, canvas) {
   return { x: (x / 100) * canvas.width, y: (y / 100) * canvas.height };
 }
 
+/** Identifies a dropsonde sounding from its metadata.
+ * @param {*} soundingObj Parameter for isDropsondeSounding.
+ * @returns {*} Result of the function.
+ */
 function isDropsondeSounding(soundingObj) {
   if (!soundingObj) return false;
   if (soundingObj.isDropsonde === true) return true;
@@ -161,7 +399,11 @@ function isDropsondeSounding(soundingObj) {
   return /dropsonde|·\s*drop\b/i.test(title);
 }
 
-/** Dropsonde surface/splash MSLP (mb), from payload or reduced from SFC level. */
+/** Dropsonde surface/splash MSLP (mb), from payload or reduced from SFC level.
+ * @param {*} soundingObj Parameter for resolveDropsondeMslpMb.
+ * @param {*} startSlice Parameter for resolveDropsondeMslpMb.
+ * @returns {*} Result of the function.
+ */
 function resolveDropsondeMslpMb(soundingObj, startSlice) {
   if (!isDropsondeSounding(soundingObj)) return null;
 
@@ -194,6 +436,9 @@ function resolveDropsondeMslpMb(soundingObj, startSlice) {
   return Math.round(mslp);
 }
 
+/** Restores the default skew-T pressure and temperature domains.
+ * @returns {void} No value.
+ */
 function resetSkewTDomains() {
   skv.pbot = DEFAULT_PBOT;
   skv.ptop = DEFAULT_PTOP;
@@ -202,6 +447,10 @@ function resetSkewTDomains() {
   skv.tspread = DEFAULT_TSPREAD;
 }
 
+/** Finds the valid pressure range in a sounding.
+ * @param {*} soundingObj Parameter for getSoundingPressureExtents.
+ * @returns {*} Result of the function.
+ */
 function getSoundingPressureExtents(soundingObj) {
   const sound = soundingObj && soundingObj.Sounding;
   if (!sound) return null;
@@ -229,10 +478,15 @@ function getSoundingPressureExtents(soundingObj) {
  * Dropsonde-only: trim empty upper levels, keep classic bottom (1100)
  * and a wide enough span so the skew geometry doesn't collapse.
  * Chart top tracks the sounding top (e.g. ~175 mb → 150 mb, not 100 mb).
+
+ * @param {*} primarySounding Parameter for setPressureDomainFromSounding.
+ * @param {*} comparisonSoundings Parameter for setPressureDomainFromSounding.
+ * @returns {void} No value.
  */
 function setPressureDomainFromSounding(primarySounding, comparisonSoundings = []) {
   let sfcP = null;
   let topP = null;
+
 
   const consider = (snd) => {
     const ext = getSoundingPressureExtents(snd);
@@ -283,6 +537,9 @@ function setPressureDomainFromSounding(primarySounding, comparisonSoundings = []
 /**
  * Dropsonde-only: fit the temperature axis to observed T so tropical
  * profiles sit in the middle of the chart instead of the warm edge.
+
+ * @param {*} primarySounding Parameter for setTemperatureDomainFromSounding.
+ * @returns {void} No value.
  */
 function setTemperatureDomainFromSounding(primarySounding) {
   const sound = primarySounding && primarySounding.Sounding;
@@ -306,7 +563,11 @@ function setTemperatureDomainFromSounding(primarySounding) {
   skv.tspread = tright - tleft;
 }
 
-/** Apply dropsonde-only chart fitting; restore classic domains otherwise. */
+/** Apply dropsonde-only chart fitting; restore classic domains otherwise.
+ * @param {*} primarySounding Parameter for setSkewTDomainsFromSounding.
+ * @param {*} comparisonSoundings Parameter for setSkewTDomainsFromSounding.
+ * @returns {void} No value.
+ */
 function setSkewTDomainsFromSounding(primarySounding, comparisonSoundings = []) {
   if (!isDropsondeSounding(primarySounding)) {
     PRESSURE_LABEL_CANDIDATES = [1000, 825, 700, 500, 300, 200, 100, 50];
@@ -327,11 +588,20 @@ function setSkewTDomainsFromSounding(primarySounding, comparisonSoundings = []) 
   setTemperatureDomainFromSounding(primarySounding);
 }
 
+/** Logarithmic pressure scale for skew-T mapping. Returns null if the inputs are invalid.
+ * @param {*} pbot Parameter for logPressureScale.
+ * @param {*} ptop Parameter for logPressureScale.
+ * @returns {*} Result of the function.
+ */
 function logPressureScale(pbot, ptop) {
   if (!(pbot > 0) || !(ptop > 0) || !(pbot > ptop)) return null;
   return Math.log(pbot) - Math.log(ptop);
 }
 
+/** Convert pressure to pixel coordinates.
+ * @param {*} pres Parameter for pres_to_pix.
+ * @returns {*} Result of the function.
+ */
 function pres_to_pix(pres) {
   var scl1 = logPressureScale(skv.pbot, skv.ptop);
   if (scl1 == null || !(pres > 0)) return skv.bry;
@@ -339,6 +609,10 @@ function pres_to_pix(pres) {
   return (skv.bry - (scl2 / scl1) * (skv.bry - skv.tly));
 }
 
+/** Convert pixel coordinates to pressure.
+ * @param {*} y Parameter for pix_to_pres.
+ * @returns {*} Result of the function.
+ */
 function pix_to_pres(y) {
   var scl1 = logPressureScale(skv.pbot, skv.ptop);
   if (scl1 == null) return skv.pbot;
@@ -347,6 +621,11 @@ function pix_to_pres(y) {
   return (skv.pbot / Math.exp((scl2 / scl3) * scl1));
 }
 
+/** Convert pressure to skew-T skew coordinates (0 → 1).
+ * @param {*} N Parameter for PressuretoSkew.
+ * @param {*} BP Parameter for PressuretoSkew.
+ * @returns {*} Result of the function.
+ */
 function PressuretoSkew(N, BP) {
   var scl1 = logPressureScale(skv.pbot, skv.ptop);
   if (scl1 == null || !(N > 0) || !(skv.bry > 0)) return 1;
@@ -354,6 +633,10 @@ function PressuretoSkew(N, BP) {
   return (skv.bry - (scl2 / scl1) * (skv.bry - skv.tly)) / skv.bry;
 }
 
+/** Calculate the natural logarithm.
+ * @param {*} x Parameter for ln.
+ * @returns {*} Result of the function.
+ */
 function ln(x) {
   return Math.log(x) / Math.log(Math.E);
 }
@@ -361,6 +644,11 @@ function ln(x) {
 var SkewNumber = 0.75;
 /** The skew the user picked (SkewNumber can be overridden per sounding, e.g. dropsondes). */
 var UserSkewNumber = 0.75;
+/** Convert a level to horizontal skew position
+ * @param {*} N Parameter for LevelToSkewNum.
+ * @param {*} BP Parameter for LevelToSkewNum.
+ * @returns {*} Result of the function.
+ */
 function LevelToSkewNum(N, BP) {
   return SkewNumber - SkewNumber * Lerp(0, 1, PressuretoSkew(N));
 }
@@ -369,7 +657,10 @@ var LapseType = false;
 
 const SKEW_STEPS = [0.5, 0.625, 0.75, 0.825];
 
-/** Cycle the skew-T skew (Low → Medium → Default → High), or just redraw with Change=false. */
+/** Cycle the skew-T skew (Low → Medium → Default → High), or just redraw with Change=false.
+ * @param {*} Change Parameter for ChangeStateSkewTSkew.
+ * @returns {*} Result of the function.
+ */
 function ChangeStateSkewTSkew(Change = true) {
   if (Change) {
     const i = SKEW_STEPS.indexOf(UserSkewNumber);
@@ -380,18 +671,35 @@ function ChangeStateSkewTSkew(Change = true) {
   return UserSkewNumber;
 }
 
+/** Convert meters to feet.
+ * @param {*} N Parameter for MToFt.
+ * @returns {*} Result of the function.
+ */
 function MToFt(N) {
   return N * 3.28084;
 }
 
+/** Convert knots to miles per hour.
+ * @param {*} N Parameter for KtsToMph.
+ * @returns {*} Result of the function.
+ */
 function KtsToMph(N) {
   return N * 1.15078;
 }
 
+/** Convert degrees Celsius per kilometer to degrees Celsius per thousand feet.
+ * @param {*} N Parameter for CPerKmToCPerKft.
+ * @returns {*} Result of the function.
+ */
 function CPerKmToCPerKft(N) {
   return N / 3.28084;
 }
 
+/** Converts to raw values.
+ * @param {*} N Parameter for ConvertToRaw.
+ * @param {*} SP Parameter for ConvertToRaw.
+ * @returns {*} Result of the function.
+ */
 function ConvertToRaw(N, SP) {
   return [N.P, N.H, N.T, N.D, N.WD, N.WS, N.WB];
 }
@@ -414,6 +722,10 @@ const HODO_COLORS = [
 ];
 
 // Convert hex → RGB
+/** Convert a hex color to RGB values.
+ * @param {*} hex Parameter for hexToRgb.
+ * @returns {*} Result of the function.
+ */
 function hexToRgb(hex) {
   const bigint = parseInt(hex.slice(1), 16);
   return {
@@ -424,6 +736,12 @@ function hexToRgb(hex) {
 }
 
 // Convert RGB → hex
+/** Convert RGB values to a hex color.
+ * @param {*} r Parameter for rgbToHex.
+ * @param {*} g Parameter for rgbToHex.
+ * @param {*} b Parameter for rgbToHex.
+ * @returns {*} Result of the function.
+ */
 function rgbToHex(r, g, b) {
   return "#" + [r, g, b]
     .map(x => x.toString(16).padStart(2, "0"))
@@ -431,6 +749,12 @@ function rgbToHex(r, g, b) {
 }
 
 // Linear interpolate between two numbers
+/** Linearly interpolate between two numbers.
+ * @param {*} a Parameter for lerp.
+ * @param {*} b Parameter for lerp.
+ * @param {*} t Parameter for lerp.
+ * @returns {*} Result of the function.
+ */
 function lerp(a, b, t) {
   return a + (b - a) * t;
 }
@@ -439,6 +763,12 @@ function lerp(a, b, t) {
 const VWP_HODOGRAPH_RMS_RADIUS_SCALE = 1.3;
 const VWP_HODOGRAPH_RMS_FILL_ALPHA = 0.15;
 
+/** Returns hodograph color data.
+ * @param {*} Hght Parameter for GetHodographColor.
+ * @param {*} ctx Parameter for GetHodographColor.
+ * @param {*} trans Parameter for GetHodographColor.
+ * @returns {*} Result of the function.
+ */
 function GetHodographColor(Hght, ctx, trans=1) {
   if (HodographColorTable == 0) {
     if (Hght <= 1000) {
@@ -494,10 +824,38 @@ function GetHodographColor(Hght, ctx, trans=1) {
 }
 
 let mapImage = null;
+let hodographDrawVersion = 0;
+let hodographMapRedrawFrame = null;
+let hodographMapRedrawRequest = null;
 
 // --- ADD THIS EXPORT FUNCTION ---
+/** Sets or applies map image state.
+ * @param {*} img Parameter for SetMapImage.
+ * @returns {void} No value.
+ */
 function SetMapImage(img) {
   mapImage = img;
+}
+
+/**
+ * Schedules one redraw after one or more map tiles finish loading.
+ * @param {object} sounding Sounding currently being drawn.
+ * @param {boolean} ghost Whether this is a ghost sounding redraw.
+ * @param {object[]} comparisonSoundings Comparison soundings for the current chart.
+ * @param {number} drawVersion Version of the hodograph render that requested tiles.
+ * @returns {void}
+ */
+function scheduleHodographMapRedraw(sounding, ghost, comparisonSoundings, drawVersion) {
+  hodographMapRedrawRequest = { sounding, ghost, comparisonSoundings, drawVersion };
+  if (hodographMapRedrawFrame !== null) return;
+  const view = root.ownerDocument.defaultView;
+  hodographMapRedrawFrame = view.requestAnimationFrame(() => {
+    hodographMapRedrawFrame = null;
+    const request = hodographMapRedrawRequest;
+    hodographMapRedrawRequest = null;
+    if (!request || request.drawVersion !== hodographDrawVersion) return;
+    DrawHodograph(request.sounding, request.ghost, request.comparisonSoundings);
+  });
 }
 
 /** User preference: thin RAOB/import hodograph to SPC-like spacing (default on). Model grid rules unchanged. */
@@ -507,6 +865,9 @@ let HodographTrimWindProfile = true;
  * Model grid soundings (sounding.meta.isModel) already have modest vertical resolution on the hodograph.
  * RAOB / IMET / uploaded profiles often have hundreds of wind levels — thin to SPC-like spacing
  * so the hodograph shows bulk shear instead of instrument noise.
+
+ * @param {*} meta Parameter for shouldThinHodographForDisplay.
+ * @returns {*} Result of the function.
  */
 function shouldThinHodographForDisplay(meta) {
   if (VWPActive) return false;
@@ -529,6 +890,10 @@ function shouldThinHodographForDisplay(meta) {
   return meta.WWL > 90;
 }
 
+/** Get the minimum height step for a given altitude.
+ * @param {*} aglM Parameter for minHeightStepForAglHodo.
+ * @returns {*} Result of the function.
+ */
 function minHeightStepForAglHodo(aglM) {
   if (aglM < 2200) return 190;
   if (aglM < 6000) return 320;
@@ -537,6 +902,10 @@ function minHeightStepForAglHodo(aglM) {
 
 /**
  * @returns {number[] | null} Indices into W[] (ascending height) for endpoints of hodograph segments, or null to use full resolution.
+
+ * @param {*} W Parameter for computeThinnedHodographWindIndices.
+ * @param {*} SH Parameter for computeThinnedHodographWindIndices.
+ * @param {*} maxAglM Parameter for computeThinnedHodographWindIndices.
  */
 function computeThinnedHodographWindIndices(W, SH, maxAglM = 12000) {
   const n = W.length;
@@ -583,11 +952,22 @@ function computeThinnedHodographWindIndices(W, SH, maxAglM = 12000) {
   return idx.length >= 2 ? idx : null;
 }
 
+/** Returns hodograph wind step indices data.
+ * @param {*} meta Parameter for getHodographWindStepIndices.
+ * @param {*} W Parameter for getHodographWindStepIndices.
+ * @param {*} SH Parameter for getHodographWindStepIndices.
+ * @returns {*} Result of the function.
+ */
 function getHodographWindStepIndices(meta, W, SH) {
   if (!shouldThinHodographForDisplay(meta)) return null;
   return computeThinnedHodographWindIndices(W, SH);
 }
 
+/** Builds adjacent sounding-index pairs for hodograph segments.
+ * @param {*} WWL Parameter for hodographSegmentIndexPairs.
+ * @param {*} stepIdx Parameter for hodographSegmentIndexPairs.
+ * @returns {*} Result of the function.
+ */
 function hodographSegmentIndexPairs(WWL, stepIdx) {
   if (stepIdx && stepIdx.length >= 2) {
     const out = [];
@@ -603,6 +983,9 @@ function hodographSegmentIndexPairs(WWL, stepIdx) {
   return out;
 }
 
+/** Returns hodograph storm offset mod data.
+ * @returns {*} Result of the function.
+ */
 function getHodographStormOffsetMod() {
   if (!HodoMode) {
     return {
@@ -613,6 +996,12 @@ function getHodographStormOffsetMod() {
   return { x: 0, y: 0 };
 }
 
+/** Converts wind data to canvas coordinates.
+ * @param {*} Center Parameter for hodographWindToCanvas.
+ * @param {*} Scale Parameter for hodographWindToCanvas.
+ * @param {*} slice Parameter for hodographWindToCanvas.
+ * @returns {*} Result of the function.
+ */
 function hodographWindToCanvas(Center, Scale, slice) {
   let Pos = ConvertPolartoCart(slice);
   if (!HodoMode) {
@@ -625,6 +1014,12 @@ function hodographWindToCanvas(Center, Scale, slice) {
   };
 }
 
+/** Converts storm motion data to canvas coordinates.
+ * @param {*} Center Parameter for hodographStormMotionToCanvas.
+ * @param {*} Scale Parameter for hodographStormMotionToCanvas.
+ * @param {*} Mod Parameter for hodographStormMotionToCanvas.
+ * @returns {*} Result of the function.
+ */
 function hodographStormMotionToCanvas(Center, Scale, Mod) {
   const mx = isNaN(CSMot.x) ? 0 : CSMot.x;
   const my = isNaN(CSMot.y) ? 0 : CSMot.y;
@@ -634,6 +1029,10 @@ function hodographStormMotionToCanvas(Center, Scale, Mod) {
   };
 }
 
+/** Checks whether a wind level has valid height and wind data.
+ * @param {*} slice Parameter for isUsableHodographWind.
+ * @returns {*} Result of the function.
+ */
 function isUsableHodographWind(slice) {
   return slice &&
     slice.WS !== -9999 &&
@@ -642,6 +1041,11 @@ function isUsableHodographWind(slice) {
     !isNaN(slice.WD);
 }
 
+/** Resolves the layer bounds used for hodograph SRH shading.
+ * @param {*} Sounding Parameter for resolveHodographSrhFillLayer.
+ * @param {*} inflow Parameter for resolveHodographSrhFillLayer.
+ * @returns {*} Result of the function.
+ */
 function resolveHodographSrhFillLayer(Sounding, inflow) {
   if (!Sounding) return null;
   const sfc = GetLayerByHght(Sounding, "SFC");
@@ -661,6 +1065,16 @@ function resolveHodographSrhFillLayer(Sounding, inflow) {
 /**
  * Shade the area swept between the selected storm motion (RM by default)
  * and the hodograph curve. Uses effective inflow when it exists, else 0-3 km.
+
+ * @param {*} ctx Parameter for drawHodographStormMotionFill.
+ * @param {*} Sounding Parameter for drawHodographStormMotionFill.
+ * @param {*} Center Parameter for drawHodographStormMotionFill.
+ * @param {*} Scale Parameter for drawHodographStormMotionFill.
+ * @param {*} Mod Parameter for drawHodographStormMotionFill.
+ * @param {*} W Parameter for drawHodographStormMotionFill.
+ * @param {*} stepIdx Parameter for drawHodographStormMotionFill.
+ * @param {*} inflow Parameter for drawHodographStormMotionFill.
+ * @returns {void} No value.
  */
 function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, stepIdx, inflow) {
   if (!ctx || !Sounding || !W || !W.length) return;
@@ -671,6 +1085,7 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
 
   const sm = hodographStormMotionToCanvas(Center, Scale, Mod);
   const pts = [];
+
   const pushWind = (slice) => {
     if (!isUsableHodographWind(slice)) return;
     pts.push(hodographWindToCanvas(Center, Scale, slice));
@@ -690,29 +1105,26 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
   if (pts.length < 1) return;
 
   ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(sm.x, sm.y);
-  for (const p of pts) {
-    ctx.lineTo(p.x, p.y);
-  }
-  ctx.closePath();
   ctx.fillStyle = "rgba(125,200,255,0.18)";
-  ctx.fill();
+  drawCanvasPath(ctx, [sm, ...pts], true, false, true);
 
   ctx.strokeStyle = "rgba(125,200,255,0.55)";
   ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(sm.x, sm.y);
-  ctx.lineTo(pts[0].x, pts[0].y);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(sm.x, sm.y);
-  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-  ctx.stroke();
+  strokeCanvasSegments(ctx, [
+    [sm.x, sm.y, pts[0].x, pts[0].y],
+    [sm.x, sm.y, pts[pts.length - 1].x, pts[pts.length - 1].y],
+  ]);
   ctx.restore();
 }
 
+/** Draws hodograph content.
+ * @param {*} Json Parameter for DrawHodograph.
+ * @param {*} ghst Parameter for DrawHodograph.
+ * @param {*} comparisonSoundings Parameter for DrawHodograph.
+ * @returns {void} No value.
+ */
 function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
+  const drawVersion = ++hodographDrawVersion;
   const Canv = $("hodograph");
   const ctx = Canv.getContext("2d");
 
@@ -1226,7 +1638,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   //Possibly Wrong
   let hght6km = GetLayerByHght(Sounding, 6000);
 
-  let MM = MeanWindNW(Sounding, hght0km.P, hght6km.P, 1);
+  let MM = MeanWind(Sounding, hght0km.P, hght6km.P, 1);
 
   ctx.strokeStyle = CSMot == Motions.MM && "rgba(255,100,50,0.9)" || "rgba(200,100,50,0.5)";
   ctx.strokeRect(Center.x / 2 + (Mod.x + MM.x) * (Scale / 10), Center.y / 2 + (Mod.y + MM.y) * (Scale / 10), 6, 6);
@@ -1259,6 +1671,10 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   }
   ctx.textAlign = "center";
 
+  drawHodographLocationInset(ctx, Canv, Json, () => {
+    scheduleHodographMapRedraw(Json, ghst, comparisonSoundings, drawVersion);
+  });
+
   if (mapImage && !VWPActive) {
     const mapSize = 200;
     const padding = 0; // You can increase this if you want some spacing from the edge
@@ -1281,6 +1697,9 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   // ctx.closePath();
 }
 
+/** Draws skew numbers content.
+ * @returns {void} No value.
+ */
 function DrawSkewNumbers() {
   const Canv = $("skewTNumbers");
   const ctx = Canv.getContext("2d");
@@ -1318,10 +1737,18 @@ function DrawSkewNumbers() {
 
 let iterbb = 0;
 
+/** Returns skew ratio data.
+ * @param {*} N Parameter for GetSkewRatio.
+ * @returns {*} Result of the function.
+ */
 function GetSkewRatio(N) {
   return ((N - skv.tleft) / skv.tspread + 0.01);
 }
 
+/** Returns the color for a wind barb based on its speed.
+ * @param {*} N Parameter for BarbColor.
+ * @returns {*} Result of the function.
+ */
 function BarbColor(N) {
   let ColorIndex = [
     "rgba(100,100,255,1)",
@@ -1341,7 +1768,10 @@ function BarbColor(N) {
   return ColorIndex[Math.min(Math.floor(N / 10), 11)];
 }
 
-/** Saffir–Simpson colors — dropsonde barbs only (matches side-panel badges). */
+/** Saffir–Simpson colors — dropsonde barbs only (matches side-panel badges).
+ * @param {*} kt Parameter for dropsondeHurricaneBarbColor.
+ * @returns {*} Result of the function.
+ */
 function dropsondeHurricaneBarbColor(kt) {
   const n = Number(kt);
   const v = Number.isFinite(n) ? Math.max(0, n) : 0;
@@ -1356,6 +1786,12 @@ function dropsondeHurricaneBarbColor(kt) {
   return '#5c6bc0';
 }
 
+/** Draws barb vwp content.
+ * @param {*} params Parameter for drawBarbVWP.
+ * @param {*} overrideColor Parameter for drawBarbVWP.
+ * @param {*} lat Parameter for drawBarbVWP.
+ * @returns {*} Result of the function.
+ */
 function drawBarbVWP(params, overrideColor = null, lat = 0){
   const Canv = $("Values8");
   const ctx = Canv.getContext("2d");
@@ -1477,6 +1913,13 @@ function drawBarbVWP(params, overrideColor = null, lat = 0){
   ctx.lineWidth = 1;
 }
 
+/** Draws barb content.
+ * @param {*} params Parameter for drawBarb.
+ * @param {*} overrideColor Parameter for drawBarb.
+ * @param {*} lat Parameter for drawBarb.
+ * @param {*} useHurricaneColors Parameter for drawBarb.
+ * @returns {*} Result of the function.
+ */
 function drawBarb(params, overrideColor = null, lat = 0, useHurricaneColors = false) {
   const Canv = $("barbs");
   const ctx = Canv.getContext("2d");
@@ -1614,6 +2057,11 @@ function drawBarb(params, overrideColor = null, lat = 0, useHurricaneColors = fa
   ctx.lineWidth = 1;
 }
 
+/** Draws barbs content.
+ * @param {*} Sounding Parameter for DrawBarbs.
+ * @param {*} comparisonSoundings Parameter for DrawBarbs.
+ * @returns {void} No value.
+ */
 function DrawBarbs(Sounding, comparisonSoundings = []) {
   const Canv = $("barbs");
   const ctx = Canv.getContext("2d");
@@ -1696,6 +2144,10 @@ function DrawBarbs(Sounding, comparisonSoundings = []) {
   }
 };
 
+/** Draws mix ratio line content.
+ * @param {*} val Parameter for MixRatioLine.
+ * @returns {void} No value.
+ */
 function MixRatioLine(val) {
   const Canv = $("skewT");
   const ctx = Canv.getContext("2d");
@@ -1712,20 +2164,23 @@ function MixRatioLine(val) {
   var y1 = pres_to_pix(ptop);
 
   ctx.save();
-  ctx.beginPath();
   ctx.setLineDash([2, 2]);
   ctx.strokeStyle = CheckMode("rgba(4,125,4,1)", "rgba(4,75,4,1)");
   ctx.lineWidth = 3;
-  ctx.moveTo(x0, y0);
-  ctx.lineTo(x1, y1);
-
-  ctx.stroke();
+  strokeCanvasLine(ctx, x0, y0, x1, y1);
   ctx.fillStyle = CheckMode('rgba(45, 200, 45, 1)', 'rgba(25, 100, 25, 1)');
   ctx.textAlign = "center";
   ctx.fillText(`${val}`, x1, y1);
   ctx.restore();
 }
 
+/** Draws line content.
+ * @param {*} Sounding Parameter for DrawLine.
+ * @param {*} type Parameter for DrawLine.
+ * @param {*} ghost Parameter for DrawLine.
+ * @param {*} overrideColor Parameter for DrawLine.
+ * @returns {void} No value.
+ */
 function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
   const Canv = $("skewT");
   const ctx = Canv.getContext("2d");
@@ -2034,6 +2489,11 @@ function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
   }
 }
 
+/** Draws dry adiabat content.
+ * @param {*} thta Parameter for dry_adiabat.
+ * @param {*} style Parameter for dry_adiabat.
+ * @returns {void} No value.
+ */
 function dry_adiabat(thta, style = null) {
   const Canv = $("skewT");
   const ctx = Canv.getContext("2d");
@@ -2070,6 +2530,10 @@ function dry_adiabat(thta, style = null) {
 }
 
 
+/** Returns 3 cape color data.
+ * @param {*} N Parameter for Get3CapeColor.
+ * @returns {*} Result of the function.
+ */
 function Get3CapeColor(N) {
   if (N <= 50) {
     return "rgba(255,255,255,1)";
@@ -2082,6 +2546,10 @@ function Get3CapeColor(N) {
   }
 }
 
+/** Returns 6 cape color data.
+ * @param {*} N Parameter for Get6CapeColor.
+ * @returns {*} Result of the function.
+ */
 function Get6CapeColor(N) {
   if (N <= 400) {
     return "rgba(255,255,255,1)";
@@ -2094,6 +2562,10 @@ function Get6CapeColor(N) {
   }
 }
 
+/** Returns cin color data.
+ * @param {*} N Parameter for GetCinColor.
+ * @returns {*} Result of the function.
+ */
 function GetCinColor(N) {
   if (N > -50) {
     return "rgba(0,255,0,1)";
@@ -2108,6 +2580,15 @@ function GetCinColor(N) {
 
 var __ShowECape = true;
 
+/** Draws values key content.
+ * @param {*} Text Parameter for ValuesKeyRep.
+ * @param {*} Scaler Parameter for ValuesKeyRep.
+ * @param {*} Add Parameter for ValuesKeyRep.
+ * @param {*} Total Parameter for ValuesKeyRep.
+ * @param {*} ST Parameter for ValuesKeyRep.
+ * @param {*} HeaderSize Parameter for ValuesKeyRep.
+ * @returns {*} Result of the function.
+ */
 function ValuesKeyRep(Text, Scaler, Add, Total, ST, HeaderSize) {
   const Canv = $("Values1");
   const ctx = Canv.getContext("2d");
@@ -2118,6 +2599,9 @@ function ValuesKeyRep(Text, Scaler, Add, Total, ST, HeaderSize) {
   return Scaler + Add;
 }
 
+/** Draws values key content.
+ * @returns {void} No value.
+ */
 function DrawValuesKey() {
   const Canv = $("Values1");
   const ctx = Canv.getContext("2d");
@@ -2150,6 +2634,19 @@ function DrawValuesKey() {
   Scaler = ValuesKeyRep(`EL`, Scaler, 3, Total, ST, HeaderSize);
 }
 
+/** Draws values content.
+ * @param {*} Text Parameter for ValuesRep.
+ * @param {*} Color Parameter for ValuesRep.
+ * @param {*} Scale Parameter for ValuesRep.
+ * @param {*} Scaler Parameter for ValuesRep.
+ * @param {*} Add Parameter for ValuesRep.
+ * @param {*} Total Parameter for ValuesRep.
+ * @param {*} ST Parameter for ValuesRep.
+ * @param {*} HeaderSize Parameter for ValuesRep.
+ * @param {*} cs Parameter for ValuesRep.
+ * @param {*} left Parameter for ValuesRep.
+ * @returns {*} Result of the function.
+ */
 function ValuesRep(Text, Color, Scale, Scaler, Add, Total, ST, HeaderSize, cs = false, left = false) {
   const Canv = $("Values1");
   const ctx = Canv.getContext("2d");
@@ -2173,6 +2670,12 @@ function ValuesRep(Text, Color, Scale, Scaler, Add, Total, ST, HeaderSize, cs = 
   return Scaler + Add;
 }
 
+/** Draws values content.
+ * @param {*} type Parameter for DrawValues.
+ * @param {*} Values Parameter for DrawValues.
+ * @param {*} Selected Parameter for DrawValues.
+ * @returns {void} No value.
+ */
 function DrawValues(type, Values, Selected = false) {
   const Canv = $("Values1");
   const ctx = Canv.getContext("2d");
@@ -2241,12 +2744,23 @@ function DrawValues(type, Values, Selected = false) {
 
 var HodographCenter = [50, 50]
 
+/** Draws inflow hodo content.
+ * @param {*} Sounding Parameter for DrawInflowHodo.
+ * @param {*} inflowInfo Parameter for DrawInflowHodo.
+ * @param {*} BRM Parameter for DrawInflowHodo.
+ * @returns {void} No value.
+ */
 function DrawInflowHodo(Sounding, inflowInfo, BRM) {
   // SRH fill is painted inside DrawHodograph so it stays aligned with
   // the wind trace, scale, and storm-relative offset. Kept as a no-op
   // because existing callers still invoke this after a hodograph redraw.
 }
 
+/** Draws inflow content.
+ * @param {*} Sounding Parameter for DrawInflow.
+ * @param {*} Info Parameter for DrawInflow.
+ * @returns {void} No value.
+ */
 function DrawInflow(Sounding, Info) {
   const Canv = $("skewT");
   const ctx = Canv.getContext("2d");
@@ -2287,6 +2801,10 @@ function DrawInflow(Sounding, Info) {
   ctx.fillRect(0.24 * Canv.width, Y1 * Canv.height - (2 + 0.005 * Canv.height), 0.05 * Canv.width, 2 + 0.005 * Canv.height);
 }
 
+/** Returns the color for a lapse rate based on its value.
+ * @param {*} N Parameter for LapseRateColor.
+ * @returns {*} Result of the function.
+ */
 function LapseRateColor(N) {
   if (N == "--") {
     return "rgba(125,125,125,1)";
@@ -2311,12 +2829,20 @@ function LapseRateColor(N) {
   }
 }
 
+/** Converts lapse values.
+ * @param {*} rate Parameter for convertLapse.
+ * @returns {*} Result of the function.
+ */
 const convertLapse = (rate) => {
   if (rate === "--") return "--";
   return useImperialUnits === 2 ? Math.round(10 * CPerKmToCPerKft(rate)) / 10 : rate;
 };
 
 
+/** Draws storm motion content.
+ * @param {*} Sounding Parameter for StormMotionBox.
+ * @returns {void} No value.
+ */
 function StormMotionBox(Sounding){
   const Canv2 = $("Values2");
   const ctx2 = Canv2.getContext("2d");
@@ -2332,10 +2858,12 @@ function StormMotionBox(Sounding){
   const envSpdMax = impSpd ? KtsToMph(140) : 140;
   const spdUnitLbl = impSpd ? "mph" : "kt";
 
+
   function srWindXfract(wndKts) {
     const v = impSpd ? KtsToMph(wndKts) : wndKts;
     return 100 * (v / srSpdMax);
   }
+
   function envWindXfract(wndKts) {
     const v = impSpd ? KtsToMph(wndKts) : wndKts;
     return 100 * (v / envSpdMax);
@@ -2396,6 +2924,10 @@ function StormMotionBox(Sounding){
   })
 }
 
+/** Returns lapse box data.
+ * @param {*} Sounding Parameter for GetLapseBox.
+ * @returns {void} No value.
+ */
 function GetLapseBox(Sounding) {
   const Canv = $("Values2");
   const ctx = Canv.getContext("2d");
@@ -2471,6 +3003,17 @@ function GetLapseBox(Sounding) {
   }
 }
 
+/** Lapse rate box step function.
+ * @param {*} ctx Parameter for LapseBoxStep.
+ * @param {*} Canv Parameter for LapseBoxStep.
+ * @param {*} color Parameter for LapseBoxStep.
+ * @param {*} Title Parameter for LapseBoxStep.
+ * @param {*} Scale Parameter for LapseBoxStep.
+ * @param {*} Value Parameter for LapseBoxStep.
+ * @param {*} lapseUnit Parameter for LapseBoxStep.
+ * @param {*} Step Parameter for LapseBoxStep.
+ * @returns {*} Result of the function.
+ */
 function LapseBoxStep(ctx, Canv, color, Title, Scale, Value, lapseUnit, Step) {
   ctx.fillStyle = color;
   ctx.textAlign = "left";
@@ -2483,6 +3026,10 @@ function LapseBoxStep(ctx, Canv, color, Title, Scale, Value, lapseUnit, Step) {
   return Scale + Step;
 }
 
+/** Returns the color for a step based on its value.
+ * @param {*} N Parameter for StepColor.
+ * @returns {*} Result of the function.
+ */
 function StepColor(N) {
   if (N <= 1) {
     return "rgba(125,125,125,1)";
@@ -2506,6 +3053,9 @@ function StepColor(N) {
 }
 
 
+/** Cleans the canvas.
+ * @returns {void} No value.
+ */
 function Clean() {
   let tempN = DarkMode == true && "rgba(0,0,0,1)" || "rgba(255,255,255,1)";
   const clearId = (id) => {
@@ -2528,6 +3078,11 @@ function Clean() {
 
 let CSMot = {};
 
+/** Returns the critical angle between storm motion and wind shear.
+ * @param {*} srWind Parameter for criticalAngle.
+ * @param {*} shear Parameter for criticalAngle.
+ * @returns {*} Result of the function.
+ */
 function criticalAngle(srWind, shear) {
     const dot = srWind.x * shear.x + srWind.y * shear.y;
     const magA = Math.sqrt(srWind.x**2 + srWind.y**2);
@@ -2536,6 +3091,11 @@ function criticalAngle(srWind, shear) {
     return Math.acos(Math.max(-1, Math.min(1, cosAngle))) * 180 / Math.PI;
 }
 
+/** Draws wind params content.
+ * @param {*} Sounding Parameter for DrawWindParams.
+ * @param {*} WindParams Parameter for DrawWindParams.
+ * @returns {void} No value.
+ */
 function DrawWindParams(Sounding, WindParams) {
   coerceTornadoClimoToGraphIfNeeded(Sounding);
   const Canv = $("Values5");
@@ -2824,6 +3384,10 @@ function radiansToDegrees(radians) {
   return radians * (180 / Math.PI);
 }
 
+/** Draws vwpinsets content.
+ * @param {*} Sounding Parameter for DrawVWPInsets.
+ * @returns {void} No value.
+ */
 function DrawVWPInsets(Sounding){
     const Canv2 = $("Values7");
     const ctx2 = Canv2.getContext("2d");
@@ -2842,6 +3406,7 @@ function DrawVWPInsets(Sounding){
       const v = impSpd ? KtsToMph(wndKts) : wndKts;
       return 100 * (v / srSpdMax);
     }
+
     function envWindXfract(wndKts) {
       const v = impSpd ? KtsToMph(wndKts) : wndKts;
       return 100 * (v / envSpdMax);
@@ -3364,19 +3929,39 @@ function DrawVWPInsets(Sounding){
     }
 }
 
+/** Returns box pos data.
+ * @param {*} BoundX Parameter for GetBoxPos.
+ * @param {*} BoundY Parameter for GetBoxPos.
+ * @param {*} X Parameter for GetBoxPos.
+ * @param {*} Y Parameter for GetBoxPos.
+ * @returns {*} Result of the function.
+ */
 function GetBoxPos(BoundX, BoundY, X, Y) {
   return { x: BoundX[0] + (BoundX[1] - BoundX[0]) * (X / 100), y: BoundY[0] + (BoundY[1] - BoundY[0]) * (Y / 100) };
 }
 
+/** Checks check mode.
+ * @param {*} C1 Parameter for CheckMode.
+ * @param {*} C2 Parameter for CheckMode.
+ * @returns {*} Result of the function.
+ */
 function CheckMode(C1, C2) {
   return DarkMode == true && C1 || C2;
 }
 
 
+/** Radians to degrees
+ * @param {*} radians Parameter for RtoDeg.
+ * @returns {*} Result of the function.
+ */
 function RtoDeg(radians) {
   return radians * (180 / Math.PI);
 }
 
+/** Converts cart to polar values.
+ * @param {*} N Parameter for ConvertCartToPolar.
+ * @returns {*} Result of the function.
+ */
 function ConvertCartToPolar(N) {
   return {
     WD: 180 + RtoDeg(Math.atan(N.y / N.x)),
@@ -3384,6 +3969,10 @@ function ConvertCartToPolar(N) {
   }
 }
 
+/** Converts cart to polar2 values.
+ * @param {*} N Parameter for ConvertCartToPolar2.
+ * @returns {*} Result of the function.
+ */
 function ConvertCartToPolar2(N) {
   return {
     WD: (270 + RtoDeg(Math.atan(N.y / N.x))) % 360,
@@ -3395,6 +3984,10 @@ var Climo = [];
 const LatBounds = [25, 50];
 const LonBounds = [-124, -64];
 
+/** Checks whether a sounding is within tornado climatology bounds.
+ * @param {*} Sounding Parameter for isSoundingInTornadoClimoBounds.
+ * @returns {*} Result of the function.
+ */
 function isSoundingInTornadoClimoBounds(Sounding) {
   if (!Sounding || !Sounding.Location2 || Sounding.Location2.length < 2) return false;
   const lat = Sounding.Location2[0];
@@ -3433,6 +4026,10 @@ function isSoundingInTornadoClimoBounds(Sounding) {
 /** Whether the current sounding sits inside the CONUS tornado climatology grid. */
 let tornadoClimoAvailable = true;
 
+/** Normalizes tornado climatology data for graphing.
+ * @param {*} Sounding Parameter for coerceTornadoClimoToGraphIfNeeded.
+ * @returns {void} No value.
+ */
 function coerceTornadoClimoToGraphIfNeeded(Sounding) {
   const avail =
     Sounding && Sounding.Location2 && Sounding.Location2.length >= 2
@@ -3450,7 +4047,9 @@ function coerceTornadoClimoToGraphIfNeeded(Sounding) {
   emit("change");
 }
 
-/** Show the height graph (Values4) or the climatology / winter panel (Values6). */
+/** Show the height graph (Values4) or the climatology / winter panel (Values6).
+ * @returns {void} No value.
+ */
 function applySidePanelVisibility() {
   const graphCanvas = $("Values4");
   const climoCanvas = $("Values6");
@@ -3469,6 +4068,8 @@ var ClimaSet = false;
 /** Derived from SHARPpy
  * 
  * @param {*} Sounding 
+
+ * @returns {*} Result of the function.
  */
 function Init_Phase(Sounding) {
   let phase = -1;
@@ -3525,6 +4126,10 @@ function Init_Phase(Sounding) {
   }
 }
 
+/** Estimates precipitation type from the sounding.
+ * @param {*} Sounding Parameter for BestGuessPrecip.
+ * @returns {*} Result of the function.
+ */
 function BestGuessPrecip(Sounding) {
   let Sfc = GetLayerByPres(Sounding.Sounding, "SFC");
 
@@ -3642,7 +4247,10 @@ function BestGuessPrecip(Sounding) {
   }
 }
 
-/** Side panel: "Graph" (height graph), "Tornado" (CONUS climatology) or "Winter". */
+/** Side panel: "Graph" (height graph), "Tornado" (CONUS climatology) or "Winter".
+ * @param {*} mode Parameter for ChangeSidePanelMode.
+ * @returns {void} No value.
+ */
 function ChangeSidePanelMode(mode) {
   if (
     mode === "Tornado" &&
@@ -3664,6 +4272,10 @@ function ChangeSidePanelMode(mode) {
   }
 }
 
+/** Sets or applies hodo mode state.
+ * @param {*} mode Parameter for SetHodoMode.
+ * @returns {void} No value.
+ */
 function SetHodoMode(mode) {
   if (mode === "Relative") {
       HodoMode = true;
@@ -3679,6 +4291,10 @@ function SetHodoMode(mode) {
 let SidePanelMode = "Winter"; 
 let currentEFScale = "EF2+"; // Default to significant
 
+/** Sets or applies efscale state.
+ * @param {*} scale Parameter for SetEFScale.
+ * @returns {void} No value.
+ */
 function SetEFScale(scale) {
     currentEFScale = scale; // Expects "EF0+" or "EF2+"
     if (Snding && Snding.Sounding) {
@@ -3686,14 +4302,27 @@ function SetEFScale(scale) {
     }
 }
 
+/** Switches significance of climatology
+ * @param {*} ef2_val Parameter for ClimoSwitch.
+ * @param {*} ef0_val Parameter for ClimoSwitch.
+ * @returns {*} Result of the function.
+ */
 function ClimoSwitch(ef2_val, ef0_val) {
     return currentEFScale === "EF2+" ? ef2_val : ef0_val;
 }
 
+/** Draws winter stats content.
+ * @param {*} ctx Parameter for DrawWinterStats.
+ * @param {*} Canv Parameter for DrawWinterStats.
+ * @param {*} Sounding Parameter for DrawWinterStats.
+ * @param {*} Info Parameter for DrawWinterStats.
+ * @returns {void} No value.
+ */
 function DrawWinterStats(ctx, Canv, Sounding, Info) {
     const W = Canv.width;
     const H = Canv.height;
     const cx = W * 0.5;
+
     const fs = (frac) => `${Math.round(Math.min(H, W) * frac)}px`;
 
     ctx.fillStyle = "rgba(0,0,0,1)";
@@ -3777,9 +4406,18 @@ function DrawWinterStats(ctx, Canv, Sounding, Info) {
     ctx.fillText(`${PrecipType}`, cx, yPos);
 }
 
+/** Draws tornado climo content.
+ * @param {*} ctx Parameter for DrawTornadoClimo.
+ * @param {*} Canv Parameter for DrawTornadoClimo.
+ * @param {*} Sounding Parameter for DrawTornadoClimo.
+ * @param {*} Info Parameter for DrawTornadoClimo.
+ * @param {*} Wnd Parameter for DrawTornadoClimo.
+ * @returns {void} No value.
+ */
 function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
     const W = Canv.width;
     const H = Canv.height;
+
     const fs = (frac) => `${Math.round(Math.min(H, W) * frac)}px`; 
 
     ctx.fillStyle = "rgba(0,0,0,1)";
@@ -3796,6 +4434,7 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
         const nms  = ClimoSwitch(numbs2, numbs)[LatB][LonB];
 
         const cx = W * 0.5;
+
         const fs = (frac) => `${Math.round(H * frac)}px`;
 
         // Header
@@ -3914,6 +4553,12 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
 let lastClimoDraw = null;
 let tornadoClimoRedrawQueued = false;
 
+/** Draws climo content.
+ * @param {*} Sounding Parameter for DrawClimo.
+ * @param {*} Info Parameter for DrawClimo.
+ * @param {*} Wnd Parameter for DrawClimo.
+ * @returns {void} No value.
+ */
 function DrawClimo(Sounding, Info, Wnd) {
   lastClimoDraw = [Sounding, Info, Wnd];
   const Canv = $("Values6");
@@ -3965,10 +4610,21 @@ function DrawClimo(Sounding, Info, Wnd) {
   }
 }
 
+/** Calculates the angle between two vectors.
+ * @param {*} a Parameter for angleBetween.
+ * @param {*} b Parameter for angleBetween.
+ * @returns {*} Result of the function.
+ */
 function angleBetween(a, b) {
     return ((b - a + 180) % 360 + 360) % 360 - 180;
 }
 
+/** Draws boxes content.
+ * @param {*} Sounding Parameter for DrawBoxes.
+ * @param {*} Info Parameter for DrawBoxes.
+ * @param {*} wind Parameter for DrawBoxes.
+ * @returns {void} No value.
+ */
 function DrawBoxes(Sounding, Info, wind) {
   if (VWPActive){
     return
@@ -4568,6 +5224,10 @@ function DrawBoxes(Sounding, Info, wind) {
 }
 
 // Add these exported setter functions alongside your existing exports
+/** Sets or applies sounding design state state.
+ * @param {*} design Parameter for setSoundingDesignState.
+ * @returns {void} No value.
+ */
 const setSoundingDesignState = (design) => {
     if (typeof design.hodographNumbers === 'boolean') {
         DisplayHodographNumbers = design.hodographNumbers;
@@ -4595,6 +5255,10 @@ const setSoundingDesignState = (design) => {
     }
 };
 
+/** Sets or applies sounding units state.
+ * @param {*} unitSystem Parameter for setSoundingUnits.
+ * @returns {void} No value.
+ */
 function setSoundingUnits(unitSystem) {
   switch (unitSystem) {
     case 'default':
@@ -4611,6 +5275,10 @@ function setSoundingUnits(unitSystem) {
   }
 }
 
+/** Returns the color for a temperature based on its value.
+ * @param {*} tempC Parameter for tempStyle.
+ * @returns {*} Result of the function.
+ */
 function tempStyle(tempC) {
     if (tempC == null) return { bg: 'rgba(48, 58, 68, 0.7)', color: '#dce7ee' };
     if (tempC >= 30) return { bg: 'rgba(186, 62, 42, 0.82)', color: '#fff4f0' };
@@ -4622,6 +5290,10 @@ function tempStyle(tempC) {
     return { bg: 'rgba(78, 70, 155, 0.85)', color: '#f2f0ff' };
 }
 
+/** Returns the color for a relative humidity based on its value.
+ * @param {*} rh Parameter for rhStyle.
+ * @returns {*} Result of the function.
+ */
 function rhStyle(rh) {
     if (rh == null) return { bg: 'rgba(48, 58, 68, 0.7)', color: '#dce7ee' };
     if (rh >= 90) return { bg: 'rgba(58, 48, 138, 0.85)', color: '#f0eaff' };
@@ -4632,6 +5304,15 @@ function rhStyle(rh) {
     return { bg: 'rgba(145, 92, 50, 0.75)', color: '#fff6ee' };
 }
 
+/** Adds a rounded rectangle to the current canvas path.
+ * @param {*} ctx Parameter for roundRectPath.
+ * @param {*} x Parameter for roundRectPath.
+ * @param {*} y Parameter for roundRectPath.
+ * @param {*} w Parameter for roundRectPath.
+ * @param {*} h Parameter for roundRectPath.
+ * @param {*} r Parameter for roundRectPath.
+ * @returns {void} No value.
+ */
 function roundRectPath(ctx, x, y, w, h, r) {
   const radius = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
@@ -4643,12 +5324,33 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+/** Fills a rounded rectangle on the canvas.
+ * @param {*} ctx Parameter for fillRoundRect.
+ * @param {*} x Parameter for fillRoundRect.
+ * @param {*} y Parameter for fillRoundRect.
+ * @param {*} w Parameter for fillRoundRect.
+ * @param {*} h Parameter for fillRoundRect.
+ * @param {*} r Parameter for fillRoundRect.
+ * @param {*} fill Parameter for fillRoundRect.
+ * @returns {void} No value.
+ */
 function fillRoundRect(ctx, x, y, w, h, r, fill) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.fillStyle = fill;
   ctx.fill();
 }
 
+/** Strokes a rounded rectangle on the canvas.
+ * @param {*} ctx Parameter for strokeRoundRect.
+ * @param {*} x Parameter for strokeRoundRect.
+ * @param {*} y Parameter for strokeRoundRect.
+ * @param {*} w Parameter for strokeRoundRect.
+ * @param {*} h Parameter for strokeRoundRect.
+ * @param {*} r Parameter for strokeRoundRect.
+ * @param {*} stroke Parameter for strokeRoundRect.
+ * @param {*} lineWidth Parameter for strokeRoundRect.
+ * @returns {void} No value.
+ */
 function strokeRoundRect(ctx, x, y, w, h, r, stroke, lineWidth = 1) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.strokeStyle = stroke;
@@ -4656,12 +5358,23 @@ function strokeRoundRect(ctx, x, y, w, h, r, stroke, lineWidth = 1) {
   ctx.stroke();
 }
 
+/** Chooses text with contrast against a category background.
+ * @param {*} kt Parameter for categoryTextColor.
+ * @returns {*} Result of the function.
+ */
 function categoryTextColor(kt) {
   const n = Number(kt);
   if (n >= 64 && n < 96) return '#1a1a1a';
   return '#f4fffc';
 }
 
+/** Generates the looks for the drop sonde.
+ * @param {*} props Parameter for GenerateDropSondeLooks.
+ * @param {*} reductions Parameter for GenerateDropSondeLooks.
+ * @param {*} times Parameter for GenerateDropSondeLooks.
+ * @param {*} intensityNumberFunction Parameter for GenerateDropSondeLooks.
+ * @returns {void} No value.
+ */
 function GenerateDropSondeLooks(props, reductions, times, intensityNumberFunction){
   const Canv = $("Values11");
   const ctx = Canv.getContext("2d");
@@ -4783,6 +5496,13 @@ function GenerateDropSondeLooks(props, reductions, times, intensityNumberFunctio
   const mean150 = props.mean150;
   const mean500 = props.mean500;
 
+  /** Draws mean block content.
+   * @param {*} label Parameter for drawMeanBlock.
+   * @param {*} mean Parameter for drawMeanBlock.
+   * @param {*} reduction Parameter for drawMeanBlock.
+   * @param {*} y0 Parameter for drawMeanBlock.
+   * @returns {*} Result of the function.
+   */
   const drawMeanBlock = (label, mean, reduction, y0) => {
     const pillW = 170;
     const pillH = 28;
@@ -4856,6 +5576,14 @@ function GenerateDropSondeLooks(props, reductions, times, intensityNumberFunctio
   ctx.fillText(times.splash || "—", padX + 78, cursorY + 10);
 }
 
+/** Loads with parcel data.
+ * @param {*} Sounding Parameter for LoadWithParcel.
+ * @param {*} DisplayParcel Parameter for LoadWithParcel.
+ * @param {*} Info Parameter for LoadWithParcel.
+ * @param {*} ghst Parameter for LoadWithParcel.
+ * @param {*} comparisonSoundings Parameter for LoadWithParcel.
+ * @returns {void} No value.
+ */
 function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonSoundings = []) {
   const Canv = $("skewT");
   const ctx = Canv.getContext("2d");
@@ -5376,6 +6104,10 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
 }
 
 
+/** Converts polarto cart no90 values.
+ * @param {*} Slice Parameter for ConvertPolartoCart_No90.
+ * @returns {*} Result of the function.
+ */
 function ConvertPolartoCart_No90(Slice) {
   // // console.log(Slice);
   return {
@@ -5384,6 +6116,13 @@ function ConvertPolartoCart_No90(Slice) {
   }
 }
 
+/** Loads with wind data.
+ * @param {*} Sounding Parameter for LoadWithWind.
+ * @param {*} Info Parameter for LoadWithWind.
+ * @param {*} ghost Parameter for LoadWithWind.
+ * @param {*} comparisonSoundings Parameter for LoadWithWind.
+ * @returns {void} No value.
+ */
 function LoadWithWind(Sounding, Info, ghost = false, comparisonSoundings = []) {
   UpdateCSMotStorm(CSMot);
   let Sound = Sounding.Sounding;
@@ -5415,6 +6154,10 @@ function LoadWithWind(Sounding, Info, ghost = false, comparisonSoundings = []) {
 
 let VWPActive = false;
 
+/** Sets or applies vwp active state.
+ * @param {*} value Parameter for setVwpActive.
+ * @returns {void} No value.
+ */
 function setVwpActive(value) {
   VWPActive = value === true;
 }
@@ -5438,6 +6181,10 @@ let FrontActive = false;
 let dStart = { x: 0, y: 0 };
 let dEnd = { x: 0, y: 0 };
 
+/** Handles mouse movement over the hodograph.
+ * @param {*} e Parameter for HodographMouseMoved.
+ * @returns {void} No value.
+ */
 function HodographMouseMoved(e) {
   if (ChangeMod && activeChange2) {
     const Canv = $("hodographOverHang3");
@@ -5472,6 +6219,10 @@ let def = {};
 var md = false;
 
 
+/** Handles mouse movement over the skew-T.
+ * @param {*} e Parameter for SkewTMouseMoved.
+ * @returns {void} No value.
+ */
 function SkewTMouseMoved(e) {
   CursorReadout(e);
 
@@ -5526,6 +6277,9 @@ function SkewTMouseMoved(e) {
   }
 }
 
+/** Toggles the cursor visibility.
+ * @returns {void} No value.
+ */
 function Flip() {
   if (ReadOutOn) {
     CursorActive = !CursorActive;
@@ -5551,40 +6305,59 @@ let HodographColorTable = 0;
 
 let HodographScaleMode = 0;
 
-/** Hodograph scale: 0 = none, 1 = storm relative, 2 = dynamic. Cycles when mode is omitted. */
+/** Hodograph scale: 0 = none, 1 = storm relative, 2 = dynamic. Cycles when mode is omitted.
+ * @param {*} mode Parameter for ChangeStateDynamicHodo.
+ * @returns {*} Result of the function.
+ */
 function ChangeStateDynamicHodo(mode) {
     HodographScaleMode = typeof mode === 'number' ? ((mode % 3) + 3) % 3 : (HodographScaleMode + 1) % 3;
     redrawHodographPanels();
     return HodographScaleMode;
 }
 
-/** Hodograph color table: 0 = Default, 1 = SounderPY, 2 = Rainbow, 3 = Greyscale. Cycles when omitted. */
+/** Hodograph color table: 0 = Default, 1 = SounderPY, 2 = Rainbow, 3 = Greyscale. Cycles when omitted.
+ * @param {*} index Parameter for ChangeStateHodographColorTable.
+ * @returns {*} Result of the function.
+ */
 function ChangeStateHodographColorTable(index) {
   HodographColorTable = typeof index === 'number' ? ((index % 4) + 4) % 4 : (HodographColorTable + 1) % 4;
   redrawHodographPanels();
   return HodographColorTable;
 }
 
-/** Height labels along the hodograph trace. Toggles when `on` is omitted. */
+/** Height labels along the hodograph trace. Toggles when `on` is omitted.
+ * @param {*} on Parameter for ChangeStateHodographNumbers.
+ * @returns {*} Result of the function.
+ */
 function ChangeStateHodographNumbers(on) {
   DisplayHodographNumbers = typeof on === 'boolean' ? on : !DisplayHodographNumbers;
   redrawHodographPanels();
   return DisplayHodographNumbers;
 }
 
-/** Thin dense observed wind profiles to SPC-like spacing on the hodograph. */
+/** Thin dense observed wind profiles to SPC-like spacing on the hodograph.
+ * @param {*} on Parameter for setHodographTrimWindProfile.
+ * @returns {*} Result of the function.
+ */
 function setHodographTrimWindProfile(on) {
   HodographTrimWindProfile = on !== false;
   redrawHodographPanels();
   return HodographTrimWindProfile;
 }
 
+/** Redraws the hodograph panels.
+ * @returns {void} No value.
+ */
 function redrawHodographPanels() {
   if (!Snding || !Snding.Sounding) return;
   DrawHodograph(Snding, ghost, currentComparisonSoundings);
   if (Info && Info.EffInflow !== undefined) DrawInflowHodo(Snding.Sounding, Info.EffInflow);
 }
 
+/** Handles wheel events for the skew-T.
+ * @param {*} e Parameter for SkewTWheel.
+ * @returns {void} No value.
+ */
 function SkewTWheel(e) {
   e.preventDefault();
   const Canv = $("skewT");
@@ -5638,6 +6411,10 @@ function SkewTWheel(e) {
   }
 }
 
+/** Handles wheel events for the hodograph.
+ * @param {*} e Parameter for HodographWheel.
+ * @returns {void} No value.
+ */
 function HodographWheel(e) {
   e.preventDefault();
   const Canv = $("hodograph");
@@ -5669,6 +6446,10 @@ function HodographWheel(e) {
 };
 
 let ctrldown = false;
+/** Handles on window key up events.
+ * @param {*} e Parameter for onWindowKeyUp.
+ * @returns {void} No value.
+ */
 const onWindowKeyUp = (e) => {
   if (e.key == "Control") {
     ctrldown = false;
@@ -5679,6 +6460,9 @@ const onWindowKeyUp = (e) => {
   }
 };
 
+/** Initializes the remote data stores.
+ * @returns {void} No value.
+ */
 function RemoteDataStores(){
   Slices = [];
   ChangeMod = false;
@@ -5686,6 +6470,10 @@ function RemoteDataStores(){
   dEnd2 = {x:0, y:0};
 }
 
+/** Handles on window key down events.
+ * @param {*} e Parameter for onWindowKeyDown.
+ * @returns {void} No value.
+ */
 const onWindowKeyDown = (e) => {
   if (altScrollActive == false) {
     altScrollActive = e.key == "Alt";
@@ -5815,6 +6603,11 @@ const onWindowKeyDown = (e) => {
   }
 };
 
+/** Finishes mouse input on skew-t
+ * @param {*} e Parameter for FinishMouseSkew.
+ * @param {*} PosC Parameter for FinishMouseSkew.
+ * @returns {void} No value.
+ */
 function FinishMouseSkew(e, PosC) {
   const Canv = $("skewTOverHang2");
   const c2v = $("skewT");
@@ -5898,6 +6691,11 @@ function FinishMouseSkew(e, PosC) {
   ctx.fillRect(dStart.x, dStart.y, dEnd.x - dStart.x, dEnd.y - dStart.y);
 }
 
+/** Finishes mouse input on the hodograph.
+ * @param {*} e Parameter for FinishMouseHodo.
+ * @param {*} PosC Parameter for FinishMouseHodo.
+ * @returns {void} No value.
+ */
 function FinishMouseHodo(e, PosC) {
   const Canv = $("hodographOverHang3");
   const c2v = $("hodograph");
@@ -5962,6 +6760,10 @@ function FinishMouseHodo(e, PosC) {
 }
 
 
+/** Handles on window mouse up events.
+ * @param {*} e Parameter for onWindowMouseUp.
+ * @returns {void} No value.
+ */
 const onWindowMouseUp = (e) => {
   md = false;
   if (altScrollActive) {
@@ -6016,6 +6818,10 @@ const onWindowMouseUp = (e) => {
   }
 };
 
+/** Handles mouse down events on the skew-T.
+ * @param {*} e Parameter for SkewTMouseDown.
+ * @returns {void} No value.
+ */
 function SkewTMouseDown(e) {
   md = true;
   if (ChangeMod && !activeChange) {
@@ -6035,6 +6841,10 @@ function SkewTMouseDown(e) {
   }
 }
 
+/** Handles mouse down events on the hodograph.
+ * @param {*} e Parameter for HodographMouseDown.
+ * @returns {void} No value.
+ */
 function HodographMouseDown(e) {
   if (ChangeMod && !activeChange) {
     const Canv = $("hodographOverHang3");
@@ -6051,12 +6861,19 @@ function HodographMouseDown(e) {
   }
 }
 
+/** Handles front-related events.
+ * @param {*} e Parameter for Front.
+ * @returns {void} No value.
+ */
 function Front(e) {
   if (FrontActive) {
     DrawFront(e);
   }
 }
 
+/** Changes front state.
+ * @returns {void} No value.
+ */
 function ChangeFront() {
   setFrontActiveState(!FrontActive);
 
@@ -6066,14 +6883,27 @@ function ChangeFront() {
   }
 }
 
+/** Sets or applies front active state state.
+ * @param {*} value Parameter for setFrontActiveState.
+ * @returns {void} No value.
+ */
 function setFrontActiveState(value) {
   FrontActive = value;
 }
 
+/** Sets or applies change mod state state.
+ * @param {*} value Parameter for setChangeModState.
+ * @returns {void} No value.
+ */
 function setChangeModState(value) {
   ChangeMod = value;
 }
 
+/** Returns mouse pos data.
+ * @param {*} canvas Parameter for getMousePos.
+ * @param {*} evt Parameter for getMousePos.
+ * @returns {*} Result of the function.
+ */
 function getMousePos(canvas, evt) {
   var rect = canvas.getBoundingClientRect(),
     scaleX = canvas.width / rect.width,
@@ -6088,6 +6918,10 @@ function getMousePos(canvas, evt) {
 let CursorActive = true;
 let ReadOutOn = true;
 
+/** Converts cart to polar regular values.
+ * @param {*} V1 Parameter for ConvertCartToPolar_Regular.
+ * @returns {*} Result of the function.
+ */
 function ConvertCartToPolar_Regular(V1){
   const dy = V1.y - 0;
   const dx = V1.x - 0;
@@ -6096,6 +6930,10 @@ function ConvertCartToPolar_Regular(V1){
   return { WD: degrees%360, WS: Mag(V1) };
 }
 
+/** Converts cart to polar real values.
+ * @param {*} V1 Parameter for ConvertCartToPolarReal.
+ * @returns {*} Result of the function.
+ */
 function ConvertCartToPolarReal(V1) {
   const dy = V1.y - 0;
   const dx = V1.x - 0;
@@ -6104,6 +6942,10 @@ function ConvertCartToPolarReal(V1) {
   return { WD: (degrees + 270) % 360, WS: Mag(V1) };
 }
 
+/** Converts cart to polar real rnd values.
+ * @param {*} V1 Parameter for ConvertCartToPolarRealRnd.
+ * @returns {*} Result of the function.
+ */
 function ConvertCartToPolarRealRnd(V1) {
   const dy = V1.y - 0;
   const dx = V1.x - 0;
@@ -6114,6 +6956,11 @@ function ConvertCartToPolarRealRnd(V1) {
 
 let LastMousePosF;
 
+/** Draws front content.
+ * @param {*} e Parameter for DrawFront.
+ * @param {*} just Parameter for DrawFront.
+ * @returns {void} No value.
+ */
 function DrawFront(e, just = false) {
   if (!FrontActive) {
     return;
@@ -6179,6 +7026,12 @@ function DrawFront(e, just = false) {
 var LastMousePos;
 var LastPres;
 
+/** Handles cursor readout functionality.
+ * @param {*} e Parameter for CursorReadout.
+ * @param {*} just Parameter for CursorReadout.
+ * @param {*} n Parameter for CursorReadout.
+ * @returns {void} No value.
+ */
 function CursorReadout(e, just = false, n = false) {
   const Canv = $("skewTOverHang");
   const cr = $("skewT");
@@ -6347,6 +7200,9 @@ function CursorReadout(e, just = false, n = false) {
   }
 }
 
+/** Changes read out state.
+ * @returns {*} Result of the function.
+ */
 function ChangeReadOut() {
   CursorActive = true;
   setReadOutOnState(!ReadOutOn);
@@ -6360,6 +7216,10 @@ function ChangeReadOut() {
   return ReadOutOn;
 }
 
+/** Sets or applies read out on state state.
+ * @param {*} value Parameter for setReadOutOnState.
+ * @returns {void} No value.
+ */
 function setReadOutOnState(value) {
     ReadOutOn = value;
 }
@@ -6368,6 +7228,10 @@ let ghost = false;
 
 
 // Helper function to create a smooth gradient color based on LapseRate
+/** Returns lrgradient color data.
+ * @param {*} lr Parameter for getLRGradientColor.
+ * @returns {*} Result of the function.
+ */
 function getLRGradientColor(lr) {
   // Define color stops: [percent, [r, g, b]]
   const colorStops = [
@@ -6411,6 +7275,10 @@ function getLRGradientColor(lr) {
 }
 
 //
+/** Returns temp adv gradient color data.
+ * @param {*} tadv Parameter for getTempAdvGradientColor.
+ * @returns {*} Result of the function.
+ */
 function getTempAdvGradientColor(tadv) {
   // Define color stops: [percent, [r, g, b]]
   const colorStops = [
@@ -6453,6 +7321,10 @@ function getTempAdvGradientColor(tadv) {
 }
 
 // Helper function to create a smooth gradient color based on Relative Humidity
+/** Returns rhgradient color data.
+ * @param {*} rh Parameter for getRHGradientColor.
+ * @returns {*} Result of the function.
+ */
 function getRHGradientColor(rh) {
   // Define color stops: [percent, [r, g, b]]
   const colorStops = [
@@ -6486,6 +7358,10 @@ function getRHGradientColor(rh) {
   return `rgba(${r}, ${g}, ${b}, 0.8)`;
 }
 
+/** Returns wsgradient color data.
+ * @param {*} ws Parameter for getWSGradientColor.
+ * @returns {*} Result of the function.
+ */
 function getWSGradientColor(ws) {
   // Define color stops: [speed_kts, [r, g, b]]
   const colorStops = [
@@ -6540,6 +7416,12 @@ function getWSGradientColor(ws) {
   return `rgba(${r}, ${g}, ${b}, 0.5)`;
 }
 
+/** Infers temperature advection from sounding temperature and wind profiles.
+ * @param {*} Sound Parameter for inferred_temp_adv.
+ * @param {*} dp Parameter for inferred_temp_adv.
+ * @param {*} lat Parameter for inferred_temp_adv.
+ * @returns {*} Result of the function.
+ */
 function inferred_temp_adv(Sound, dp=-50, lat=35){
   const Snd = Sound.Sounding;
   const OMEGA = (2.0 * Math.PI) / 86164.0;
@@ -6628,10 +7510,20 @@ function inferred_temp_adv(Sound, dp=-50, lat=35){
   return { temp_adv, pressure_bounds };
 }
 
+/** Draws vertical bars content.
+ * @param {*} Sounding Parameter for drawVerticalBars.
+ * @param {*} comparisonSoundings Parameter for drawVerticalBars.
+ * @param {*} fromVwpRedraw Parameter for drawVerticalBars.
+ * @returns {void} No value.
+ */
 function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = false) {
   const Canv = $("verticalBar");
   if (!Canv) return;
   const ctx = Canv.getContext("2d");
+  /** Returns the gradient stop for a given y-coordinate.
+   * @param {*} y Parameter for gradStop.
+   * @returns {*} Result of the function.
+   */
   const gradStop = (y) => clamp(y / 800, 0, 1);
   var TAdVMax;
   var TAdVMax2;
@@ -7086,7 +7978,10 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
   }
 }
 
-/** Vertical bar panel: full, or without the wind-speed column. Toggles when omitted. */
+/** Vertical bar panel: full, or without the wind-speed column. Toggles when omitted.
+ * @param {*} showWindSpeed Parameter for ChangeWBox.
+ * @returns {*} Result of the function.
+ */
 function ChangeWBox(showWindSpeed){
   noWSBox = typeof showWindSpeed === 'boolean' ? !showWindSpeed : !noWSBox;
   if (Snding && Snding.Sounding) drawVerticalBars(Snding, currentComparisonSoundings, false);
@@ -7098,11 +7993,18 @@ let presetsAutoSet = false;
 /** True after the user changes Wind/Lapse, Inset, Vertical, or Side Panel. Survives time scrubs. */
 let userLockedPresets = false;
 
+/** Unlock users sounding presets
+ * @returns {void} No value.
+ */
 function unlockUserSoundingPresets() {
     userLockedPresets = false;
     presetsAutoSet = false;
 }
 
+/** Chooses chart presets from the sounding characteristics.
+ * @param {*} Sounding Parameter for autoSetPresetsFromSounding.
+ * @returns {void} No value.
+ */
 function autoSetPresetsFromSounding(Sounding) {
     if (userLockedPresets || presetsAutoSet) return;
     presetsAutoSet = true;
@@ -7209,6 +8111,10 @@ let presetOverrides = { WindLapse: null, Inset: null, Vertical: null, SidePanel:
 /** What autoSetPresetsFromSounding picked for the current sounding. */
 let autoPresets = { WindLapse: 'Default', Inset: 'Default', Vertical: 'Default', SidePanel: 'Graph' };
 
+/** Applies user overrides to the active chart presets.
+ * @param {*} Sounding Parameter for applyPresetOverrides.
+ * @returns {void} No value.
+ */
 function applyPresetOverrides(Sounding) {
     for (const key of ['WindLapse', 'Inset', 'Vertical']) {
       Presets[key] = presetOverrides[key] || autoPresets[key];
@@ -7226,6 +8132,8 @@ function applyPresetOverrides(Sounding) {
  * Pin a preset, or pass "auto" to follow the per-sounding choice again.
  * @param {'WindLapse'|'Inset'|'Vertical'|'SidePanel'} type
  * @param {string} value
+
+ * @returns {void} No value.
  */
 function setPreset(type, value) {
   if (!(type in presetOverrides)) throw new Error(`SharpJS: unknown preset ${type}`);
@@ -7244,6 +8152,11 @@ function setPreset(type, value) {
   }
 }
 
+/** Draws skew tghost content.
+ * @param {*} Sounding Parameter for DrawSkewTGhost.
+ * @param {*} Soundings Parameter for DrawSkewTGhost.
+ * @returns {void} No value.
+ */
 function DrawSkewTGhost(Sounding, Soundings) {
   const Canv = $("skewT");
   if (!Canv) return;
@@ -7257,6 +8170,17 @@ function DrawSkewTGhost(Sounding, Soundings) {
 var DSnding = false;
 var isBoxSounding = true;
 
+/** Draws skew t content.
+ * @param {*} Sounding Parameter for DrawSkewT.
+ * @param {*} resetStart Parameter for DrawSkewT.
+ * @param {*} modify Parameter for DrawSkewT.
+ * @param {*} modify2 Parameter for DrawSkewT.
+ * @param {*} ghosted Parameter for DrawSkewT.
+ * @param {*} comparisonSoundings Parameter for DrawSkewT.
+ * @param {*} setmot Parameter for DrawSkewT.
+ * @param {*} vwpactive Parameter for DrawSkewT.
+ * @returns {void} No value.
+ */
 function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false, ghosted = false, comparisonSoundings = [], setmot=false, vwpactive=false) {
   if (vwpactive !== true) {
     VWPActive = false;
@@ -7513,6 +8437,9 @@ let Hodo2D = true;
 let ChangeMod = false;
 let M = "(Modified)";
 
+/** Resets hodograph state.
+ * @returns {void} No value.
+ */
 function ResetHodograph() {
   let NN = JSON.parse(JSON.stringify(DSnding));
   Snding.Sounding.W = NN.Sounding.W;
@@ -7547,6 +8474,9 @@ function ResetHodograph() {
   DrawSkewT(Snding, false, false, false, false, currentComparisonSoundings);
 }
 
+/** Resets skew t state.
+ * @returns {void} No value.
+ */
 function ResetSkewT() {
   let NN = JSON.parse(JSON.stringify(DSnding));
   Snding.Sounding.T = NN.Sounding.T;
@@ -7570,12 +8500,19 @@ function ResetSkewT() {
   DrawSkewT(Snding, false, false, false, false, currentComparisonSoundings);
 }
 
+/** Checks is numeric.
+ * @param {*} n Parameter for isNumeric.
+ * @returns {*} Result of the function.
+ */
 function isNumeric(n) {
   return !isNaN(parseFloat(n)) && isFinite(n);
 }
 
 // 1. First, let's fix the ShowObjects function to ensure it doesn't overwrite event listeners
 
+/** Shows the objects in the UI.
+ * @returns {void} No value.
+ */
 function ShowObjects() {
   let tableBody = $("modifySkewTBody");
   tableBody.innerHTML = "";
@@ -7663,6 +8600,9 @@ function ShowObjects() {
 }
 
 // 2. Create a separate function to set up the modal event listeners
+/** Sets or applies up modal events state.
+ * @returns {void} No value.
+ */
 function setupModalEvents() {
   const closeBtn = $("closeModifySkewTModal");
 
@@ -7676,6 +8616,9 @@ function setupModalEvents() {
   }
 }
 
+/** Turn off modify mode and reset state.
+ * @returns {void} No value.
+ */
 function TurnOff() {
   ChangeMod = false;
   // Clear per-chart state so late callbacks cannot redraw into removed canvases.
@@ -7685,6 +8628,10 @@ function TurnOff() {
   presetsAutoSet = false;
 }
 // 3. Update the ChangeModify function to use our new setup
+/** Sets or applies modify mode state.
+ * @param {*} on Parameter for setModifyMode.
+ * @returns {void} No value.
+ */
 function setModifyMode(on) {
   setChangeModState(!!on);
   let modifyModal = $("modifySkewTModal");
@@ -7715,6 +8662,10 @@ function setModifyMode(on) {
   }
 }
 
+/** Handles handle cell focus events.
+ * @param {*} event Parameter for handleCellFocus.
+ * @returns {void} No value.
+ */
 function handleCellFocus(event) {
   const cell = event.target;
   // Remove the suffix when editing
@@ -7732,6 +8683,10 @@ function handleCellFocus(event) {
   selection.addRange(range);
 }
 
+/** Handles handle cell blur events.
+ * @param {*} event Parameter for handleCellBlur.
+ * @returns {void} No value.
+ */
 function handleCellBlur(event) {
   const cell = event.target;
   const editHelper = $("editHelper");
@@ -7748,6 +8703,10 @@ function handleCellBlur(event) {
 }
 
 // Modified handleCellKeydown function to apply changes immediately when Enter is pressed
+/** Handles handle cell keydown events.
+ * @param {*} event Parameter for handleCellKeydown.
+ * @returns {void} No value.
+ */
 function handleCellKeydown(event) {
   const cell = event.target;
 
@@ -7911,6 +8870,10 @@ function handleCellKeydown(event) {
   }
 }
 
+/** update skew-t modification cell values
+ * @param {*} cell Parameter for updateCellValue.
+ * @returns {void} No value.
+ */
 function updateCellValue(cell) {
   const layerIndex = parseInt(cell.dataset.layer);
   const field = cell.dataset.field;
@@ -7955,6 +8918,9 @@ function updateCellValue(cell) {
 }
 
 // 6. Simplify the closeModifyModal function
+/** Turns off modify mode and resets state.
+ * @returns {void} No value.
+ */
 function closeModifyModal() {
   setModifyMode(false);
   emit("change");
@@ -7966,6 +8932,9 @@ var DisplayGraphMode = true;
  * Custom wind-shear layer. Nnn = "R" resets to 0-6 km, anything else loads `values`.
  * @param {string} Nnn
  * @param {{ bottom?: number|string, top?: number|string, mode?: 'Hght'|'Pres' }} [values]  km AGL or mb
+
+ * @param {*} values Parameter for LoadNewShearLyr.
+ * @returns {void} No value.
  */
 function LoadNewShearLyr(Nnn, values = {}) {
   if (!Snding || !Snding.Sounding) return;
@@ -8105,7 +9074,10 @@ let userSetCustomLapse = false;
 let userSetCustomWind = false;
 let DisplayStormMotions = false;
 
-/** Show every storm motion estimate in the lapse-rate box. Toggles when omitted. */
+/** Show every storm motion estimate in the lapse-rate box. Toggles when omitted.
+ * @param {*} show Parameter for LoadStormMotions.
+ * @returns {*} Result of the function.
+ */
 function LoadStormMotions(show){
   DisplayStormMotions = typeof show === 'boolean' ? show : !DisplayStormMotions;
   if (Snding && Snding.Sounding) GetLapseBox(Snding.Sounding);
@@ -8116,6 +9088,9 @@ function LoadStormMotions(show){
  * Custom lapse-rate layer. Nnn = "R" resets to 0-3 km, anything else loads `values`.
  * @param {string} Nnn
  * @param {{ bottom?: number|string, top?: number|string, mode?: 'Hght'|'Pres' }} [values]  km AGL or mb
+
+ * @param {*} values Parameter for LoadNewLapseLyr.
+ * @returns {void} No value.
  */
 function LoadNewLapseLyr(Nnn, values = {}) {
   if (!Snding || !Snding.Sounding) return;
@@ -8216,10 +9191,16 @@ function LoadNewLapseLyr(Nnn, values = {}) {
   }
 }
 
+/** Returns snding data.
+ * @returns {*} Result of the function.
+ */
 function getSnding() {
   return Snding;
 }
 
+/** Returns the visible comparison soundings.
+ * @returns {*} Result of the function.
+ */
 function getCurrentComparisonSoundings() {
   return currentComparisonSoundings;
 }
@@ -8227,7 +9208,9 @@ function getCurrentComparisonSoundings() {
 /** Last custom storm motion typed by the user (degrees from, knots). */
 let customMotionInput = { direction: 0, speed: 10 };
 
-/** Chart-space vector for the custom motion. Redraws rebuild it from the user's input so it survives. */
+/** Chart-space vector for the custom motion. Redraws rebuild it from the user's input so it survives.
+ * @returns {*} Result of the function.
+ */
 function customMotionVector() {
   const Angg = ((parseFloat(customMotionInput.direction) % 360) + 360) % 360 || 0;
   const Spdd = clamp(parseFloat(customMotionInput.speed) || 10, 0, 100);
@@ -8241,6 +9224,9 @@ function customMotionVector() {
  * @param {'RM'|'LM'|'MM'|'US'|'DS'|'DTMR'|'DTML'|'CM'} N
  * @param {boolean} [activateChanges=true] redraw afterwards
  * @param {{ direction?: number, speed?: number }} [custom] for "CM": motion direction (deg) and speed (kt)
+
+ * @param {*} custom Parameter for LoadNewWind.
+ * @returns {void} No value.
  */
 function LoadNewWind(N, activateChanges=true, custom=null) {
   userSelectedMotion = N;
@@ -8290,7 +9276,11 @@ function LoadNewWind(N, activateChanges=true, custom=null) {
 let DarkMode = true;
 let ModifiedWind = false;
 
-/** Convert a temperature in `mode` units ("F", "C" or "K") to Celsius. */
+/** Convert a temperature in `mode` units ("F", "C" or "K") to Celsius.
+ * @param {*} N Parameter for Conv.
+ * @param {*} mode Parameter for Conv.
+ * @returns {*} Result of the function.
+ */
 function Conv(N, mode = "F") {
   if (mode == "F") {
     return FtoC(N);
@@ -8303,6 +9293,11 @@ function Conv(N, mode = "F") {
   }
 }
 
+/** Returns a finite number or a fallback value.
+ * @param {*} v Parameter for finiteOr.
+ * @param {*} fallback Parameter for finiteOr.
+ * @returns {*} Result of the function.
+ */
 const finiteOr = (v, fallback) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : fallback;
@@ -8315,6 +9310,8 @@ const finiteOr = (v, fallback) => {
  * @param {object} [values]
  *   tmp: { temperature, dewpoint, unit: 'F'|'C'|'K' }  (blank values keep the current surface)
  *   wnd: { direction, speed }                          (degrees, knots)
+
+ * @returns {void} No value.
  */
 function LoadNewSfc(N, t, values = {}) {
   if (!Snding || !Snding.Sounding) return;
@@ -8432,6 +9429,8 @@ let customParcelPressure = 900;
  * Select the displayed parcel.
  * @param {'SB'|'ML'|'MU'|'CU'} N
  * @param {number} [pressure] for "CU": starting pressure in mb
+
+ * @returns {void} No value.
  */
 function LoadNewParcel(N, pressure) {
   userSelectedParcel = N;
@@ -8460,6 +9459,10 @@ function LoadNewParcel(N, pressure) {
 }
 
 
+/** Sets or applies title state.
+ * @param {*} K Parameter for SetTitle.
+ * @returns {void} No value.
+ */
 function SetTitle(K) {
   const Canv = $("skewTTitle");
   if (!Canv) return;
@@ -8530,6 +9533,8 @@ function SetTitle(K) {
  * @param {boolean} [opts.reset=true]  treat as a new sounding: re-run auto presets, reset parcel/motion
  *                                     choices to their defaults and remember it for "Reset SkewT/Hodograph"
  * @param {Array}   [opts.comparisons] comparison soundings ({ sounding, metadata }) to overlay
+
+ * @returns {void} No value.
  */
 function Load(text, processed = false, opts = {}) {
   let K = text;
@@ -8552,12 +9557,19 @@ function Load(text, processed = false, opts = {}) {
 
 
 // 1. New function to just get the data and filename
+/** Returns sounding text content data.
+ * @param {*} format Parameter for GetSoundingTextContent.
+ * @returns {*} Result of the function.
+ */
 function GetSoundingTextContent(format = SoundingExport) {
   if (!Snding || !Snding.Sounding) return null;
   return exportSounding(Snding, format, { savedBy: options.savedBy, filePrefix: options.filePrefix });
 }
 
 // 2. Modified original function (Kept for backward compatibility/browser fallback)
+/** Downloads the current sounding.
+ * @returns {void} No value.
+ */
 function DownloadSounding() {
   const data = GetSoundingTextContent();
   if (!data) return;
@@ -8574,6 +9586,10 @@ function DownloadSounding() {
   document.body.removeChild(element);
 }
 
+/** Averages multiple soundings.
+ * @param {*} Files Parameter for AverageAll.
+ * @returns {void} No value.
+ */
 function AverageAll(Files) {
   let TF = [];
 
@@ -8677,13 +9693,18 @@ const GetColorComp = [
   "rgba(255, 255, 255, 1)",
 ]
 
-/** Replace the comparison soundings ({ sounding, metadata } items) and redraw. */
+/** Replace the comparison soundings ({ sounding, metadata } items) and redraw.
+ * @param {*} list Parameter for setComparisons.
+ * @returns {void} No value.
+ */
 function setComparisons(list) {
   currentComparisonSoundings = Array.isArray(list) ? list : [];
   redraw();
 }
 
-/** Remove every comparison sounding and redraw the main one. */
+/** Remove every comparison sounding and redraw the main one.
+ * @returns {void} No value.
+ */
 function clearComparisons() {
   currentComparisonSoundings = [];
   if (DSnding && DSnding.Sounding) {
@@ -8694,6 +9715,9 @@ function clearComparisons() {
 
 /**
  * Overlay comparison soundings. Files: [[name, text], ...] (sparse arrays from older callers are fine).
+
+ * @param {*} Files Parameter for CompareSoundings.
+ * @returns {void} No value.
  */
 function CompareSoundings(Files) {
   let TF = [];
@@ -8739,6 +9763,11 @@ function CompareSoundings(Files) {
   //DrawSkewT(RR, true, false, false, false, TF);
 }
 
+/** Takes a screenshot of the current view.
+ * @param {*} del Parameter for Screenshot.
+ * @param {*} scale Parameter for Screenshot.
+ * @returns {*} Result of the function.
+ */
 function Screenshot(del = true, scale = 1) {
   return new Promise((resolve, reject) => {
     let ModifiedPanel = $("Values6");
@@ -8785,6 +9814,10 @@ function Screenshot(del = true, scale = 1) {
     dImg.fillRect(0, 0, downloadedImg.width, downloadedImg.height);
 
     // Convert a single canvas entry to a drawn image — all in parallel
+    /** Draws entry content.
+     * @param {*} img Parameter for drawEntry.
+     * @returns {*} Result of the function.
+     */
     const drawEntry = (img) => new Promise((res) => {
       if (!img[0]) { res(); return; }
 
@@ -8844,6 +9877,9 @@ function Screenshot(del = true, scale = 1) {
 
 
 
+/** Sets or applies  state.
+ * @returns {void} No value.
+ */
 function Set() {
   const c0 = $("skewTOverHang2");
 
@@ -8887,7 +9923,10 @@ let Presets = {
 
 let SoundingExport = "Default";
 
-/** Export text format: "Default" (SHARPpy), "SharpJS" (SHARPpy + omega) or "CM1". */
+/** Export text format: "Default" (SHARPpy), "SharpJS" (SHARPpy + omega) or "CM1".
+ * @param {*} format Parameter for setExportFormat.
+ * @returns {*} Result of the function.
+ */
 function setExportFormat(format) {
   if (['Default', 'SharpJS', 'CM1'].includes(format)) SoundingExport = format;
   emit("change");
@@ -8896,6 +9935,9 @@ function setExportFormat(format) {
 
 let VWPSounding = {};
 
+/** Applies motion and sounding data from a VWP profile.
+ * @returns {void} No value.
+ */
 function applyVwpMotionsAndSndingFromVWPSounding() {
   let SMS = GetBM(VWPSounding.Sounding);
   Motions = SMS;
@@ -8930,6 +9972,8 @@ function applyVwpMotionsAndSndingFromVWPSounding() {
 /**
  * Apply a VWP sounding (built by io/vwp.js buildVwpSounding) to the live skew-T / hodograph.
  * @param {object} stored Deep clone-safe plain object
+
+ * @returns {void} No value.
  */
 function applyNexradVwpStoredSounding(stored) {
   if (!stored || !stored.Sounding) return;
@@ -8939,6 +9983,11 @@ function applyNexradVwpStoredSounding(stored) {
   redrawSkewTFromVwp(VWPSounding);
 }
 
+/** Redraws the skew-T after applying a VWP sounding.
+ * @param {*} VWPSounding Parameter for redrawSkewTFromVwp.
+ * @param {*} options Parameter for redrawSkewTFromVwp.
+ * @returns {void} No value.
+ */
 function redrawSkewTFromVwp(VWPSounding, options = {}) {
   // Canvases can be gone if the viewer was destroyed between a fetch and its redraw.
   if (!$("skewT") || !$("skewTTitle")) {
@@ -8968,15 +10017,26 @@ function redrawSkewTFromVwp(VWPSounding, options = {}) {
   VWPActive = true;
 }
 
+/** Returns the active ghost sounding.
+ * @returns {*} Result of the function.
+ */
 function getGhost() { return ghost; }
+/** Returns the active display parcel.
+ * @returns {*} Result of the function.
+ */
 function getDP() { return DP; }
+/** Returns the current chart analysis information.
+ * @returns {*} Result of the function.
+ */
 function getInfo() { return Info; }
 
 const UNIT_SYSTEMS = ['default', 'metric', 'imperial'];
 const PARCELS = ['SB', 'ML', 'MU'];
 const MOTIONS = ['RM', 'LM', 'MM', 'US', 'DS', 'DTMR', 'DTML'];
 
-/** Snapshot of every user-facing option. Settings persistence and the controls panel read this. */
+/** Snapshot of every user-facing option. Settings persistence and the controls panel read this.
+ * @returns {*} Result of the function.
+ */
 function getState() {
   return {
     units: UNIT_SYSTEMS[useImperialUnits] || 'default',
@@ -9009,7 +10069,9 @@ function getState() {
   };
 }
 
-/** Redraw everything for the current sounding, keeping parcel / storm-motion choices. */
+/** Redraw everything for the current sounding, keeping parcel / storm-motion choices.
+ * @returns {void} No value.
+ */
 function redraw() {
   if (!Snding || !Snding.Sounding) return;
   if (VWPActive) {
@@ -9023,6 +10085,10 @@ function redraw() {
 /**
  * Apply several options at once (same keys as getState()) and redraw once.
  * Unknown keys and invalid values are ignored.
+
+ * @param {*} next Parameter for applyState.
+ * @param {*} options Parameter for applyState.
+ * @returns {*} Result of the function.
  */
 function applyState(next = {}, { redraw: doRedraw = true } = {}) {
   if (!next || typeof next !== 'object') return getState();
@@ -9057,11 +10123,17 @@ function applyState(next = {}, { redraw: doRedraw = true } = {}) {
 }
 
 let listenersAttached = false;
-/** The calc module keeps storm motion / presets in module state; point it at this chart first. */
+/** The calc module keeps storm motion / presets in module state; point it at this chart first.
+ * @returns {void} No value.
+ */
 function syncCalcState() {
   UpdateCSMotStorm(CSMot);
   UpdatePresets(Presets);
 }
+/** Wraps a chart action with synchronized calculation state.
+ * @param {*} fn Parameter for withCalcState.
+ * @returns {*} Result of the function.
+ */
 const withCalcState = (fn) => function (...args) {
   syncCalcState();
   return fn.apply(this, args);
@@ -9072,13 +10144,17 @@ const handlers = {
   mouseup: withCalcState(onWindowMouseUp),
 };
 
-/** Start listening for keyboard / mouse-up events on the window (modify mode, alt-drag). */
+/** Start listening for keyboard / mouse-up events on the window (modify mode, alt-drag).
+ * @returns {void} No value.
+ */
 function attach() {
   if (listenersAttached || typeof window === 'undefined') return;
   for (const [type, fn] of Object.entries(handlers)) window.addEventListener(type, fn);
   listenersAttached = true;
 }
-/** Remove window listeners and drop per-chart state. */
+/** Remove window listeners and drop per-chart state.
+ * @returns {void} No value.
+ */
 function detach() {
   if (listenersAttached) {
     for (const [type, fn] of Object.entries(handlers)) window.removeEventListener(type, fn);

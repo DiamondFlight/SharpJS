@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { parseSounding, analyze, levelAt, fromArrays } from '../src/core.js';
 import { sample } from './helpers.js';
 
-// Reference values are what the SharpJS chart draws for the same sounding
-// (pixel-compared against the previous SharpJS 1.61 chart).
+// Parcel-based Bunkers motion follows SHARPpy's 2014 method; motion-dependent
+// values differ from the previous SharpJS chart's classic non-parcel motion.
 const oun = parseSounding(sample('koun-1999-05-04-00z.txt'));
 
 test('parcels', () => {
@@ -20,29 +20,29 @@ test('parcels', () => {
   assert.equal(a.downdraft.dcape, 743);
 });
 
-test('storm motions and kinematics (Bunkers right)', () => {
+test('storm motions and kinematics (parcel-based Bunkers right)', () => {
   const a = analyze(oun);
-  assert.deepEqual(a.stormMotion.RM, { direction: 233, speed: 27.6 });
+  assert.deepEqual(a.stormMotion.RM, { direction: 230, speed: 26.4 });
   assert.deepEqual(a.stormMotion.used, a.stormMotion.RM);
   assert.equal(Math.round(a.stormMotion.LM.speed), 48);
   const l = a.kinematics.layers;
-  assert.deepEqual([l['0-500m'].srh, l['0-1km'].srh, l['0-3km'].srh, l['0-6km'].srh], [192, 270, 332, 371]);
+  assert.deepEqual([l['0-500m'].srh, l['0-1km'].srh, l['0-3km'].srh, l['0-6km'].srh], [181, 260, 325, 364]);
   assert.deepEqual(l['0-1km'].bulkShear, { direction: 219, speed: 25.5 });
-  assert.deepEqual(l['0-1km'].stormRelativeWind, { direction: 117, speed: 22.6 });
-  assert.equal(l['0-1km'].ehi, 4.8);
+  assert.deepEqual(l['0-1km'].stormRelativeWind, { direction: 118, speed: 21 });
+  assert.equal(l['0-1km'].ehi, 4.6);
   assert.equal(Math.round(l['0-6km'].bulkShear.speed), 46);
   const eff = a.effectiveInflow;
-  assert.equal(eff.srh, 293);
+  assert.equal(eff.srh, 284);
   assert.equal(eff.topHeightAgl, 1456);
   assert.deepEqual(eff.bulkShear, { direction: 234, speed: 27.8 });
-  assert.equal(eff.ehi, 5.2);
+  assert.equal(eff.ehi, 5.1);
 });
 
 test('composite indices', () => {
   const i = analyze(oun).indices;
-  assert.equal(i.stpFixed, 4);
-  assert.equal(i.stpEffective, 2.9);
-  assert.equal(i.scp, 15.3);
+  assert.equal(i.stpFixed, 3.9);
+  assert.equal(i.stpEffective, 2.8);
+  assert.equal(i.scp, 14.8);
   assert.equal(i.ship, 2.7);
   assert.equal(i.pwat, 1.03);
   assert.equal(i.rhDgzMean, 72);
@@ -50,7 +50,7 @@ test('composite indices', () => {
 
 test('storm motion choice changes SRH', () => {
   const lm = analyze(oun, { motion: 'LM' });
-  assert.equal(lm.kinematics.layers['0-1km'].srh, 115);
+  assert.equal(lm.kinematics.layers['0-1km'].srh, 108);
   const custom = analyze(oun, { motion: { direction: 240, speed: 30 } });
   assert.deepEqual(custom.stormMotion.used, { direction: 240, speed: 30 });
   assert.equal(custom.kinematics.layers['0-1km'].srh, 297);

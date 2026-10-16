@@ -77,7 +77,7 @@ SharpJS('#chart', {
   },
   soundingKey: 'gfs|35.2|-97.4|2026050112', // same key = same place, new time: keep parcel/motion choices
   controls: false,                         // you have your own UI
-  brandLabel: 'example.com',               // chart credit: "example.com - powered by SharpJS v1.61"
+  brandLabel: 'example.com',               // chart credit: "example.com - powered by SharpJS v1.7"
   persist: myServerAdapter,                // or 'auto' | 'local' | 'cookie' | false
   onChange: (state) => updateMyUi(state),
 });

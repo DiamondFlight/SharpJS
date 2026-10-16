@@ -1,9 +1,9 @@
 import { r_sat, ice_fraction, ice_fraction_deriv, ModifLerp, dwp_from_vaporpres, vp_from_spechum,
     dwp_from_spechum, dry_air_density, absHum, specHum, vp, spechum_from_dwp, rev_linear_interp, 
     linear_interp, entrainment_rate, updraft_radius, spec_heat_cap_of_moist_air, pres_at_hght,
-    GetLayerByPres, GetLayerByTemp, PolarToCartesianDeg, CartesianToPolarDeg, ConvertToInfo,
-    ConvertToRaw, GetLayerByHght, LastItem, calc_ecape_ncape, calc_sr_wind, Constants
+    PolarToCartesianDeg, CartesianToPolarDeg, LastItem, calc_ecape_ncape, calc_sr_wind, Constants
  } from './ecapeCalc.js';
+import {GetLayerByHght, GetLayerByPres, ConvertToInfo, ConvertToRaw, VirtTemp} from "../calc/skewtCalcs.js"
 
 //Next Functionos
 export function density_temperature(tmp, qv, qt){
@@ -75,7 +75,8 @@ function SALR(tmp_prcl, qt_prcl, pres_prcl, tmp_env, qv_env, eRate, prate, warme
     const tEntrain = -eRate * (tmp_prcl - tmp_env);
     const qEntrain = -eRate * (qv_parcel - qv_env);
 
-    qt_e = (qt_e !== null ? qt_e : -eRate * (qt_prcl - qv_env) - prate * (qt_prcl - qv_parcel));
+    qt_e = (qt_e == null ? -eRate * (qt_prcl - qv_env) - prate * (qt_prcl - qv_parcel) : qt_e);
+    //qt_e = (qt_e !== null ? qt_e : -eRate * (qt_prcl - qv_env) - prate * (qt_prcl - qv_parcel));
 
     //Water or something
     const q_condensate = qt_prcl - qv_parcel;
@@ -112,7 +113,7 @@ function SALR(tmp_prcl, qt_prcl, pres_prcl, tmp_env, qv_env, eRate, prate, warme
         Constants.g,
         ((L_s * Q_M) / (R_m0 * tmp_env)) * Constants.g,
         (c_pm - L_i * (qt_prcl - qv_parcel) * d_omega) * tEntrain,
-        L_s * (qEntrain + qv_parcel/(1 - qt_prcl) * qEntrain), // undefined
+        L_s * (qEntrain + qv_parcel / (1 - qt_prcl) * qt_e), //L_s * (qEntrain + qv_parcel/(1 - qt_prcl) * qEntrain), // undefined
         c_pm,
         (L_i * (qt_prcl - qv_parcel) - L_s * (q_vsi - q_vsl)) * d_omega,
         (L_s * L_M)/(Constants.R_v * tmp_prcl * tmp_prcl),

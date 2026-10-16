@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.7.0 — 2026-10-15
+
+### Added
+- A BUFKIT station picker in the controls with a searchable, zoomable map. Station locations
+  come from the bundled station catalog, while available station IDs are read from the IEM archive.
+- A location inset on the hodograph showing OpenStreetMap tiles around the sounding, with a marker
+  for the sounding location and map attribution.
+- Function documentation throughout the viewer engine and reusable canvas path/line helpers.
+
+### Changed
+- Bunkers right/left storm motions now use the parcel-based method described by Bunkers et al. (2014),
+  with the SHARPpy non-parcel calculation retained as a fallback; related kinematic reference values
+  and tests were updated.
+- Updated parcel, layer-interpolation, thermodynamic, SRH, and severe-weather calculation logic as part
+  of the analysis alignment and verification work.
+- Updated package and chart versioning to `v1.7.0` and refreshed repository links and release guidance.
+
+### Fixed
+- Corrected ECAPE supporting calculations, including storm-relative wind components and NCAPE
+  integration over the sounding's height grid.
+- Corrected parcel and thermodynamic edge cases in LCL, virtual-temperature, layer, and buoyancy
+  calculations.
+
 ## 1.61.0 — 2026-10-02
 
 First open-source release of SharpJS.

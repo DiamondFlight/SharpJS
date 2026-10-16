@@ -1,3 +1,5 @@
+import {GetLayerByHght, GetLayerByPres, ConvertToInfo, VirtTemp} from "../calc/skewtCalcs.js"
+
 //First Lets Define Some Constants
 export const Constants = {
     sigma: 1.6,
@@ -60,37 +62,6 @@ function mixratio(pres, temp) {
   var wfw = 1.0 + 0.0000045 * pres + 0.0014 * x * x;
   var fwesw = wfw * vappres(temp);
   return 621.97 * (fwesw / (pres - fwesw));
-}
-
-export function VirtTemp(Slice, SP, Thing = false, Conv = false){
-  const ZEROCNK = 273.15;
-  if (Thing){
-    //let TopValue = Slice[2] + 273.15;
-   // let BotValue = (1 - 0.379 * ( ( 6.11 * Math.pow(10, ((7.5 * Slice[3])/(237.7 + Slice[3]))))/Slice[0]));
-    let tk = Slice[2] + ZEROCNK;
-    let w = 0.001 * mixratio(SP, Slice[3]);
-    let vt = (tk * (1 + (w/Constants.eps))/(1+w) -ZEROCNK);
-    if (Conv){
-      return Math.max(vt,Slice[2]);
-      //return (TopValue/BotValue) - 273.15;
-    } else {
-      return Math.max(vt,Slice[2]);
-     // return (TopValue/BotValue);
-    }
-    
-  } else {
-    let tk = Slice.T + ZEROCNK;
-    let w = 0.001 * mixratio(SP, Slice.D);
-    let vt = (tk * (1 + (w/Constants.eps))/(1+w))-ZEROCNK;
-  //return (tk * (1.0 + w/eps) / (1.0 + w) - cta);
-    if (Conv){
-      return Math.max(vt,Slice.T);
-      //return (TopValue/BotValue) - 273.15;
-    } else {
-      return Math.max(vt,Slice.T);
-     // return (TopValue/BotValue);
-    }
-  }
 }
 
 function Lerp(a, b, t){
@@ -163,99 +134,13 @@ function LerpSoundingSlice(Pr, Rr, LerpFactor){
   return Slice;
 }
 
-export function GetLayerByPres(Sounding, Level, Type="All"){
-  if (Level == "SFC") {
-    return SurfaceLayerInfo(Sounding);
-  }
 
-  if (Level == "Last") {
-    return ConvertToInfo(Sounding.Slice[Sounding.Slice.length-1], Sounding.Slice[1][0]);
-  }
-  
-  for (let i = 0; i < Sounding.Slice.length; i++){
-    if (Sounding.Slice[i][0] == Level){
-      return ConvertToInfo(Sounding.Slice[i], Sounding.Slice[1][0]);
-    } else if (Sounding.Slice[i][0] > Level && Sounding.Slice[i+1][0] < Level){
-      let LerpFactor = GetLerpFactor(Sounding.Slice[i][0], Sounding.Slice[i+1][0], Level);
-      //// console.log(LerpFactor, Sounding.Slice[i][0], Sounding.Slice[i+1][0]);
-      let Slice = LerpSoundingSlice(Sounding.Slice[i], Sounding.Slice[i+1], LerpFactor);
-
-      //Slice.VT = VirtTemp(Slice);
-
-      return ConvertToInfo(Slice, Sounding.Slice[1][0]);
-    }
-  }
-}
-
-export function ConvertToInfo(N, SP){
-  return {
-    P:N[0],
-    H:N[1],
-    T : N[2],
-    D : N[3],
-    VT : VirtTemp(N, SP, true, true),
-    WD : N[4],
-    WS : N[5],
-    WB : N[6],
-  }
-}
 
 export function ConvertToRaw(N, SP){
   return [N.P, N.H, N.T, N.D, N.WD, N.WS, N.WB];
 }
 
-export function GetLayerByTemp(Sounding, Level, wetbulb=false){
-  if (Level == "SFC") {
-    return SurfaceLayerInfo(Sounding);
-  }
 
-  let Iter = 2;
-  
-  if (wetbulb){
-    Iter = 6;
-  }
-  
-  for (let i = 0; i < Sounding.Slice.length-1; i++){
-    if (Sounding.Slice[i][Iter] == Level){
-      return ConvertToInfo(Sounding.Slice[i],  Sounding.Slice[1][0]);
-    } else if ((Sounding.Slice[i][Iter] > Level && Sounding.Slice[i+1][Iter] < Level) || 
-        (Sounding.Slice[i][Iter] < Level && Sounding.Slice[i+1][Iter] > Level)){
-      let LerpFactor = GetLerpFactor(Sounding.Slice[i][Iter], Sounding.Slice[i+1][Iter], Level);
-      //// console.log(LerpFactor, Sounding.Slice[i][1], Sounding.Slice[i+1][1]);
-
-      let Slice = LerpSoundingSlice(Sounding.Slice[i], Sounding.Slice[i+1], LerpFactor);
-
-      return ConvertToInfo(Slice, Sounding.Slice[1][0]);
-    }
-  }
-  
-  return false;
-}
-
-export function GetLayerByHght(Sounding, Level, addTo=true){
-  if (Level == "SFC") {
-    return SurfaceLayerInfo(Sounding);
-  }
-  
-  if (addTo){
-    Level += Sounding.Slice[0][1];
-  }
-
-  for (let i = 0; i < Sounding.Slice.length; i++){
-  if (Sounding.Slice[i+1] == undefined){
-    return false;
-  }
-    if (Sounding.Slice[i][1] == Level){
-      return ConvertToInfo(Sounding.Slice[i],  Sounding.Slice[1][0]);
-    } else if (Sounding.Slice[i][1] < Level && Sounding.Slice[i+1][1] > Level){
-      let LerpFactor = GetLerpFactor(Sounding.Slice[i][1], Sounding.Slice[i+1][1], Level);
-      //// console.log(LerpFactor, Sounding.Slice[i][1], Sounding.Slice[i+1][1]);
-      let Slice = LerpSoundingSlice(Sounding.Slice[i], Sounding.Slice[i+1], LerpFactor);
-
-      return ConvertToInfo(Slice,  Sounding.Slice[1][0]);
-    }
-  }
-}
 
 /** Modified Lerpination
  * 
@@ -267,11 +152,6 @@ export function GetLayerByHght(Sounding, Level, addTo=true){
 export function ModifLerp(m1, m2, v){
     return (1 - v) * m1 + v * m2;
 }
-
-
-
-
-
 
 /** entrainment rate in 1/m
  * 
@@ -332,7 +212,8 @@ export function pres_at_hght(pres, hghtabove, tmp){
 export function linear_interp(input_arr, output_arr, input, debug=false){
      if (input < input_arr[0]){
         return output_arr[0];
-    } else if (input >= input_arr[-1]){
+    // } else if (input >= input_arr[-1]){
+    } else if (input >= LastItem(input_arr)){
         return LastItem(output_arr)
     } else {
         for (let i = 0; i < input_arr.length-1; i++){
@@ -520,7 +401,8 @@ const r_satCons = {
     vapor_pres_ref: 611.2,// * units("Pa")
     t1: (Constants.c_pv - Constants.c_pi) / Constants.R_v,
     t1a: (Constants.c_pv - Constants.c_pl) / Constants.R_v,
-    t2: (Constants.L_v_trip - Constants.T_trip * (Constants.c_pv - Constants.c_pi)) / Constants.R_v,
+    t2: (Constants.xls - Constants.T_trip * (Constants.c_pv - Constants.c_pi)) / Constants.R_v,
+    //t2: (Constants.L_v_trip - Constants.T_trip * (Constants.c_pv - Constants.c_pi)) / Constants.R_v,
     t2a: (Constants.L_v_trip - Constants.T_trip * (Constants.c_pv - Constants.c_pl)) / Constants.R_v,
 }
 
@@ -590,69 +472,44 @@ function domega(T, T1, T2){
  * @param {*} EL m
  */
 export function compute_NCAPE(T0, p0, q0, z0, Snding, T1, T2, LFC, EL){
-    const n = T0.length;
-    const EndSlice = GetLayerByPres(Snding, "Last");
-
-    var MSE0 = [];
-    var rsat = [];
-    var qsat = [];
-    var MSE0_star = [];
-    var MSE0_bar = [];
-    var T1 = [];
-
-    for (let i = 0; i < EndSlice.H; i+=100){
-        const FSlice = GetLayerByHght(Snding, i, false);
-        const RT = FSlice.T + 273.15;
-        //console.log(Constants.c_pd * T0[i] + Constants.xlv * q0[i] + Constants.g * z0[i]);
-        T1.push(RT);
-        MSE0.push(Constants.c_pd * RT + Constants.xlv * spechum_from_dwp(FSlice.P, FSlice.D) + Constants.g * i);
-        const Rsat = r_sat(RT, FSlice.P, 0, T1, T2)
-        rsat.push(Rsat);
-        const Qsat = (1 - Rsat) * Rsat
-        qsat.push(Qsat );
-        MSE0_star.push( Constants.c_pd * RT + Constants.xlv * Qsat + Constants.g * i);
-        MSE0_bar.push(0);
-    }
-
-    MSE0_bar = new Array(T1.length).fill(0);
-    MSE0_bar[0] = MSE0[0]
+    // Previous resampling approach rebuilt a 100-m grid from the sounding
+    // instead of using the supplied temperature, moisture, pressure, and height arrays.
+    // const surfaceHeight = z0[0];
+    // for (let height = surfaceHeight; height < EndSlice.H; height += 100) { ... }
+    const MSE0 = T0.map((temperature, index) =>
+        Constants.c_pd * temperature + Constants.xlv * q0[index] + Constants.g * z0[index]);
+    const rsat = T0.map((temperature, index) => r_sat(temperature, p0[index], 0, T1, T2));
+    const qsat = rsat.map(mixingRatio => (1 - mixingRatio) * mixingRatio);
+    const MSE0_star = T0.map((temperature, index) =>
+        Constants.c_pd * temperature + Constants.xlv * qsat[index] + Constants.g * z0[index]);
+    const MSE0_bar = new Array(MSE0.length).fill(0);
+    MSE0_bar[0] = MSE0[0];
 
     for (let iz = 1; iz < MSE0_bar.length; iz++){
-        var T = 0;
+        let cumulativeMSE = 0;
 
-        for (let x = 0; x < iz-1; x++){
-            const pp = ((MSE0[x] + MSE0[x+1]) * (100));
-
-            if (pp == pp){
-              T += pp;
-            }
+        // Previous loop omitted the final cumulative interval: x < iz - 1.
+        for (let x = 0; x < iz; x++){
+            cumulativeMSE += (MSE0[x] + MSE0[x + 1]) * (z0[x + 1] - z0[x]);
         }
 
-        MSE0_bar[iz] = 0.5 * (T)/(iz * 100);
+        MSE0_bar[iz] = 0.5 * cumulativeMSE / (z0[iz] - z0[0]);
     }
 
-    var int_arg = [];
+    const int_arg = MSE0_bar.map((mse, index) =>
+        -(Constants.g / (Constants.c_pd * T0[index])) * (mse - MSE0_star[index]));
+    const nearestHeightIndex = height => z0.reduce((closest, sampleHeight, index) =>
+        Math.abs(sampleHeight - height) < Math.abs(z0[closest] - height) ? index : closest, 0);
+    const ind_LFC = nearestHeightIndex(LFC);
+    const ind_EL = nearestHeightIndex(EL);
+    let NCAPE = 0;
 
-    for (let a = 0; a < MSE0_bar.length; a++){
-      int_arg.push( - (Constants.g / (Constants.c_pd * T1[a])) * (MSE0_bar[a] - MSE0_star[a]))
-    }
-
-    var ind_LFC = (Math.floor(LFC/100) == 0 ? 1 : Math.floor(LFC/100));
-    var ind_EL = Math.floor(EL/100);
-
-    //console.log(ind_LFC, ind_EL);
-
-    if (ind_EL == 0 || ind_LFC == 0){
-      return 0;
-    }
-
-    var NCAPE = 0;
-
-    for (let i = ind_LFC; i < ind_EL-1; i++){
-      const val = ((0.5 * int_arg[i] + 0.5 * int_arg[i+1])) * (100);
-      if (val == val){
-        NCAPE += val;
-      }
+    // Python reference integrates through the interval immediately below the nearest EL index.
+    for (let i = ind_LFC; i < ind_EL - 1; i++){
+        const value = (0.5 * int_arg[i] + 0.5 * int_arg[i + 1]) * (z0[i + 1] - z0[i]);
+        if (value === value){
+            NCAPE += value;
+        }
     }
 
     NCAPE = Math.max(0, NCAPE);
@@ -693,22 +550,28 @@ export function calc_ecape_a(sr_wind, psi, ncape, cape){
 export function calc_sr_wind(pres, uwind, vwind, hght, ifb, ift, CSMot, V){
     const hghtAGL = hght.map(row => row - hght[0]);
 
-    var u_sr = uwind.map(row => row - CSMot.x);
-    var v_sr = vwind.map(row => row + CSMot.y);
-    var srwind = 0;
-    var amn = 0;
+    // ecape_parcel supplies x = speed*cos(direction), y = speed*sin(direction).
+    // Convert those chart-polar components to meteorological u/v before subtracting storm motion.
+    // Previous mismatched-frame calculations:
+    // var u_sr = uwind.map(row => row - CSMot.x);
+    // var v_sr = vwind.map(row => row + CSMot.y);
+    const u_sr = vwind.map(row => -row - CSMot.x);
+    const v_sr = uwind.map(row => -row - CSMot.y);
+    // Previous integration included segments below ifb and used a fixed 1000 m denominator.
+    // var srwind = 0;
+    // for (let i = 0; i < hghtAGL.length; i++){
+    //     if (hghtAGL[i] > ift) break;
+    //     if (hghtAGL[i] <= ift){
+    //         srwind += (hghtAGL[i+1] - hghtAGL[i]) / 1000 *
+    //             Math.sqrt(Math.pow(u_sr[i], 2) + Math.pow(v_sr[i], 2)) / 1.94384;
+    //     }
+    // }
+    const layerSpeeds = hghtAGL
+        .map((height, index) => ({height, index}))
+        .filter(({height}) => height >= ifb && height <= ift)
+        .map(({index}) => Math.hypot(u_sr[index], v_sr[index]) / 1.94384);
 
-    for (let i = 0; i < hghtAGL.length; i++){
-        if (hghtAGL[i] > ift){
-            break;
-        }
-
-        if (hghtAGL[i] <= ift){
-            srwind += (hghtAGL[i+1] - hghtAGL[i])/1000 * Math.sqrt(Math.pow(u_sr[i] , 2) + Math.pow(v_sr[i], 2))/1.94384;
-        }
-    }
-
-    return srwind;
+    return layerSpeeds.reduce((sum, speed) => sum + speed, 0) / layerSpeeds.length;
 }
 
 /** Parameter defined in eqn. 52, constant for a given equilibrium level, see COMPUTE_ECAPE.m L88 (pitchfork)
@@ -723,7 +586,8 @@ export function calc_psi(el){
     var pr = 1/3;
     var ksq = 0.18;
 
-    return (ksq * Math.pow(alpha, 2) * Math.pow(Math.PI, 2) * l_mix) / (pr * Math.pow(sigma, 2) * el)
+    // return (ksq * Math.pow(alpha, 2) * Math.pow(Math.PI, 2) * l_mix) / (pr * Math.pow(sigma, 2) * el)
+    return (ksq * Math.pow(alpha, 2) * Math.pow(Math.PI, 2) * l_mix) / (4 * pr * Math.pow(sigma, 2) * el)
 }
 
 /**Calculate the entraining CAPE (ECAPE) of a parcel

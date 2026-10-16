@@ -1,6 +1,6 @@
 {
   "name": "sharpjs",
-  "version": "1.61.0",
+  "version": "v1.7.0",
   "description": "Interactive Skew-T / hodograph sounding analysis for the browser, with a headless calculation core.",
   "keywords": [
     "meteorology",
@@ -15,11 +15,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Michael-Barletta/sharpjs.git"
+    "url": "git+https://github.com/DiamondFlight/sharpjs.git"
   },
-  "homepage": "https://michael-barletta.github.io/sharpjs/",
+  "homepage": "https://DiamondFlight.github.io/sharpjs/",
   "bugs": {
-    "url": "https://github.com/Michael-Barletta/sharpjs/issues"
+    "url": "https://github.com/DiamondFlight/sharpjs/issues"
   },
   "type": "module",
   "main": "./src/index.js",

@@ -113,11 +113,12 @@ function mount(el, initialProps) {
   controlsHost.setAttribute('aria-label', 'Sounding controls');
   const stage = el.ownerDocument.createElement('div');
   stage.className = 'sjs-stage';
-  root.append(controlsHost, stage);
+  const timeSlider = el.ownerDocument.createElement('div');
+  timeSlider.className = 'sjs-timeslider';
+  root.append(controlsHost, stage, timeSlider);
   el.appendChild(root);
   const viz = renderChart(stage);
   const q = (id) => viz.querySelector(`[data-sjs="${id}"]`);
-
   const empty = el.ownerDocument.createElement('div');
   empty.className = 'sjs-empty';
   viz.appendChild(empty);

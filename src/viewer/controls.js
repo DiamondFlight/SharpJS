@@ -3,6 +3,7 @@
  * { controls: false } to SharpJS() and call the handle / engine methods instead.
  */
 import { PRESET_VALUES } from '../settings/schema.js';
+import { createBufkitMapButton } from '../io/bufkit_map.js';
 
 const PARCELS = [
   ['SB', 'Surface-Based'],
@@ -69,6 +70,7 @@ export function createControls(host, { handle, engine, store, sources = null, op
   const H = (...args) => h(doc, ...args);
   const opts = options && typeof options === 'object' ? options : {};
   let currentSources = sources;
+  let bufkitMap = null;
   const refs = {};
   const sections = {};
 
@@ -172,13 +174,23 @@ export function createControls(host, { handle, engine, store, sources = null, op
       refs.raobHour.value = String(syn.getUTCHours());
     }
     if (currentSources.fetchIemBufkit) {
+      bufkitMap ??= createBufkitMapButton({
+        document: doc,
+        host,
+        getModel: () => refs.bufkitModel.value,
+        getRun: () => new Date(`${refs.bufkitDate.value}T${String(refs.bufkitRun.value || 0).padStart(2, '0')}:00:00Z`),
+        onSelect: (station) => { refs.bufkitStation.value = station; },
+      });
       children.push(
         H('div', { class: 'sjs-sub' }, 'Model BUFKIT (IEM)'),
         fieldRow(2,
           field('Model', select('bufkitModel', BUFKIT_MODELS)),
-          field('Station', input('bufkitStation', { placeholder: 'dsm', value: opts.bufkitStation || 'kdsm', autocomplete: 'off' }))),
-        fieldRow(3,
           field('Run date', input('bufkitDate', { type: 'date', value: utcDate(syn) })),
+        fieldRow(2,
+          field('Station', input('bufkitStation', { placeholder: 'dsm', value: opts.bufkitStation || 'kdsm', autocomplete: 'off' }))),
+          row(1, bufkitMap.button),
+        ),
+        fieldRow(2,
           field('Run (Z)', input('bufkitRun', { type: 'number', min: 0, max: 23, value: syn.getUTCHours() })),
           field('F hour', input('bufkitFh', { type: 'number', min: 0, max: 384, value: 0 }))),
         H('p', { class: 'sjs-hint' }, 'RAP/RUC use 4-letter ids (kdsm); HRRR/NAM/GFS often use 3 (dsm).'),
@@ -391,6 +403,7 @@ export function createControls(host, { handle, engine, store, sources = null, op
     },
     destroy() {
       clearTimeout(statusTimer);
+      bufkitMap?.destroy();
       host.innerHTML = '';
     },
   };
