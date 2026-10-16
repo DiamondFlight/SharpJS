@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: calc/ecape.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: calc/ecape.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { r_sat, ice_fraction, ice_fraction_deriv, ModifLerp, dwp_from_vaporpres, vp_from_spechum,
+    dwp_from_spechum, dry_air_density, absHum, specHum, vp, spechum_from_dwp, rev_linear_interp, 
+    linear_interp, entrainment_rate, updraft_radius, spec_heat_cap_of_moist_air, pres_at_hght,
+    PolarToCartesianDeg, CartesianToPolarDeg, LastItem, calc_ecape_ncape, calc_sr_wind, Constants
+ } from './ecapeCalc.js';
+import {GetLayerByHght, GetLayerByPres, ConvertToInfo, ConvertToRaw, VirtTemp} from "../calc/skewtCalcs.js"
+import { celsiusToKelvin } from '../io/general.js';
+
+//Next Functionos
+/**
+ * Calculate the density temperature including water-vapor and total-water loading.
+ * @param {number|number[]} tmp Parcel or environmental temperature (in K).
+ * @param {number|number[]} qv Specific humidity (in kg/kg).
+ * @param {number|number[]} qt Total water mixing ratio (in kg/kg).
+ * @returns {number|number[]} Density temperature (in K), preserving the input temperature shape.
+ * @see https://glossary.ametsoc.org/wiki/virtual-temperature/
+ */
+export function density_temperature(tmp, qv, qt){
+    if (Array.isArray(tmp)){
+        if (tmp[0] == null){
+            return new Array(tmp.length).fill(0);
+        } else {
+            let R = [];
+            for (let i = 0; i &lt; tmp.length; i++){
+                R.push(tmp[i] * (1 - qt[i] + qv[i]/Constants.phi));
+            }
+            return R;
+        }
+    }
+
+    return tmp * (1 - qt + qv/Constants.phi);
+}
+
+//Next, Lets Define Lapse Rates
+
+// Equation 19 in Peters et. al. 2022 (https://journals.ametsoc.org/view/journals/atsc/79/3/JAS-D-21-0118.1.xml)
+//@check_units('[temperature]', '[dimensionless]', '[temperature]', '[dimensionless]')
+/** UNSAUTRATED Parkel
+ * 
+ * @param {*} tmp_prcl 
+ * @param {*} qv_prcl 
+ * @param {*} tmp_env 
+ * @param {*} qv_env specific humidity is weird and i dont liek it at ALL!
+ * @param {*} eRate entrainment rate
+ * @returns 
+ */
+function USALR(tmp_prcl, qv_prcl, tmp_env, qv_env, eRate){
+    const tEntrain = -eRate * (tmp_prcl - tmp_env);
+    const dTempPrcl = density_temperature(tmp_prcl, qv_prcl, qv_prcl);
+    const dTempEnv = density_temperature(tmp_env, qv_env, qv_env);
+    
+    const Bplus = Constants.g * (dTempPrcl - dTempEnv)/dTempEnv;
+
+    const c_pmv = ModifLerp(Constants.c_pd, Constants.c_pv, qv_prcl);
+
+    return (-Constants.g/Constants.c_pd) * ((1 + Bplus/Constants.g)/(c_pmv/Constants.c_pd)) + tEntrain;
+}
+
+// Equation 24 in Peters et. al. 2022 (https://journals.ametsoc.org/view/journals/atsc/79/3/JAS-D-21-0118.1.xml)
+// @check_units('[temperature]', '[dimensionless]',  '[dimensionless]', '[temperature]', '[dimensionless]', '[dimensionless]')
+/** The saturated lapse rate, believe me if i knew what i was looking at i would write it downb
+ * 
+ * @param {*} tmp_prcl 
+ * @param {*} qt_prcl 
+ * @param {*} pres_prcl 
+ * @param {*} tmp_env 
+ * @param {*} qv_env 
+ * @param {*} eRate 
+ * @param {*} prate 
+ * @param {*} warmest_mixed_phase_temp Kelvin
+ * @param {*} coldest_mixed_phase_temp Kelvin
+ * @param {*} qt_e 
+ * @returns {} saturated_adiabatic_lapse_rate idk :(
+ */ 
+function SALR(tmp_prcl, qt_prcl, pres_prcl, tmp_env, qv_env, eRate, prate, warmest_mixed_phase_temp=273.15, coldest_mixed_phase_temp=253.13, qt_e){
+    const omega = ice_fraction(tmp_prcl, warmest_mixed_phase_temp, coldest_mixed_phase_temp);
+    const d_omega = ice_fraction_deriv(tmp_prcl, warmest_mixed_phase_temp, coldest_mixed_phase_temp);
+
+    const q_vsl = (1 - qt_prcl) * r_sat(tmp_prcl, pres_prcl, 0);
+    const q_vsi = (1 - qt_prcl) * r_sat(tmp_prcl, pres_prcl, 2);
+
+    const qv_parcel = (1 - omega) * q_vsl + omega * q_vsi;
+
+    const tEntrain = -eRate * (tmp_prcl - tmp_env);
+    const qEntrain = -eRate * (qv_parcel - qv_env);
+
+    qt_e = (qt_e == null ? -eRate * (qt_prcl - qv_env) - prate * (qt_prcl - qv_parcel) : qt_e);
+    //qt_e = (qt_e !== null ? qt_e : -eRate * (qt_prcl - qv_env) - prate * (qt_prcl - qv_parcel));
+
+    //Water or something
+    const q_condensate = qt_prcl - qv_parcel;
+
+    const ql_parcel = q_condensate * (1 - omega);
+    const qi_parcel = q_condensate * omega;
+
+    //ITS JUST LIKE LETTERS 
+    const c_pm = (1 - qt_prcl) * Constants.c_pd + 
+                qv_parcel * Constants.c_pv +
+                ql_parcel * Constants.c_pl +
+                qi_parcel * Constants.c_pi;
+
+    const dTempPrcl = density_temperature(tmp_prcl, qv_parcel, qt_prcl);
+    const dTempEnv = density_temperature(tmp_env, qv_env, qv_env);
+
+    const Bplus = Constants.g * (dTempPrcl - dTempEnv)/dTempEnv;
+
+    const L_v = Constants.L_v_trip + (tmp_prcl - Constants.T_trip) * (Constants.c_pv - Constants.c_pl);
+    const L_i = Constants.L_i_trip + (tmp_prcl - Constants.T_trip) * (Constants.c_pl - Constants.c_pi);
+
+    //I DONT KNOW WHAT IT MEANS : ((((
+    const L_s = L_v + omega * L_i;
+
+    const Q_vsl = q_vsl / (Constants.phi - (Constants.phi * qt_prcl) + qv_parcel);
+    const Q_vsi = q_vsi / (Constants.phi - (Constants.phi * qt_prcl) + qv_parcel);
+
+    const Q_M = (1 - omega) * (q_vsl)/(1 - Q_vsl) + omega * (q_vsi)/(1 - Q_vsi);
+    const L_M = (1 - omega) * L_v * (q_vsl)/(1 - Q_vsl) + omega * (L_v + L_i) * (q_vsi)/(1 - Q_vsi);
+    const R_m0 = (1 - qv_env) * Constants.R_d + qv_env * Constants.R_v;
+
+    const Terms = [
+        Bplus, //nan
+        Constants.g,
+        ((L_s * Q_M) / (R_m0 * tmp_env)) * Constants.g,
+        (c_pm - L_i * (qt_prcl - qv_parcel) * d_omega) * tEntrain,
+        L_s * (qEntrain + qv_parcel / (1 - qt_prcl) * qt_e), //L_s * (qEntrain + qv_parcel/(1 - qt_prcl) * qEntrain), // undefined
+        c_pm,
+        (L_i * (qt_prcl - qv_parcel) - L_s * (q_vsi - q_vsl)) * d_omega,
+        (L_s * L_M)/(Constants.R_v * tmp_prcl * tmp_prcl),
+    ];
+
+    const tA = Terms[0] + Terms[1] + Terms[2];
+    const tB = Terms[3] + Terms[4];
+    const tC = Terms[5] + Terms[7];
+    const tD = Terms[6];
+
+    return -(tA - tB)/(tC - tD);
+}
+
+let EXAMPLEParcel = {
+    Path : [],
+    ECape : {
+      Path : [],
+      Cape : 0,
+    },
+    Cape : 0,
+    Cape3 : 0,
+    Cape6 : 0,
+    HGZCape : 0,
+    PreHGZCape : 0,
+    CINH : 0,
+    LCL : -9999,
+    LFC : -9999,
+    EL : -9999,
+    MPL: 16000,
+    Levels: 0,
+    Start: null,
+  }
+
+const ECAPE_PARCEL_DZ = 20; //meters
+
+//THE BIG ONE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/**
+ * 
+ * @param {*} pres array
+ * @param {*} hght array
+ * @param {*} tmp array celsuis
+ * @param {*} dwp array celsiius
+ * @param {*} u_wind array
+ * @param {*} v_wind array
+ * @param {*} atipv align_to_input_pressure_values
+ * @param {*} e_switch entrainment_switch
+ * @param {*} pa_switch pseudoadiabatic_switch
+ * @param {*} Sounding the sounding
+ * @param {*} passedInfo {lfc, el, StormMotion:{u,v}, Cape}
+ * @param {*} CSMot storm motion passed
+ * @param {*} ilb inflow_layer_bottom
+ * @param {*} ilt inflow_layer_top
+ * @param {} parcelObject The rest of params, in the parcel object that is given from the other stuff and things
+ * @returns {[]} [Pressure, Height, Temperature, QV, QT];
+ */
+export function ecape_parcel(pres, hght, tmp, dwp, u_wind, v_wind, atipv, e_switch = true, pa_switch=true, Sounding, passedInfo, CSMot, ilb=0, ilt=1, parcelObject){
+    //Begin by first getting the specific humidty of them mfs
+    var SpecHum = [];
+
+    for (let i = 0; i &lt; pres.length; i++){
+        SpecHum.push(spechum_from_dwp(pres[i], dwp[i]));
+    }
+
+    const ParcelInfo = parcelObject;
+//EXAMPLEParcel.Cape
+    if (e_switch == true){
+        if (ParcelInfo.Cape &lt;= 0){
+            if (atipv == true){
+                return new Array(5).fill(new Array(pres.length).fill(null));
+            } else {
+                return new Array(5).fill(null);
+            }
+        }
+    }
+
+    var entr_rate = null;
+
+    var ecape = 0;
+    var ncape = 0;
+    var vsr = 0;
+    var storm_column_height = 0;
+
+    var pTemp = ParcelInfo.Start.T + 273.15;
+    var pDewp = ParcelInfo.Start.D + 273.15;
+    var pPres = ParcelInfo.Start.P  * 100;
+    var pHght = ParcelInfo.Start.H;
+
+    if (e_switch == true){
+        var { ECape, NCape } = calc_ecape_ncape(hght, pres, tmp, SpecHum, u_wind, v_wind, Sounding, ilb, ilt, CSMot, passedInfo)
+        ecape = ECape;
+        ncape = NCape;
+        vsr = calc_sr_wind(pres, u_wind, v_wind, hght, ilb, ilt, CSMot);
+        storm_column_height = passedInfo.EL - pHght;
+    }
+
+    var epsilon = 0;
+
+    if (e_switch == true){
+        epsilon = entrainment_rate(passedInfo.Cape, ecape, ncape, vsr, storm_column_height)
+
+        entr_rate = epsilon // / meters
+    } else {
+        entr_rate = 0;
+    }
+
+    
+    var pQv = spechum_from_dwp(pPres / 100, pDewp - 273.15);
+    var pQt = pQv;
+
+    var pres_raw = []
+    var hght_raw = []
+    var tmp_raw = []
+    var qv_raw = []
+    var qt_raw = []
+
+    pres_raw.push(pPres)
+    hght_raw.push(pHght)
+    tmp_raw.push(pTemp)
+    qv_raw.push(pQv)
+    qt_raw.push(pQt)
+
+    var prate = 1 / ECAPE_PARCEL_DZ;
+
+    if (!pa_switch){
+        prate = 0;
+    }
+
+    //Parcel pressure in Pa maybe? idk
+
+    var dqt_dz = 0 / ECAPE_PARCEL_DZ;
+
+    var tmp_K = tmp.map(celsiusToKelvin);
+
+    while (pPres >= LastItem(pres)*100){
+        var eTemp = linear_interp(hght, tmp_K, pHght);
+
+        var p_SatQ = (1 - pQt) * r_sat(pTemp, pPres, 1);
+
+        if (p_SatQ >= pQv){
+            pPres = pres_at_hght(pPres, ECAPE_PARCEL_DZ, eTemp);
+            pHght += ECAPE_PARCEL_DZ;
+
+            var ev_Temp = linear_interp(hght, tmp_K, pHght);
+            var ev_qv = linear_interp(hght, SpecHum, pHght);
+
+            var dT_dz = USALR(pTemp, pQv, ev_Temp, ev_qv, entr_rate);
+            var dqv_dz = -entr_rate * (pQv - ev_qv);
+
+            pTemp += dT_dz * ECAPE_PARCEL_DZ;
+            pQv += dqv_dz * ECAPE_PARCEL_DZ;
+            pQt = pQv;
+
+            pDewp = dwp_from_spechum(pPres, pQv);
+        } else {
+            pPres = pres_at_hght(pPres, ECAPE_PARCEL_DZ, eTemp);
+            pHght += ECAPE_PARCEL_DZ;
+
+            var ev_Temp = linear_interp(hght, tmp_K, pHght);
+            var ev_qv = linear_interp(hght, SpecHum, pHght);
+
+            var dT_dz = 0;
+            var dqt_dz = 0;
+
+            if (pa_switch == true){
+                dT_dz = SALR(pTemp, pQt, pPres, ev_Temp, ev_qv, entr_rate, prate, 273.15, 253.15, dqt_dz)
+            } else {
+                dT_dz = SALR(pTemp, pQt, pPres, ev_Temp, ev_qv, entr_rate, prate)
+            }
+
+            const H255 = r_sat(pTemp, pPres, 1, 273.15, 253.15);
+            var n_Prclqv = (1 - pQt) * H255; //to kg/kg?
+
+            if (pa_switch == true){
+                dqt_dz = (n_Prclqv - pQt) / ECAPE_PARCEL_DZ;
+            } else {
+                dqt_dz = -entr_rate * (pQt - ev_qv) - prate * (pQt - pQv);
+            }
+
+            pTemp += dT_dz * ECAPE_PARCEL_DZ;
+            pQv = n_Prclqv;
+
+            if (pa_switch == true){
+                pQt = pQv;
+            } else {
+                pQt += dqt_dz * ECAPE_PARCEL_DZ;
+            }
+
+            if (pQt &lt; pQv){
+                pQv = pQt;
+            }
+        }
+
+        pres_raw.push(pPres);
+        hght_raw.push(pHght);
+        tmp_raw.push(pTemp);
+        qv_raw.push(pQv);
+        qt_raw.push(pQt);
+    }
+
+    return [pres_raw, hght_raw, tmp_raw, qv_raw, qt_raw];
+}</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 17:31:43 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

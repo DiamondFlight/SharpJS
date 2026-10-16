@@ -266,7 +266,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line23">line 23</a>
+        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line25">line 25</a>
     </li></ul></dd>
     
 
@@ -12385,7 +12385,7 @@ https://glossary.ametsoc.org/wiki/relative_humidity/</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line75">line 75</a>
+        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line77">line 77</a>
     </li></ul></dd>
     
 
@@ -20602,7 +20602,7 @@ inflow layer. The storm motion used for ECAPE comes from UpdateCSMotStorm().
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_controls.js.html">viewer/controls.js</a>, <a href="viewer_controls.js.html#line76">line 76</a>
+        <a href="viewer_controls.js.html">viewer/controls.js</a>, <a href="viewer_controls.js.html#line77">line 77</a>
     </li></ul></dd>
     
 
@@ -20931,7 +20931,7 @@ inflow layer. The storm motion used for ECAPE comes from UpdateCSMotStorm().
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_engine.js.html">viewer/engine.js</a>, <a href="viewer_engine.js.html#line274">line 274</a>
+        <a href="viewer_engine.js.html">viewer/engine.js</a>, <a href="viewer_engine.js.html#line277">line 277</a>
     </li></ul></dd>
     
 
@@ -21321,6 +21321,236 @@ inflow layer. The storm motion used for ECAPE comes from UpdateCSMotStorm().
 
 
 
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="createTimeSlider"><span class="type-signature"></span>createTimeSlider<span class="signature">(element, stage, controls, doc, onSelect)</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Create the fixed, chart-width timeline and keep it clear of the controls panel.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>element</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">HTMLElement</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Timeline container.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>stage</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">HTMLElement</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Chart display area.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>controls</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">HTMLElement</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Controls panel.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>doc</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Document</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Owning document.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>onSelect</code></td>
+            
+
+            <td class="type">
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="viewer_time-slider.js.html">viewer/time-slider.js</a>, <a href="viewer_time-slider.js.html#line10">line 10</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+    
 
 
 
@@ -22465,7 +22695,7 @@ inflow layer. The storm motion used for ECAPE comes from UpdateCSMotStorm().
     
 
     
-    <h4 class="name" id="drawHodographLocationInset"><span class="type-signature"></span>drawHodographLocationInset<span class="signature">(ctx, canvas, sounding, onTilesReady)</span><span class="type-signature"> &rarr; {void}</span></h4>
+    <h4 class="name" id="drawHodographLocationInset"><span class="type-signature"></span>drawHodographLocationInset<span class="signature">(ctx, canvas, sounding, onTilesReady, bounds<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {void}</span></h4>
     
 
     
@@ -22473,7 +22703,7 @@ inflow layer. The storm motion used for ECAPE comes from UpdateCSMotStorm().
 
 
 <div class="description">
-    Draws a 100-pixel OpenStreetMap inset centered on a sounding's coordinates.
+    Draws an OpenStreetMap inset centered on a sounding's coordinates.
 OpenStreetMap tiles include mapped state and county administrative boundaries.
 </div>
 
@@ -22497,6 +22727,8 @@ OpenStreetMap tiles include mapped state and county administrative boundaries.
 
         <th>Type</th>
 
+        
+        <th>Attributes</th>
         
 
         
@@ -22523,6 +22755,14 @@ OpenStreetMap tiles include mapped state and county administrative boundaries.
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -22545,6 +22785,14 @@ OpenStreetMap tiles include mapped state and county administrative boundaries.
             
             </td>
 
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
             
 
             
@@ -22569,6 +22817,14 @@ OpenStreetMap tiles include mapped state and county administrative boundaries.
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
@@ -22587,10 +22843,51 @@ OpenStreetMap tiles include mapped state and county administrative boundaries.
             </td>
 
             
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
 
             
 
             <td class="description last"></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>bounds</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Optional inset bounds.</td>
         </tr>
 
     
@@ -22631,7 +22928,7 @@ OpenStreetMap tiles include mapped state and county administrative boundaries.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_engine.js.html">viewer/engine.js</a>, <a href="viewer_engine.js.html#line158">line 158</a>
+        <a href="viewer_engine.js.html">viewer/engine.js</a>, <a href="viewer_engine.js.html#line159">line 159</a>
     </li></ul></dd>
     
 
@@ -24112,6 +24409,165 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
 
     
+    <h4 class="name" id="expandBufkitTimeSeries"><span class="type-signature"></span>expandBufkitTimeSeries<span class="signature">(soundings)</span><span class="type-signature"> &rarr; {Array.&lt;object>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Expand available BUFKIT forecasts into hourly positions, marking gaps unavailable.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>soundings</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;object></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Parsed BUFKIT forecast soundings.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="viewer_time-slider.js.html">viewer/time-slider.js</a>, <a href="viewer_time-slider.js.html#line195">line 195</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    Hourly slider positions in valid-time order.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array.&lt;object></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="exportSounding"><span class="type-signature"></span>exportSounding<span class="signature">(sounding, format<span class="signature-attributes">opt</span>, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object|null}</span></h4>
     
 
@@ -25387,6 +25843,325 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
 
     
+    <h4 class="name" id="fetchIemBufkitForecasts"><span class="type-signature"></span>fetchIemBufkitForecasts<span class="signature">(q)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;object>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Fetch and parse every forecast hour from one IEM BUFKIT file.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>q</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">BUFKIT archive selection.
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>model</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Model identifier.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>station</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">BUFKIT station identifier.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>run</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Date</span>
+|
+
+<span class="param-type">string</span>
+|
+
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Model run time (UTC).</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>fetch</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Fetch-compatible function.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line127">line 127</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    Soundings for each forecast hour, in file order.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;object>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
     <h4 class="name" id="fetchIemRaob"><span class="type-signature"></span>fetchIemRaob<span class="signature">(q)</span><span class="type-signature"></span></h4>
     
 
@@ -25954,7 +26729,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line157">line 157</a>
+        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line178">line 178</a>
     </li></ul></dd>
     
 
@@ -25979,6 +26754,382 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
 
 
 
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="fetchNexradVwpArchive"><span class="type-signature"></span>fetchNexradVwpArchive<span class="signature">(q)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;object>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Fetch every archived NEXRAD VWP volume in an inclusive UTC time window.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>q</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Archive query and optional progress callback.
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>radar</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Three- or four-letter radar id.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>start</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Date</span>
+|
+
+<span class="param-type">string</span>
+|
+
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Inclusive window start.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>end</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Date</span>
+|
+
+<span class="param-type">string</span>
+|
+
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Inclusive window end.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>background</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">object</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Sounding to take thermodynamics from.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>fetch</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last">Fetch-compatible function.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code></code></td>
+            
+
+            <td class="type">
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line212">line 212</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    Soundings ordered by volume time.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;object>></span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -29110,7 +30261,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_controls.js.html">viewer/controls.js</a>, <a href="viewer_controls.js.html#line46">line 46</a>
+        <a href="viewer_controls.js.html">viewer/controls.js</a>, <a href="viewer_controls.js.html#line47">line 47</a>
     </li></ul></dd>
     
 
@@ -30040,7 +31191,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_styles.js.html">viewer/styles.js</a>, <a href="viewer_styles.js.html#line362">line 362</a>
+        <a href="viewer_styles.js.html">viewer/styles.js</a>, <a href="viewer_styles.js.html#line387">line 387</a>
     </li></ul></dd>
     
 
@@ -30463,7 +31614,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line143">line 143</a>
+        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line164">line 164</a>
     </li></ul></dd>
     
 
@@ -30551,7 +31702,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_controls.js.html">viewer/controls.js</a>, <a href="viewer_controls.js.html#line66">line 66</a>
+        <a href="viewer_controls.js.html">viewer/controls.js</a>, <a href="viewer_controls.js.html#line67">line 67</a>
     </li></ul></dd>
     
 
@@ -31676,7 +32827,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line136">line 136</a>
+        <a href="sources_index.js.html">sources/index.js</a>, <a href="sources_index.js.html#line157">line 157</a>
     </li></ul></dd>
     
 
@@ -31945,7 +33096,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_engine.js.html">viewer/engine.js</a>, <a href="viewer_engine.js.html#line241">line 241</a>
+        <a href="viewer_engine.js.html">viewer/engine.js</a>, <a href="viewer_engine.js.html#line244">line 244</a>
     </li></ul></dd>
     
 
@@ -34647,7 +35798,7 @@ https://doi.org/10.1175/1520-0493(1980)108%3C1046:TCDMAA%3E2.0.CO;2</li>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line97">line 97</a>
+        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line99">line 99</a>
     </li></ul></dd>
     
 
@@ -39024,7 +40175,7 @@ Same conversion the chart uses for its labels.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line53">line 53</a>
+        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line55">line 55</a>
     </li></ul></dd>
     
 
@@ -39951,7 +41102,7 @@ for compatibility but is not used in the calculation.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line38">line 38</a>
+        <a href="viewer_index.js.html">viewer/index.js</a>, <a href="viewer_index.js.html#line40">line 40</a>
     </li></ul></dd>
     
 
@@ -46442,13 +47593,13 @@ hemisphere-aware wind barbs). Returns the same sounding.
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 16:16:11 GMT-0500 (Central Daylight Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 17:31:43 GMT-0500 (Central Daylight Time)
 </footer>
 
 <script> prettyPrint(); </script>

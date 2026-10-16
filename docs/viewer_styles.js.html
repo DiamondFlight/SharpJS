@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: viewer/styles.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: viewer/styles.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * SharpJS stylesheet. Injected once per document by SharpJS() (pass { injectStyles: false } to
+ * ship your own). Everything is scoped under .sharpjs; theme it by overriding the --sjs-* variables.
+ *
+ * Chart geometry is in percentages of the chart box (18:12 aspect), matching the canvas
+ * resolutions the engine draws at.
+ */
+const v = (id) => `.sharpjs [data-sjs="${id}"]`;
+
+export const SHARPJS_CSS = `
+.sharpjs {
+  --sjs-bg: #000;
+  --sjs-surface: #0d1014;
+  --sjs-surface-2: #161b21;
+  --sjs-text: #e8eef2;
+  --sjs-muted: #8ea3b3;
+  --sjs-border: rgba(255, 255, 255, 0.28);
+  --sjs-accent: #4a90e2;
+  --sjs-accent-text: #fff;
+  --sjs-button-bg: #1f262e;
+  --sjs-button-hover: #2c3742;
+  --sjs-danger: #dc3545;
+  --sjs-radius: 6px;
+  --sjs-font: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --sjs-controls-width: 270px;
+
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  color: var(--sjs-text);
+  font-family: var(--sjs-font);
+  box-sizing: border-box;
+}
+.sharpjs *, .sharpjs *::before, .sharpjs *::after { box-sizing: border-box; }
+
+.sharpjs .sjs-stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.sharpjs .sjs-timeslider {
+  position: fixed;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-height: 5vh;
+  padding: 2px 6px;
+  overflow: hidden;
+  color: var(--sjs-text);
+  background: var(--sjs-surface);
+  border: 1px solid var(--sjs-border);
+  border-radius: var(--sjs-radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.sharpjs .sjs-timeslider[hidden] { display: none; }
+.sharpjs .sjs-time-play[hidden] { display: none; }
+.sharpjs .sjs-timeslider .sjs-time-play {
+  flex: 0 0 auto;
+  min-width: 2.2em;
+  height: 100%;
+  padding: 0 5px;
+  font-size: clamp(0.55rem, 1.2vh, 0.8rem);
+}
+.sharpjs .sjs-time-range { flex: 1 1 auto; min-width: 0; height: 100%; margin: 0; accent-color: var(--sjs-accent); }
+.sharpjs .sjs-time-label {
+  flex: 0 0 auto;
+  min-width: 9.7em;
+  text-align: right;
+  color: var(--sjs-text);
+  font: 500 clamp(0.55rem, 1.2vh, 0.75rem) / 1 var(--sjs-font);
+  white-space: nowrap;
+}
+
+/* ───────── Chart box ───────── */
+.sharpjs .sjs-viz {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 18 / 12;
+  display: flex;
+  flex-wrap: wrap;
+  background: var(--sjs-bg);
+  border-radius: var(--sjs-radius);
+  overflow: hidden;
+  isolation: isolate;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sharpjs .sjs-viz canvas { display: block; }
+
+.sharpjs .skewTInset {
+  position: relative;
+  height: 66.66666%;
+  width: 60%;
+  margin: 0;
+  top: 0;
+  border: 1.5px solid var(--sjs-border);
+  overflow: hidden;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+  background: #000;
+}
+
+${v('skewTTitle')} { position: absolute; top: 0; left: 0; width: 100%; height: 5%; background: #000; }
+${v('skewT')} { position: absolute; top: 5%; left: 0; width: 77%; height: 90%; background: #000; }
+${v('verticalBar')} {
+  position: absolute; top: 5%; left: 82%; width: 18%; height: 90%;
+  background: #000; border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+${v('barbs')} { position: absolute; top: 5%; left: 75.5%; width: 8%; height: 90%; }
+${v('skewTNumbers')} { position: absolute; top: 95%; left: 0; width: 83.5%; height: 5.5%; background: #000; }
+${v('skewTOverHang')}, ${v('skewTOverHang2')} {
+  position: absolute; top: 5%; left: 0; width: 77%; height: 90%;
+  background: transparent; pointer-events: none;
+}
+${v('skewTOverHang3')} {
+  position: absolute; top: 5%; left: 100%; width: 100%; height: 100%;
+  background: transparent; pointer-events: none;
+}
+
+.sharpjs .hodographInset,
+${v('Values1')}, ${v('Values2')}, ${v('Values3')}, ${v('Values4')}, ${v('Values5')},
+${v('Values6')}, ${v('Values7')}, ${v('Values8')}, ${v('Values11')} {
+  position: absolute !important;
+  border: 1.5px solid var(--sjs-border);
+  border-radius: 0;
+  background-color: #000;
+  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.5);
+}
+
+.sharpjs .hodographInset { top: 0; left: 60%; width: 40%; height: 66.666%; overflow: hidden; }
+${v('hodograph')} { position: absolute; width: 100%; height: 100%; background: #000; }
+${v('hodographOverHang')}, ${v('hodographOverHang2')}, ${v('hodographOverHang3')} {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
+  background: transparent; pointer-events: none;
+}
+
+.sharpjs .hodographValues { position: absolute; top: 66.66666%; left: 55%; width: 45%; height: 28%; display: block; z-index: 10; }
+${v('Values5')} { top: 0; left: 0; width: 60%; height: 100%; z-index: 11; }
+${v('Values4')}, ${v('Values6')} { bottom: 0; left: 60%; width: 40%; height: 100%; z-index: 11; }
+
+.sharpjs .skewTValues { position: absolute; top: 66.66666%; left: 0; width: 55%; height: 28%; margin: 0; display: block; z-index: 10; }
+${v('Values1')} { top: 0; left: 0; width: 75%; height: 50%; z-index: 11; }
+${v('Values2')} { top: 0; right: 0; width: 25%; height: 50%; z-index: 11; }
+${v('Values3')} { top: 50%; left: 0; width: 100%; height: 50%; z-index: 11; }
+${v('Values11')} { top: 0; left: 0; width: 100%; height: 100%; z-index: 11; display: none !important; }
+
+/* VWP layout (engine swaps these classes in) */
+.sharpjs .hodographInsetVWP {
+  position: absolute; top: 3.333%; left: 0; width: 60%; height: 92%; z-index: 25;
+  border: 1.5px solid var(--sjs-border); overflow: hidden;
+}
+.sharpjs .hodographValuesVWP { position: absolute; top: 0; left: 60%; width: 40%; height: 100%; display: block; z-index: 10; }
+.sharpjs .Values5VWP { height: 36.6666% !important; width: 100% !important; z-index: 50; }
+${v('Values7')} { top: 36.6666%; left: 0; height: 18.3333% !important; width: 100% !important; z-index: 55; }
+${v('Values8')} { top: 55%; left: 0; height: 40% !important; width: 100% !important; z-index: 55; }
+
+.sharpjs .skewthidden { visibility: hidden !important; }
+.sharpjs .vwphidden { visibility: hidden !important; }
+
+/* Status overlays */
+.sharpjs .sjs-anim, .sharpjs .sjs-error {
+  position: absolute; z-index: 5; margin: 0; visibility: hidden;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  font-weight: 700; font-size: clamp(1.2rem, 2vw, 2.5rem);
+}
+.sharpjs .sjs-anim { inset: 0; color: var(--sjs-text); background: rgba(0, 0, 0, 0.75); }
+.sharpjs .sjs-error { top: 20%; left: 15%; width: 70%; height: 50%; color: #fff; background: rgba(220, 53, 69, 0.75); border-radius: 8px; }
+
+.sharpjs .sjs-empty {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: 24px; text-align: center; color: var(--sjs-muted); background: rgba(0, 0, 0, 0.82);
+  font-size: clamp(0.85rem, 1.3vw, 1.05rem);
+}
+.sharpjs .sjs-empty strong { color: var(--sjs-text); font-size: 1.25em; }
+.sharpjs .sjs-viz.is-dragover .sjs-empty { outline: 2px dashed var(--sjs-accent); outline-offset: -12px; color: var(--sjs-text); }
+
+/* ───────── Buttons &amp; inputs (chart + controls) ───────── */
+.sharpjs .sjs-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: none; border-radius: 4px; cursor: pointer;
+  color: var(--sjs-text); background: var(--sjs-button-bg);
+  font: 600 clamp(0.7rem, 0.9vw, 0.85rem) / 1.2 var(--sjs-font);
+  padding: 6px 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: background-color 0.15s ease;
+}
+.sharpjs .sjs-button:hover { background: var(--sjs-button-hover); }
+.sharpjs .sjs-button:active { transform: translateY(1px); }
+.sharpjs .sjs-button.current, .sharpjs .sjs-button[aria-pressed="true"] { background: var(--sjs-accent); color: var(--sjs-accent-text); }
+.sharpjs .sjs-button:focus-visible, .sharpjs .sjs-input:focus-visible, .sharpjs .sjs-select:focus-visible {
+  outline: 2px solid var(--sjs-accent); outline-offset: 1px;
+}
+
+.sharpjs .sjs-help-button {
+  position: absolute; top: 4px; right: 8px; z-index: 21; padding: 4px 8px;
+}
+
+/* ───────── Modify table ───────── */
+.sharpjs .modify-skewt-modal {
+  position: absolute; top: 83%; left: 50%; transform: translate(-50%, -50%);
+  width: 80%; max-height: 25%; z-index: 2500; display: none;
+  overflow-y: auto; overscroll-behavior: contain;
+  background: #222; border: 2px solid rgba(255, 255, 255, 0.5); border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.45) rgba(255, 255, 255, 0.08);
+  -webkit-user-select: text; user-select: text;
+}
+.sharpjs .modify-skewt-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 14px; background: #333; border-bottom: 1px solid var(--sjs-border);
+  position: sticky; top: 0; z-index: 11;
+}
+.sharpjs .modify-skewt-header h3 { margin: 0; color: #fff; font-size: clamp(0.9rem, 1.3vw, 1.1rem); font-weight: 600; }
+.sharpjs .modify-skewt-close { background: transparent; border: none; color: #fff; font-size: 1.4rem; cursor: pointer; line-height: 1; }
+.sharpjs .modify-skewt-close:hover { color: var(--sjs-accent); }
+.sharpjs .modify-skewt-table { width: 100%; border-collapse: collapse; }
+.sharpjs .modify-skewt-table thead { position: sticky; top: 38px; background: #333; z-index: 10; }
+.sharpjs .modify-skewt-table th {
+  padding: 6px; text-align: center; color: #fff; font-weight: 600;
+  border-bottom: 2px solid var(--sjs-border); font-size: clamp(0.7rem, 0.9vw, 0.85rem);
+}
+.sharpjs .modify-skewt-table tbody { background: #222; }
+.sharpjs .modify-skewt-table td {
+  padding: 5px; text-align: center; color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1); font-size: clamp(0.65rem, 0.85vw, 0.8rem);
+}
+.sharpjs .modify-skewt-table tr:hover { background: rgba(74, 144, 226, 0.2); }
+.sharpjs .modify-skewt-table .editable { cursor: text; position: relative; }
+.sharpjs .modify-skewt-table .editable:hover { background: rgba(255, 255, 255, 0.1); }
+.sharpjs .modify-skewt-table .editable:focus { outline: 2px solid var(--sjs-accent); background: rgba(0, 0, 0, 0.3); }
+.sharpjs .modify-skewt-table .modified { color: #ffd166; }
+.sharpjs .non-editable { color: rgba(255, 255, 255, 0.6); }
+.sharpjs .highlight-row { background: rgba(74, 144, 226, 0.15); }
+.sharpjs .edit-helper {
+  position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 2600;
+  display: none; padding: 8px 15px; border-radius: 4px;
+  color: #fff; background: rgba(0, 0, 0, 0.75); font-size: 0.85rem;
+}
+.sharpjs .edit-helper.active { display: block; }
+
+/* ───────── Help dialog ───────── */
+.sharpjs .sjs-help-overlay {
+  position: absolute; inset: 0; z-index: 3000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+}
+.sharpjs .sjs-help-overlay[hidden] { display: none; }
+.sharpjs .sjs-help {
+  width: min(600px, 92%); max-height: 92%; overflow-y: auto;
+  color: #fff; background: #222; border: 1px solid #444; border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  -webkit-user-select: text; user-select: text;
+}
+.sharpjs .sjs-help-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; background: #333; border-bottom: 1px solid #444; border-radius: 8px 8px 0 0;
+}
+.sharpjs .sjs-help-header h3 { margin: 0; font-size: clamp(0.9rem, 1.3vw, 1.1rem); }
+.sharpjs .sjs-help-close { background: none; border: none; color: #aaa; font-size: 1.4rem; cursor: pointer; line-height: 1; }
+.sharpjs .sjs-help-close:hover { color: #fff; }
+.sharpjs .sjs-help-content { padding: 14px 18px; font-size: clamp(0.75rem, 1vw, 0.9rem); }
+.sharpjs .sjs-help-content h4 { margin: 0 0 8px; color: #7db9e8; border-bottom: 1px solid #444; padding-bottom: 4px; }
+.sharpjs .sjs-help-content section { margin-bottom: 16px; }
+.sharpjs .sjs-help-content ul { list-style: none; padding: 0; margin: 0; }
+.sharpjs .sjs-help-content li { margin-bottom: 6px; line-height: 1.4; }
+.sharpjs .sjs-help-content li strong { display: inline-block; min-width: 150px; color: #aaa; margin-right: 8px; }
+.sharpjs .sjs-help-content a { color: #7db9e8; }
+.sharpjs .sjs-help-note { margin: 8px 0 !important; padding: 5px; color: #ffcc00; border-left: 3px solid #ffcc00; background: rgba(255, 204, 0, 0.1); }
+
+/* ───────── Dropsonde layout ───────── */
+.sharpjs .sjs-viz.dropsonde-mode .skewTInset {
+  height: 100% !important; width: 62% !important;
+  background: #0a0c0e; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; box-shadow: none;
+}
+.sharpjs .sjs-viz.dropsonde-mode ${v('skewTTitle').replace('.sharpjs ', '')} { height: 8%; background: #0a0c0e !important; }
+.sharpjs .sjs-viz.dropsonde-mode .skewTValues {
+  height: 62% !important; width: 38% !important; left: 62% !important; top: 0 !important; border: none; background: transparent;
+}
+.sharpjs .sjs-viz.dropsonde-mode .skewTValues [data-sjs="Values1"],
+.sharpjs .sjs-viz.dropsonde-mode .skewTValues [data-sjs="Values2"],
+.sharpjs .sjs-viz.dropsonde-mode .skewTValues [data-sjs="Values3"] { display: none !important; }
+.sharpjs .sjs-viz.dropsonde-mode .skewTValues [data-sjs="Values11"] {
+  display: block !important; background-color: #0a0c0e; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px 0 0 0; box-shadow: none;
+}
+.sharpjs .sjs-viz.dropsonde-mode .mobile-chart-row,
+.sharpjs .sjs-viz.dropsonde-mode .hodographValues,
+.sharpjs .sjs-viz.dropsonde-mode .hodographInset,
+.sharpjs .sjs-viz.dropsonde-mode [data-sjs="verticalBar"] { display: none !important; }
+.sharpjs .sjs-viz.dropsonde-mode [data-sjs="skewT"] { width: 88%; top: 8%; height: 87%; background: #0a0c0e; }
+.sharpjs .sjs-viz.dropsonde-mode [data-sjs="skewTOverHang"],
+.sharpjs .sjs-viz.dropsonde-mode [data-sjs="skewTOverHang2"] { width: 88%; top: 8%; height: 87%; }
+.sharpjs .sjs-viz.dropsonde-mode [data-sjs="barbs"] { left: 86%; width: 12%; top: 8%; height: 87%; background: #0a0c0e; }
+.sharpjs .sjs-viz.dropsonde-mode [data-sjs="skewTNumbers"] { width: 100%; background: #0a0c0e; }
+
+/* ───────── Controls panel ───────── */
+.sharpjs .sjs-controls {
+  flex: 0 0 var(--sjs-controls-width);
+  width: var(--sjs-controls-width);
+  max-height: var(--sjs-controls-max-height, none);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sjs-accent) transparent;
+}
+.sharpjs .sjs-section {
+  margin: 0 0 8px;
+  padding: 8px 10px 10px;
+  background: var(--sjs-surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--sjs-radius);
+}
+.sharpjs .sjs-section > summary {
+  cursor: pointer; list-style: none;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--sjs-muted);
+}
+.sharpjs .sjs-section > summary::-webkit-details-marker { display: none; }
+.sharpjs .sjs-section > summary::after { content: '▾'; float: right; transition: transform 0.15s ease; }
+.sharpjs .sjs-section:not([open]) > summary::after { transform: rotate(-90deg); }
+.sharpjs .sjs-section[open] > summary { margin-bottom: 8px; }
+.sharpjs .sjs-sub { margin: 10px 0 6px; font-size: 0.72rem; font-weight: 700; color: var(--sjs-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sharpjs .sjs-row { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 5px; margin-bottom: 5px; }
+.sharpjs .sjs-row > .sjs-button { width: 100%; }
+.sharpjs .sjs-stack > .sjs-button { width: 100%; margin-bottom: 5px; justify-content: space-between; text-align: left; }
+.sharpjs .sjs-stack > .sjs-button > span:last-child { color: var(--sjs-muted); font-weight: 500; }
+.sharpjs .sjs-stack > .sjs-button[aria-pressed="true"] > span:last-child { color: inherit; }
+.sharpjs .sjs-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 7px; font-size: 0.75rem; color: var(--sjs-muted); }
+.sharpjs .sjs-field-row { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 6px; }
+.sharpjs .sjs-input, .sharpjs .sjs-select {
+  width: 100%; min-width: 0;
+  padding: 5px 8px;
+  color: var(--sjs-text); background: var(--sjs-surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 4px;
+  font: 0.8rem/1.3 var(--sjs-font);
+}
+.sharpjs .sjs-select { appearance: auto; }
+.sharpjs .sjs-hint { margin: 2px 0 6px; font-size: 0.7rem; color: var(--sjs-muted); }
+.sharpjs .sjs-status { min-height: 1.1em; margin: 4px 0 0; font-size: 0.72rem; color: #fbbf24; }
+.sharpjs .sjs-status.is-error { color: #f87171; }
+.sharpjs .sjs-saved { font-size: 0.7rem; color: var(--sjs-muted); margin: 4px 2px 0; }
+
+/* Controls stack above the chart on narrow screens */
+@media (max-width: 900px) {
+  .sharpjs { flex-direction: column; }
+  .sharpjs .sjs-controls { flex-basis: auto; width: 100%; max-height: none; order: 2; }
+}
+
+/* ───────── Phones (portrait): stack the panels ───────── */
+@media (max-width: 768px) and (orientation: portrait) {
+  .sharpjs .sjs-viz { aspect-ratio: auto; height: auto; flex-direction: column; flex-wrap: nowrap; }
+  .sharpjs .skewTInset { order: 1; position: relative !important; width: 100% !important; height: 62vw; }
+  .sharpjs .mobile-chart-row { order: 2; display: flex; width: 100%; height: 50vw; position: relative; }
+  .sharpjs .skewTValues {
+    order: 3; position: relative !important; display: flex; flex-wrap: wrap;
+    width: 100% !important; height: 36vw; top: auto !important; left: auto !important;
+  }
+  .sharpjs .hodographInset { position: relative !important; width: 50% !important; height: 100% !important; top: auto !important; left: auto !important; }
+  .sharpjs .hodographValues { position: relative !important; width: 50% !important; height: 100% !important; top: auto !important; left: auto !important; }
+  ${v('Values5')}:not(.Values5VWP) { width: 100% !important; height: 50% !important; top: 0 !important; left: 0 !important; }
+  ${v('Values4')}, ${v('Values6')} { width: 100% !important; height: 50% !important; top: 50% !important; left: 0 !important; }
+  ${v('Values1')}, ${v('Values2')}, ${v('Values3')} { position: relative !important; height: 50% !important; top: auto !important; left: auto !important; }
+  ${v('Values1')} { width: 70% !important; }
+  ${v('Values2')} { width: 30% !important; }
+  ${v('Values3')} { width: 100% !important; }
+  ${v('skewT')}, ${v('skewTOverHang')}, ${v('skewTOverHang2')} { width: 75%; }
+  ${v('barbs')} { left: 75% !important; width: 7% !important; }
+  ${v('verticalBar')} { left: 80%; width: 20%; }
+  ${v('skewTNumbers')} { width: 82.5% !important; }
+  .sharpjs .hodographInsetVWP { position: relative !important; width: 100% !important; height: 80vw !important; top: 0 !important; }
+  .sharpjs .hodographValuesVWP { position: relative !important; width: 100% !important; left: 0 !important; height: 90vw !important; }
+  .sharpjs .sjs-viz.dropsonde-mode .skewTInset { width: 100% !important; height: 80vw !important; }
+  .sharpjs .sjs-viz.dropsonde-mode .skewTValues { position: relative !important; width: 100% !important; left: 0 !important; height: 60vw !important; }
+  .sharpjs .modify-skewt-modal { top: 50%; max-height: 60%; width: 96%; }
+  .sharpjs .sjs-help-content li strong { min-width: 0; display: block; }
+}
+`;
+
+const injected = new WeakSet();
+
+/** Add the stylesheet to `doc` once. */
+export function injectStyles(doc = typeof document !== 'undefined' ? document : null) {
+  if (!doc || injected.has(doc) || doc.querySelector('style[data-sharpjs]')) return;
+  const style = doc.createElement('style');
+  style.setAttribute('data-sharpjs', '');
+  style.textContent = SHARPJS_CSS;
+  (doc.head || doc.documentElement).appendChild(style);
+  injected.add(doc);
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 17:31:43 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

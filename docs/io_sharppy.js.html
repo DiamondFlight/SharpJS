@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: io/sharppy.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: io/sharppy.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * SHARPpy-style text parser (also CM1 input_sounding and Chaser Archive JSON).
+ * Produces the SharpJS sounding object used everywhere else:
+ *
+ *   { Title, STitle, Location, Sounding: { P, H, T, D, W, TW, DW, Slice, OMEGA, SRW }, DWL, TWL, WWL, Len }
+ *
+ * Each Slice row is [pres mb, hght m, temp C, dwpt C, wdir deg, wspd kt, wetbulb C, omega].
+ * Pure functions: no DOM, no network.
+ */
+import { Lerp, clamp, VirtTemp, wetbulb } from '../calc/skewtCalcs.js';
+import { lerp, KTStoMPS } from './general.js';
+
+/**
+ * Calculate the fractional position of V between range endpoints B and T.
+ * @param {number} V Value to locate
+ * @param {number} B First endpoint
+ * @param {number} T Second endpoint
+ * @returns {number} Relative position within the range
+ */
+function GetNumFromRange(V, B, T) {
+  return (B - V) / (B - T);
+}
+
+/**
+ * Convert wind speed from meters per second to knots.
+ * @param {number} n Wind speed (in m/s).
+ * @returns {number} Wind speed (in kt).
+ */
+function MPStoKTS(n){
+  return n * 1.94384;
+}
+
+/**
+ * Estimate pressure one height increment above a level using the hypsometric equation.
+ * @param {number} pLower Pressure at the lower level (in hPa).
+ * @param {number} deltaZ Height increment (in m).
+ * @param {number} theta Potential temperature (in K).
+ * @param {number} qv_gkg Water-vapor mixing ratio (in g/kg).
+ * @returns {number} Pressure at the upper level (in hPa).
+ * @see https://glossary.ametsoc.org/wiki/hypsometric-equation/
+ */
+function calcNxtPrs(pLower, deltaZ, theta, qv_gkg) {
+  const Rd = 287.04;
+  const g = 9.80665;
+  const qv_kg = qv_gkg / 1000;
+
+  const tempK = theta * Math.pow(pLower / 1000, 287.04 / 1005.7);
+
+  const vTemp = tempK * (1 + qv_kg / 0.622) / (1 + qv_kg);
+
+  return pLower / Math.exp(deltaZ / (vTemp * (Rd / g)));
+}
+
+/**
+ * Convert potential temperature to air temperature at a pressure level.
+ * @param {number} theta Potential temperature (in K).
+ * @param {number} p Pressure (in hPa).
+ * @returns {number} Air temperature (in °C).
+ * @see https://glossary.ametsoc.org/wiki/potential-temperature/
+ */
+function tempCFromTheta(theta, p) {
+  return theta * Math.pow(p / 1000.0, 0.2854) - 273.15;
+}
+
+/**
+ * Derive dewpoint from water-vapor mixing ratio and pressure.
+ * @param {number} qv Water-vapor mixing ratio (in g/kg).
+ * @param {number} p Pressure (in hPa).
+ * @returns {number} Dewpoint temperature (in °C).
+ */
+function dewpointCFromQv(qv, p) {
+  const eps = 0.62195691;
+  const w = qv / 1000.0; 
+  const e = (w * p) / (eps + w);
+  const ln = Math.log(Math.max(e, 1e-12) / 6.112);
+  return (243.5 * ln) / (17.67 - ln);
+}
+
+/**
+ * Convert CM1 surface metadata and profile rows into pressure-level records.
+ * @param {number[]} header Surface pressure (hPa), potential temperature (K), and mixing ratio (g/kg).
+ * @param {string[]} lines CM1 sounding lines; profile height is in m, theta in K, mixing ratio in g/kg, and wind components in m/s.
+ * @returns {object[]} Profile records with pressure (in hPa), height (in m), temperature/dewpoint (in °C), direction (in degrees), and speed (in m/s).
+ */
+function parseCM1Sounding(header, lines) {
+  const [sfcP, sfcTheta, sfcQV] = header;
+
+  let currentP = sfcP;
+  let currentZ = 0;
+
+  return lines.slice(1).map(line => {
+    const [hght, tta, qv, u, v] = line.trim().split(/\s+/).map(Number);
+    
+    const dz = hght - currentZ;
+    const p = calcNxtPrs(currentP, dz, tta, qv);
+
+    const tmpC = tempCFromTheta(tta, p); 
+    const dewC = dewpointCFromQv(qv, p);
+
+    const speed = Math.hypot(u, v);
+    const dir =  (270 - Math.atan2(v, u) * 180 / Math.PI) % 360;
+
+    currentP = p;
+    currentZ = hght;
+
+    return {
+      p: p,
+      hght: hght,
+      tmpC: tmpC,
+      dewC: dewC,
+      dir: dir,
+      speed: speed,
+    };
+  });
+}
+
+/**
+ * Convert a CM1 input_sounding text file into SHARPpy raw sounding text.
+ * @param {string} Text CM1 sounding text.
+ * @returns {string} SHARPpy-format sounding text.
+ */
+function breakdownCM1(Text){
+  const lines = Text.trim().split('\n');
+
+  const header = lines[0].trim().split(/\s+/).map(Number);
+  
+  const TrueProfiles = parseCM1Sounding(header, lines);
+
+  let InfoString = "";
+  
+  for (let i = 0; i &lt; TrueProfiles.length; i++) {
+    let PC = TrueProfiles[i].p;
+    let HC = TrueProfiles[i].hght;
+    let TC = TrueProfiles[i].tmpC;
+    let DC = TrueProfiles[i].dewC;
+    let WDC = TrueProfiles[i].dir;
+    let WSC = MPStoKTS(TrueProfiles[i].speed);
+    InfoString += ` ${PC},\t${HC},\t${TC},\t${DC},\t${WDC},\t${WSC},\t${0}\n`;
+  }
+
+  let Title = "No Title Provided";
+
+  let txt = `%TITLE%
+  ${Title}
+      LEVEL       HGHT       TEMP       DWPT       WDIR       WSPD       OMEGA
+  --------------------------------------------------------------------------------
+  %RAW%
+  ${InfoString}%END%`;
+
+  return txt;
+}
+
+/**
+ * Parse supported sounding text and construct the normalized SharpJS sounding object.
+ * @param {string} text SHARPpy, Chaser Archive JSON, or CM1 sounding text.
+ * @returns {object|false} Parsed sounding with level arrays and metadata (pressure in hPa, height in m, temperature/dewpoint in °C, direction in degrees, wind speed in kt), or false when text is null.
+ */
+export function Process(text) {
+  let Json = {
+    Sounding: {
+      T: [],
+      D: [],
+      W: [],
+      H: [],
+      P: [],
+      TW: [],
+      SRW: [],
+      DW: [],
+      Slice: [],
+      OMEGA: [],
+    },
+    Len: 0,
+    Location: false,
+  };
+
+  let Info = text;
+  if (Info == null) {
+    console.error("Error reading the file");
+    return false;
+  }
+
+
+  if (Info.includes('"level"')){
+    //ChaserArchive
+    let True_Info = JSON.parse(text);
+    let InfoString = "";
+    for (let i = 0; i &lt; True_Info["hght"].length; i++) {
+      let PC = True_Info["level"][i];
+      let HC = True_Info["hght"][i];
+      let TC = True_Info["temp"][i];
+      let DC = True_Info["dwpt"][i];
+      let WDC = True_Info['wdir'][i];
+      let WSC = True_Info['wspd'][i];
+      InfoString += ` ${PC},\t${HC},\t${TC},\t${DC},\t${WDC},\t${WSC},\t${0}\n`;
+    }
+
+    let Title = "No Title Provided";
+
+    let txt = `%TITLE%
+    ${Title}
+        LEVEL       HGHT       TEMP       DWPT       WDIR       WSPD       OMEGA
+    --------------------------------------------------------------------------------
+    %RAW%
+    ${InfoString}%END%`;
+    Info = txt;
+  } else if(Info.includes("%START%")){
+    //SHARPPY
+  } else if (!/\p{L}/u.test(Info)) {
+    //CM1
+    Info = breakdownCM1(Info);
+  } else if (Info.includes("#")){
+    //ICGB: not supported yet
+  }
+  //Build the Return JSON Object
+  let Lines = Info.split("\n");
+  let Split = Info.split("%RAW%");
+
+  Json.Title = Lines[1];
+  Json.STitle = Lines[1];
+
+  if (Lines[1].indexOf("WRF") > -1 &amp;&amp; Lines[1].indexOf("AT: ") > -1){
+    let SplitFinder = Lines[1].indexOf("N, ") > -1 ? Lines[1].indexOf("N, ") : Lines[1].indexOf("S, ")
+    let Lat = Lines[1].substring(Lines[1].indexOf("AT: "), SplitFinder)
+    let Lon = Lines[1].substring(SplitFinder, Lines[1].length)
+
+    if (Lat.indexOf("S")){
+      Lat = parseFloat(Lat.substring(4, Lat.length-2));
+    } else {
+      Lat = -parseFloat(Lat.substring(4, Lat.length-2));
+    }
+
+    if (Lon.indexOf("E")){
+      Lon = -(360-parseFloat(Lon.substring(2, Lon.length-2)))%360;
+    } else {
+      Lon = -parseFloat(Lon.substring(2, Lon.length-2))%360;
+    }
+
+    Json.Location = [Lat, Lon];
+    Json.Location2 = [Lat, -Lon];
+  }
+  
+
+  Split = Split[1].split("%END%");
+  let PL = Split[0].split("\n");
+  // let PL = Pr[1].split("%END%");
+
+  Json.Len = PL.length;
+
+  let DWL = 0;
+  let TWL = 0;
+  let WWL = 0;
+
+  let SFCLayer = 9999;
+  let sfc = PL[1].split(",");
+
+  let GoodData = [];
+
+  for (let x = 0; x &lt; sfc.length; x++) {
+    sfc[x] = parseFloat(sfc[x]);
+  }
+
+  for (let i = 0; i &lt; PL.length; i++) {
+    let Ln = PL[i].split(",");
+
+    if (Ln.length == 1) {
+      continue;
+    }
+
+
+    for (let x = 0; x &lt; Ln.length; x++) {
+      Ln[x] = parseFloat(Ln[x]);
+    }
+
+    if (Ln.length == 6){
+      Ln[Ln.length] = wetbulb(parseFloat(Ln[0]), parseFloat(Ln[2]), parseFloat(Ln[3]))
+      Ln[Ln.length] = 0
+    } else {
+      Ln.splice(Ln.length-1, 0, wetbulb(parseFloat(Ln[0]), parseFloat(Ln[2]), parseFloat(Ln[3])))
+    }
+    
+
+    if (Ln[2] == -9999 &amp;&amp; Ln[3] == -9999 &amp;&amp; Ln[4] == -9999 &amp;&amp; Ln[5] == -9999) {
+      continue;
+    }
+
+    if (Ln[2] != -9999 &amp;&amp; Ln[3] != -9999 &amp;&amp; Ln[4] != -9999 &amp;&amp; Ln[5] != -9999) {
+      GoodData.push(Json.Sounding.Slice.length);
+    }
+
+    Json.Sounding.P.push(parseFloat(Ln[0]));
+    Json.Sounding.H.push(parseFloat(Ln[1]));
+    Json.Sounding.T.push(parseFloat(Ln[2]));
+    Json.Sounding.D.push(parseFloat(Ln[3]));
+
+    if (parseFloat(Ln[2]) != -9999 &amp;&amp; !isNaN(parseFloat(Ln[2]))) {
+      Json.Sounding.TW.push(
+        { T: parseFloat(Ln[2]), VT: VirtTemp(Ln, sfc[0], true, true), WB: Ln[6], P: parseFloat(Ln[0]), H: parseFloat(Ln[1]) }
+      );
+      TWL += 1;
+
+      SFCLayer = Math.min(SFCLayer, i);
+    };
+
+    if (parseFloat(Ln[3]) != -9999 &amp;&amp; !isNaN(parseFloat(Ln[3]))) {
+      Json.Sounding.DW.push(
+        { D: parseFloat(Ln[3]), P: parseFloat(Ln[0]), H: parseFloat(Ln[1]) }
+      );
+      DWL += 1;
+
+      SFCLayer = Math.min(SFCLayer, i);
+    };
+
+    Json.Sounding.Slice.push(Ln);
+    Json.Sounding.OMEGA.push(Ln[7]/10);    
+  }
+
+  Json.DWL = DWL;
+  Json.TWL = TWL;
+
+
+  //Fix -9999 Missing data
+
+  // // console.log(Json.Sounding.Slice, GoodData);
+
+  let Iterator = 0;
+  let NewSlices = Json.Sounding.Slice;
+
+  if (GoodData.length &lt; 1) {
+
+  } else {
+    let Bottom = Json.Sounding.Slice[GoodData[0]];
+    let Top = Json.Sounding.Slice[GoodData[1]];
+
+    for (let i = 0; i &lt; Json.Sounding.Slice.length; i++) {
+      if (GoodData.indexOf(i) != -1) {
+        Bottom = Json.Sounding.Slice[i];
+
+        if ((GoodData.indexOf(i) + 1) >= GoodData.length) {
+          break;
+        }
+        Top = Json.Sounding.Slice[Math.min(Json.Sounding.Slice.length - 1, GoodData[GoodData.indexOf(i) + 1])];
+      } else {
+        let S = Json.Sounding.Slice[i];
+        let LerpFactor = clamp(GetNumFromRange(S[1], Bottom[1], Top[1]), 0, 1);
+
+        for (let a = 2; a &lt; S.length; a++) {
+          if (S[a] == -9999) {
+            S[a] = Lerp(Bottom[a], Top[a], LerpFactor);
+
+            if (a == 3){
+              Json.Sounding.D[i] = Lerp(Bottom[a], Top[a], LerpFactor);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i &lt; Json.Sounding.Slice.length; i++){
+    let P = Json.Sounding.Slice[i];
+
+    for (let x = 0; x &lt; P.length; x++) {
+      let Drat = P[x];
+      if (Drat == -9999) {
+        if (i == Json.Sounding.Slice.length - 1) {
+          Drat = Json.Sounding.Slice[i - 1][x];
+        } else {
+          let Higher = i;
+          let Lower = i;
+          while (true) {
+            Lower -= 1;
+            if (Json.Sounding.Slice[Lower] == undefined) {
+              Lower += 1;
+              break;
+            }
+            if (Json.Sounding.Slice[Lower][x] != -9999 || Lower &lt; 0) {
+              break;
+            }
+          }
+
+          while (true) {
+            Higher += 1;
+            if (Json.Sounding.Slice[Higher] == undefined) {
+              Higher -= 1;
+              break;
+            }
+            if (Json.Sounding.Slice[Higher][x] != -9999 || Higher > Json.Sounding.Slice.length) {
+              break;
+            }
+          }
+
+          let Lwr = Json.Sounding.Slice[Lower];
+          let Hgr = Json.Sounding.Slice[Higher];
+
+          if (Hgr[x] == -9999 &amp;&amp; Json.Sounding.Slice.length-1 &lt;= Higher &amp;&amp; (x == 3 || Json.Sounding.Slice.length-1 == i)){
+            if (x == 3){
+              P[x] = Hgr[2] - Math.abs(Lwr[3] - Lwr[2]);
+              Json.Sounding.D[i] = clamp(P[x], -9999, Json.Sounding.T[i]);
+              Json.Sounding.Slice[i][x] = clamp(P[x], -9999, Json.Sounding.T[i]);
+            }
+            
+            continue;
+          }
+
+          P[x] = lerp(
+            Hgr[x],
+            Lwr[x],
+            clamp(
+              (P[1] - Hgr[1]) / (Lwr[1] - Hgr[1]),
+              0,
+              1
+            )
+          )
+        }
+      }
+    }
+  }
+  
+
+  for (let i = 0; i &lt; Json.Sounding.Slice.length; i++) {
+    let Ln = Json.Sounding.Slice[i];
+    Json.Sounding.W.push(
+      { WD: parseFloat(Ln[4]), WS: parseFloat(Ln[5]), H: parseFloat(Ln[1]) }
+    );
+    WWL += 1;
+  }
+
+  Json.WWL = WWL;
+
+  return Json;
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 17:31:43 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

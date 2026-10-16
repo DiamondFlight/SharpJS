@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: io/bufkit_map.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: io/bufkit_map.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const IEM_BUFKIT = 'https://mtarchive.geol.iastate.edu';
+const AVIATION_STATIONS = new URL('../data/stations.json', import.meta.url);
+const TILE_SERVER = 'https://tile.openstreetmap.org';
+const TILE_SIZE = 256;
+const stationCatalogByModelRun = new Map();
+let aviationStationCatalog = null;
+let nextDialogId = 0;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const US_STATE_NAMES = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado',
+  CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho',
+  IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana',
+  ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota',
+  MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon',
+  PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota',
+  TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia',
+  WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  DC: 'District of Columbia', PR: 'Puerto Rico', GU: 'Guam', VI: 'U.S. Virgin Islands',
+};
+
+/**
+ * Creates a plain-JavaScript BUFKIT location picker button and its map dialog.
+ * @param {object} options Picker configuration.
+ * @param {Document} options.document Document used to create the picker UI.
+ * @param {HTMLElement} options.host SharpJS host used for theming and dialog placement.
+ * @param {() => string} options.getModel Returns the selected BUFKIT model.
+ * @param {() => Date} options.getRun Returns the selected BUFKIT run date and hour.
+ * @param {(station: string) => void} options.onSelect Receives the selected station code.
+ * @returns {{button: HTMLButtonElement, destroy: () => void}} Picker button and cleanup function.
+ */
+export function createBufkitMapButton({ document: doc, host, getModel, getRun, onSelect }) {
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.className = 'sjs-button';
+  button.textContent = 'Choose station from map…';
+  button.setAttribute('aria-haspopup', 'dialog');
+
+  const dialog = doc.createElement('dialog');
+  dialog.className = 'sjs-bufkit-map-dialog';
+  const titleId = `sjs-bufkit-map-title-${++nextDialogId}`;
+  dialog.setAttribute('aria-labelledby', titleId);
+  dialog.innerHTML = `
+    &lt;style>
+      .sjs-bufkit-map-dialog {
+        width: min(960px, 96vw);
+        max-width: 96vw;
+        max-height: 92vh;
+        padding: 0;
+        color: var(--sjs-text, #e8eef2);
+        background: var(--sjs-surface, #0d1014);
+        border: 1px solid var(--sjs-border, rgba(255, 255, 255, .28));
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, .65);
+        font: 14px/1.4 var(--sjs-font, "Segoe UI", Arial, sans-serif);
+      }
+      .sjs-bufkit-map-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+      .sjs-bufkit-map-shell { padding: 14px; }
+      .sjs-bufkit-map-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .sjs-bufkit-map-header h2 { margin: 0; font-size: 1rem; }
+      .sjs-bufkit-map-close {
+        border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer;
+        color: inherit; background: var(--sjs-button-bg, #1f262e); font: inherit;
+      }
+      .sjs-bufkit-map-tools { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; }
+      .sjs-bufkit-map-search {
+        flex: 1; min-width: 0; padding: 7px 9px; color: inherit;
+        background: var(--sjs-surface-2, #161b21);
+        border: 1px solid var(--sjs-border, rgba(255, 255, 255, .28)); border-radius: 4px; font: inherit;
+      }
+      .sjs-bufkit-map-status { min-height: 1.4em; margin: 0 0 6px; color: var(--sjs-muted, #8ea3b3); font-size: .82rem; }
+      .sjs-bufkit-map-viewport {
+        position: relative; width: 100%; height: min(62vh, 590px); min-height: 280px;
+        overflow: hidden; background: #17232c; border: 1px solid var(--sjs-border, rgba(255, 255, 255, .28));
+        border-radius: 5px; touch-action: none; cursor: grab;
+      }
+      .sjs-bufkit-map-viewport.is-dragging { cursor: grabbing; }
+      .sjs-bufkit-map-svg { display: block; width: 100%; height: 100%; }
+      .sjs-bufkit-map-marker { fill: #f4b942; stroke: #111820; stroke-width: 1.5; cursor: pointer; }
+      .sjs-bufkit-map-marker:hover, .sjs-bufkit-map-marker:focus { fill: #fff; stroke: #e65353; stroke-width: 2.5; outline: none; }
+      .sjs-bufkit-map-tooltip {
+        position: absolute; z-index: 2; display: none; max-width: 260px; padding: 7px 9px;
+        color: #fff; background: rgba(10, 14, 18, .94); border: 1px solid rgba(255, 255, 255, .3);
+        border-radius: 4px; pointer-events: none; font-size: .8rem; box-shadow: 0 2px 8px #0008;
+      }
+      .sjs-bufkit-map-attribution {
+        position: absolute; right: 4px; bottom: 3px; padding: 2px 5px;
+        color: #17212a; background: rgba(255, 255, 255, .8); font-size: 10px;
+      }
+      .sjs-bufkit-map-attribution a { color: #17212a; }
+      .sjs-bufkit-map-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--sjs-muted, #8ea3b3); font-size: .75rem; }
+      .sjs-bufkit-map-zoom { display: flex; gap: 4px; }
+      .sjs-bufkit-map-zoom button {
+        min-width: 30px; border: 0; border-radius: 4px; padding: 4px 8px; cursor: pointer;
+        color: inherit; background: var(--sjs-button-bg, #1f262e); font: inherit;
+      }
+      @media (max-width: 600px) {
+        .sjs-bufkit-map-shell { padding: 10px; }
+        .sjs-bufkit-map-viewport { height: 58vh; min-height: 240px; }
+        .sjs-bufkit-map-footer { flex-direction: column; }
+      }
+    &lt;/style>
+    &lt;div class="sjs-bufkit-map-shell">
+      &lt;div class="sjs-bufkit-map-header">
+        &lt;h2 id="${titleId}">Choose a BUFKIT station&lt;/h2>
+        &lt;button class="sjs-bufkit-map-close" type="button" aria-label="Close station map">Close&lt;/button>
+      &lt;/div>
+      &lt;div class="sjs-bufkit-map-tools">
+        &lt;input class="sjs-bufkit-map-search" type="search" autocomplete="off" placeholder="Find by station, city, state, or country" aria-label="Search BUFKIT stations">
+        &lt;div class="sjs-bufkit-map-zoom">
+          &lt;button type="button" data-zoom="in" aria-label="Zoom in">+&lt;/button>
+          &lt;button type="button" data-zoom="out" aria-label="Zoom out">−&lt;/button>
+        &lt;/div>
+      &lt;/div>
+      &lt;p class="sjs-bufkit-map-status" role="status" aria-live="polite">&lt;/p>
+      &lt;div class="sjs-bufkit-map-viewport" aria-label="BUFKIT station map">
+        &lt;svg class="sjs-bufkit-map-svg" role="group" aria-label="Station locations">&lt;/svg>
+        &lt;div class="sjs-bufkit-map-tooltip" role="tooltip">&lt;/div>
+        &lt;div class="sjs-bufkit-map-attribution">Map tiles © &lt;a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors&lt;/a>&lt;/div>
+      &lt;/div>
+      &lt;div class="sjs-bufkit-map-footer">
+        &lt;span>Hover or focus a marker for its city, state, country, and station code. Click to fill Station.&lt;/span>
+        &lt;span>Station metadata: &lt;a href="https://aviationweather.gov/" target="_blank" rel="noopener noreferrer">Aviation Weather Center&lt;/a>&lt;/span>
+      &lt;/div>
+    &lt;/div>
+  `;
+  host.append(dialog);
+
+  const viewport = dialog.querySelector('.sjs-bufkit-map-viewport');
+  const svg = dialog.querySelector('.sjs-bufkit-map-svg');
+  const tooltip = dialog.querySelector('.sjs-bufkit-map-tooltip');
+  const status = dialog.querySelector('.sjs-bufkit-map-status');
+  const search = dialog.querySelector('.sjs-bufkit-map-search');
+  let stations = [];
+  let visibleStations = [];
+  let stationsByCode = new Map();
+  let center = { lat: 39.5, lon: -98.5 };
+  let zoom = 4;
+  let pointer = null;
+  let dragging = false;
+  let destroyed = false;
+  let resizeObserver = null;
+
+  /**
+   * Opens the station map, loads the selected model's available sites, and focuses search.
+   * @returns {Promise&lt;void>} Resolves when the request and initial drawing finish.
+   */
+  async function openMap() {
+    if (!dialog.open) dialog.showModal();
+    search.value = '';
+    status.textContent = 'Loading BUFKIT stations…';
+    svg.replaceChildren();
+    try {
+      const model = String(getModel() || 'hrrr').toLowerCase();
+      const run = getRun();
+      const [stationCodes, catalog] = await Promise.all([
+        listBufkitStationCodes(model, run),
+        getAviationStationCatalog(),
+      ]);
+      stations = matchStationMetadata(stationCodes, catalog);
+      visibleStations = stations;
+      stationsByCode = new Map();
+      for (const station of stations) stationsByCode.set(station.code, station);
+      if (!stations.length) {
+        status.textContent = `The ${model.toUpperCase()} archive listing had no stations that could be matched to location metadata.`;
+      } else {
+        const missing = stationCodes.length - stations.length;
+        status.textContent = `${stations.length} ${model.toUpperCase()} locations available${missing ? `; ${missing} station code${missing === 1 ? '' : 's'} lack map metadata` : ''}. Drag to pan or use the wheel to zoom.`;
+      }
+      requestAnimationFrame(drawMap);
+      search.focus();
+    } catch (error) {
+      console.log(error);
+      status.textContent = error.message || String(error);
+    }
+  }
+
+  /**
+   * Converts a geographic point to Web Mercator world-pixel coordinates.
+   * @param {number} lat Latitude in degrees.
+   * @param {number} lon Longitude in degrees.
+   * @param {number} atZoom Slippy-map zoom level.
+   * @returns {{x: number, y: number}} Projected world-pixel coordinate.
+   */
+  function project(lat, lon, atZoom) {
+    const size = TILE_SIZE * (2 ** atZoom);
+    const clampedLat = Math.max(-85.05112878, Math.min(85.05112878, lat));
+    const sin = Math.sin(clampedLat * Math.PI / 180);
+    return {
+      x: ((lon + 180) / 360) * size,
+      y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * size,
+    };
+  }
+
+  /**
+   * Converts Web Mercator world-pixel coordinates back to latitude and longitude.
+   * @param {number} x Projected x-coordinate.
+   * @param {number} y Projected y-coordinate.
+   * @param {number} atZoom Slippy-map zoom level.
+   * @returns {{lat: number, lon: number}} Geographic coordinate.
+   */
+  function unproject(x, y, atZoom) {
+    const size = TILE_SIZE * (2 ** atZoom);
+    return {
+      lon: (x / size) * 360 - 180,
+      lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / size))) * 180) / Math.PI,
+    };
+  }
+
+  /**
+   * Creates an SVG element in the map's namespace.
+   * @param {string} tag SVG tag name.
+   * @param {object} attrs Attributes to assign.
+   * @returns {SVGElement} Constructed SVG element.
+   */
+  function svgElement(tag, attrs = {}) {
+    const element = doc.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attrs)) element.setAttribute(name, String(value));
+    return element;
+  }
+
+  /**
+   * Draws OSM tiles and matching station markers for the current view.
+   * @returns {void}
+   */
+  function drawMap() {
+    if (destroyed || !dialog.open) return;
+    const bounds = viewport.getBoundingClientRect();
+    const width = Math.max(1, Math.round(bounds.width));
+    const height = Math.max(1, Math.round(bounds.height));
+    const centerPoint = project(center.lat, center.lon, zoom);
+    const left = centerPoint.x - width / 2;
+    const top = centerPoint.y - height / 2;
+    const firstX = Math.floor(left / TILE_SIZE);
+    const lastX = Math.floor((left + width) / TILE_SIZE);
+    const firstY = Math.floor(top / TILE_SIZE);
+    const lastY = Math.floor((top + height) / TILE_SIZE);
+    const worldTiles = 2 ** zoom;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.replaceChildren();
+    for (let tileY = firstY; tileY &lt;= lastY; tileY++) {
+      if (tileY &lt; 0 || tileY >= worldTiles) continue;
+      for (let tileX = firstX; tileX &lt;= lastX; tileX++) {
+        const wrappedX = ((tileX % worldTiles) + worldTiles) % worldTiles;
+        const image = svgElement('image', {
+          x: tileX * TILE_SIZE - left,
+          y: tileY * TILE_SIZE - top,
+          width: TILE_SIZE,
+          height: TILE_SIZE,
+          href: `${TILE_SERVER}/${zoom}/${wrappedX}/${tileY}.png`,
+          preserveAspectRatio: 'none',
+        });
+        svg.append(image);
+      }
+    }
+
+    const markerRadius = zoom >= 7 ? 5 : zoom >= 5 ? 4 : 3;
+    for (const station of visibleStations) {
+      const point = project(station.lat, station.lon, zoom);
+      const x = point.x - left;
+      const y = point.y - top;
+      if (x &lt; -10 || x > width + 10 || y &lt; -10 || y > height + 10) continue;
+      const marker = svgElement('circle', {
+        class: 'sjs-bufkit-map-marker',
+        'data-station-code': station.code,
+        cx: x,
+        cy: y,
+        r: markerRadius,
+        tabindex: 0,
+        role: 'button',
+        'aria-label': stationAriaLabel(station),
+      });
+      svg.append(marker);
+    }
+  }
+
+  /**
+   * Prevents a station marker press from starting a map pan.
+   * @param {PointerEvent} event Marker pointer event.
+   * @returns {void}
+   */
+  function handleMarkerPointerDown(event) {
+    if (event.target.classList.contains('sjs-bufkit-map-marker')) event.stopPropagation();
+  }
+
+  /**
+   * Selects the station represented by an activated SVG marker.
+   * @param {Event} event Marker activation event.
+   * @returns {void}
+   */
+  function handleMarkerClick(event) {
+    const code = event.target.dataset.stationCode;
+    const station = stationsByCode.get(code);
+    if (station) selectStation(event, station);
+  }
+
+  /**
+   * Shows station metadata when a marker is hovered or receives keyboard focus.
+   * @param {Event} event Bubbling pointer or focus event.
+   * @returns {void}
+   */
+  function handleMarkerHover(event) {
+    const station = stationsByCode.get(event.target.dataset.stationCode);
+    if (station) showTooltip(event, station);
+  }
+
+  /**
+   * Hides marker metadata when the pointer or keyboard focus leaves the marker.
+   * @param {Event} event Bubbling pointer or focus event.
+   * @returns {void}
+   */
+  function handleMarkerLeave(event) {
+    const marker = event.target.closest?.('.sjs-bufkit-map-marker');
+    const next = event.relatedTarget?.closest?.('.sjs-bufkit-map-marker');
+    if (marker &amp;&amp; marker !== next) hideTooltip();
+  }
+
+  /**
+   * Activates a focused station marker with Enter or Space.
+   * @param {KeyboardEvent} event Marker keyboard event.
+   * @returns {void}
+   */
+  function handleMarkerKeyDown(event) {
+    if (event.key !== 'Enter' &amp;&amp; event.key !== ' ') return;
+    const station = stationsByCode.get(event.target.dataset.stationCode);
+    if (!station) return;
+    event.preventDefault();
+    selectStation(event, station);
+  }
+
+  /**
+   * Formats the four station fields shown to users and assistive technology.
+   * @param {{code:string, city:string, state:string, country:string}} station Station metadata.
+   * @returns {string} Accessible station description.
+   */
+  function stationAriaLabel(station) {
+    return `${station.city}, ${station.state}, ${station.country}; station ${station.code}`;
+  }
+
+  /**
+   * Positions and displays the station information tooltip.
+   * @param {Event} event Pointer or focus event.
+   * @param {{code:string, city:string, state:string, country:string}} station Station metadata.
+   * @returns {void}
+   */
+  function showTooltip(event, station) {
+    tooltip.replaceChildren();
+    const city = doc.createElement('strong');
+    city.textContent = station.city;
+    tooltip.append(city, doc.createElement('br'));
+    tooltip.append(doc.createTextNode(`State: ${station.state} · Country: ${station.country}`), doc.createElement('br'));
+    tooltip.append(doc.createTextNode(`Station code: ${station.code}`));
+    tooltip.style.display = 'block';
+    moveTooltip(event);
+  }
+
+  /**
+   * Moves the tooltip near a pointer event while keeping it within the map viewport.
+   * @param {Event} event Pointer or focus event.
+   * @returns {void}
+   */
+  function moveTooltip(event) {
+    const rect = viewport.getBoundingClientRect();
+    const clientX = Number.isFinite(event.clientX) ? event.clientX : rect.left + rect.width / 2;
+    const clientY = Number.isFinite(event.clientY) ? event.clientY : rect.top + rect.height / 2;
+    tooltip.style.left = `${Math.max(4, Math.min(rect.width - 270, clientX - rect.left + 12))}px`;
+    tooltip.style.top = `${Math.max(4, Math.min(rect.height - 75, clientY - rect.top + 12))}px`;
+  }
+
+  /**
+   * Hides the currently visible station tooltip.
+   * @returns {void}
+   */
+  function hideTooltip() {
+    tooltip.style.display = 'none';
+  }
+
+  /**
+   * Writes a clicked station code to the controls and closes the picker.
+   * @param {Event} event Click or keyboard activation event.
+   * @param {{code:string}} station Selected station metadata.
+   * @returns {void}
+   */
+  function selectStation(event, station) {
+    event.stopPropagation();
+    onSelect(station.code);
+    dialog.close();
+  }
+
+  /**
+   * Filters map stations by code and place fields, then pans to a unique match.
+   * @returns {void}
+   */
+  function filterStations() {
+    const query = search.value.trim().toLocaleLowerCase();
+    if (!query) {
+      visibleStations = stations;
+      status.textContent = `${stations.length} BUFKIT locations shown. Drag to pan or use the wheel to zoom.`;
+      drawMap();
+      return;
+    }
+    const matches = [];
+    for (const station of stations) {
+      const description = `${station.code} ${station.city} ${station.state} ${station.country}`.toLocaleLowerCase();
+      if (description.includes(query)) matches.push(station);
+    }
+    visibleStations = matches;
+    if (matches.length === 1) {
+      center = { lat: matches[0].lat, lon: matches[0].lon };
+      zoom = Math.max(zoom, 6);
+    }
+    status.textContent = `${matches.length} matching ${matches.length === 1 ? 'station' : 'stations'} shown.`;
+    drawMap();
+  }
+
+  /**
+   * Starts a pointer drag unless the user pressed a station marker.
+   * @param {PointerEvent} event Pointer down event.
+   * @returns {void}
+   */
+  function startPan(event) {
+    if (event.target.classList.contains('sjs-bufkit-map-marker')) return;
+    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    dragging = true;
+    viewport.classList.add('is-dragging');
+    viewport.setPointerCapture(event.pointerId);
+  }
+
+  /**
+   * Updates the map center while dragging the pointer.
+   * @param {PointerEvent} event Pointer move event.
+   * @returns {void}
+   */
+  function panMap(event) {
+    if (!dragging || !pointer || event.pointerId !== pointer.id) return;
+    const dx = event.clientX - pointer.x;
+    const dy = event.clientY - pointer.y;
+    const centerPoint = project(center.lat, center.lon, zoom);
+    center = unproject(centerPoint.x - dx, centerPoint.y - dy, zoom);
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+    drawMap();
+  }
+
+  /**
+   * Finishes a pointer drag and restores the map cursor.
+   * @param {PointerEvent} event Pointer up or cancellation event.
+   * @returns {void}
+   */
+  function stopPan(event) {
+    if (pointer &amp;&amp; event.pointerId !== pointer.id) return;
+    pointer = null;
+    dragging = false;
+    viewport.classList.remove('is-dragging');
+  }
+
+  /**
+   * Changes zoom while keeping the current map center fixed.
+   * @param {number} delta Zoom increment, normally 1 or -1.
+   * @returns {void}
+   */
+  function changeZoom(delta) {
+    zoom = Math.max(2, Math.min(10, zoom + delta));
+    drawMap();
+  }
+
+  /**
+   * Closes the map dialog from its close button.
+   * @returns {void}
+   */
+  function closeDialog() {
+    dialog.close();
+  }
+
+  /**
+   * Handles zoom-in button activation.
+   * @returns {void}
+   */
+  function zoomIn() {
+    changeZoom(1);
+  }
+
+  /**
+   * Handles zoom-out button activation.
+   * @returns {void}
+   */
+  function zoomOut() {
+    changeZoom(-1);
+  }
+
+  /**
+   * Zooms in or out in response to the mouse wheel.
+   * @param {WheelEvent} event Wheel event over the map.
+   * @returns {void}
+   */
+  function zoomByWheel(event) {
+    event.preventDefault();
+    changeZoom(event.deltaY &lt; 0 ? 1 : -1);
+  }
+
+  button.addEventListener('click', openMap);
+  dialog.querySelector('.sjs-bufkit-map-close').addEventListener('click', closeDialog);
+  dialog.querySelector('[data-zoom="in"]').addEventListener('click', zoomIn);
+  dialog.querySelector('[data-zoom="out"]').addEventListener('click', zoomOut);
+  search.addEventListener('input', filterStations);
+  svg.addEventListener('pointerdown', handleMarkerPointerDown);
+  svg.addEventListener('click', handleMarkerClick);
+  svg.addEventListener('mouseover', handleMarkerHover);
+  svg.addEventListener('mousemove', moveTooltip);
+  svg.addEventListener('mouseout', handleMarkerLeave);
+  svg.addEventListener('focusin', handleMarkerHover);
+  svg.addEventListener('focusout', handleMarkerLeave);
+  svg.addEventListener('keydown', handleMarkerKeyDown);
+  viewport.addEventListener('pointerdown', startPan);
+  viewport.addEventListener('pointermove', panMap);
+  viewport.addEventListener('pointerup', stopPan);
+  viewport.addEventListener('pointercancel', stopPan);
+  viewport.addEventListener('wheel', zoomByWheel, { passive: false });
+  dialog.addEventListener('close', hideTooltip);
+  if (typeof ResizeObserver === 'function') {
+    resizeObserver = new ResizeObserver(drawMap);
+    resizeObserver.observe(viewport);
+  }
+
+  /**
+   * Removes the picker dialog, button, and resize observer.
+   * @returns {void}
+   */
+  function destroyPicker() {
+    destroyed = true;
+    resizeObserver?.disconnect();
+    dialog.close();
+    dialog.remove();
+    button.remove();
+  }
+
+  return { button, destroy: destroyPicker };
+}
+
+/**
+ * Finds recent BUFKIT archive listings for all cycles on the selected run date.
+ * @param {string} model BUFKIT model directory.
+ * @param {Date} run Selected run date.
+ * @returns {Promise&lt;string[]>} Available station ids in the model archive.
+ */
+async function listBufkitStationCodes(model, run) {
+  if (!(run instanceof Date) || Number.isNaN(run.getTime())) {
+    throw new Error('Choose a valid BUFKIT run date before opening the station map.');
+  }
+  const selectedRun = run;
+  const cacheKey = `${model}:${selectedRun.toISOString().slice(0, 10)}`;
+  if (stationCatalogByModelRun.has(cacheKey)) return stationCatalogByModelRun.get(cacheKey);
+
+  const request = Promise.all([
+    fetchBufkitDirectory(model, selectedRun, 0),
+    //fetchBufkitDirectory(model, selectedRun, 6),
+    //fetchBufkitDirectory(model, selectedRun, 12),
+    //fetchBufkitDirectory(model, selectedRun, 18),
+  ]).then(combineStationLists);
+  stationCatalogByModelRun.set(cacheKey, request);
+  try {
+    return await request;
+  } catch (error) {
+    stationCatalogByModelRun.delete(cacheKey);
+    throw error;
+  }
+}
+
+/**
+ * Merges station IDs returned by the four possible model initialization cycles.
+ * @param {string[][]} lists BUFKIT directory station lists.
+ * @returns {string[]} Sorted unique station IDs.
+ */
+function combineStationLists(lists) {
+  return [...new Set(lists.flat())].sort();
+}
+
+/**
+ * Fetches and parses one IEM model-run directory listing.
+ * @param {string} model BUFKIT model directory.
+ * @param {Date} run Selected run date.
+ * @param {number} hour Forecast initialization hour in UTC.
+ * @returns {Promise&lt;string[]>} Station ids found in the directory.
+ */
+async function fetchBufkitDirectory(model, run, hour) {
+  const day = new Date(Date.UTC(run.getUTCFullYear(), run.getUTCMonth(), run.getUTCDate()));
+  const datePath = `${day.getUTCFullYear()}/${pad(day.getUTCMonth() + 1)}/${pad(day.getUTCDate())}`;
+  const directory = `${IEM_BUFKIT}/${datePath}/bufkit/${pad(hour)}/${encodeURIComponent(model)}/`;
+  const response = await fetch(directory);
+  if (response.status === 404) return [];
+  if (!response.ok) throw new Error(`Could not load the IEM BUFKIT station list (HTTP ${response.status}).`);
+
+  const html = await response.text();
+  const prefix = model === 'gfs' ? 'gfs3' : model === 'nam' &amp;&amp; (hour === 6 || hour === 18) ? 'namm' : model;
+  const ids = [];
+  const listing = new DOMParser().parseFromString(html, 'text/html');
+  for (const link of listing.querySelectorAll('a')) {
+    const fileName = link.textContent.trim();
+    if (!fileName.toLowerCase().endsWith('.buf')) continue;
+    const stem = fileName.slice(0, -4);
+    const marker = `${prefix}_`;
+    if (stem.toLowerCase().startsWith(marker.toLowerCase())) {
+      const code = stem.slice(marker.length).trim();
+      if (code) ids.push(code);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Retrieves and caches the public Aviation Weather Center station metadata.
+ * @returns {Promise&lt;object[]>} Station records with identifiers and geographic metadata.
+ */
+async function getAviationStationCatalog() {
+  aviationStationCatalog ??= fetch(AVIATION_STATIONS)
+    .then(parseAviationStationResponse)
+    .then(validateAviationStationRecords)
+    .catch(resetAviationStationCatalog);
+  return aviationStationCatalog;
+}
+
+/**
+ * Parses the HTTP response from the aviation station catalog.
+ * @param {Response} response Station catalog response.
+ * @returns {Promise&lt;unknown>} Parsed station JSON.
+ */
+function parseAviationStationResponse(response) {
+  if (!response.ok) throw new Error(`Could not load station location metadata (HTTP ${response.status}).`);
+  return response.json();
+}
+
+/**
+ * Ensures the aviation station catalog has the expected array shape.
+ * @param {unknown} records Parsed station data.
+ * @returns {object[]} Valid station records.
+ */
+function validateAviationStationRecords(records) {
+  if (!Array.isArray(records)) throw new Error('The station location service returned an invalid catalog.');
+  return records;
+}
+
+/**
+ * Clears a rejected catalog request so that a later map opening can retry.
+ * @param {Error} error Catalog loading error.
+ * @returns {never} Rethrows the loading error.
+ */
+function resetAviationStationCatalog(error) {
+  aviationStationCatalog = null;
+  throw error;
+}
+
+/**
+ * Matches IEM BUFKIT ids to aviation station records and keeps map-ready entries.
+ * @param {string[]} codes BUFKIT ids taken from the IEM file names.
+ * @param {object[]} records Aviation station catalog.
+ * @returns {Array&lt;{code:string, city:string, state:string, country:string, lat:number, lon:number}>} Mapped BUFKIT sites.
+ */
+function matchStationMetadata(codes, records) {
+  const index = new Map();
+  /**
+   * Adds a normalized identifier unless another station already owns it.
+   * @param {string} id Station identifier.
+   * @param {object} record Station metadata.
+   * @returns {void}
+   */
+  function addId(id, record) {
+    const key = String(id || '').trim().toUpperCase();
+    if (key &amp;&amp; !index.has(key)) index.set(key, record);
+  }
+  for (const record of records) {
+    for (const key of ['icaoId', 'faaId', 'iataId', 'id', 'wmoId']) addId(record[key], record);
+  }
+  for (const record of records) {
+    for (const key of ['icaoId', 'faaId', 'iataId', 'id', 'wmoId']) {
+      const id = String(record[key] || '').trim().toUpperCase();
+      if (/^K[A-Z0-9]{3}$/.test(id)) addId(id.slice(1), record);
+      if (/^[A-Z0-9]{3}$/.test(id)) addId(`K${id}`, record);
+    }
+  }
+
+  const mapped = [];
+  for (const code of codes) {
+    const record = index.get(String(code).toUpperCase());
+    const lat = Number(record?.lat);
+    const lon = Number(record?.lon);
+    if (!record || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    mapped.push({
+      code,
+      city: String(record.site || code).trim(),
+      state: stationStateName(record.state, record.country),
+      country: countryName(record.country),
+      lat,
+      lon,
+    });
+  }
+  return mapped.sort(compareStationCodes);
+}
+
+/**
+ * Expands US state and territory abbreviations while retaining other region labels.
+ * @param {string} state State or province code from the station catalog.
+ * @param {string} country Country code from the station catalog.
+ * @returns {string} Human-readable state or province name.
+ */
+function stationStateName(state, country) {
+  const code = String(state || '').trim().toUpperCase();
+  if (!code) return 'Unknown';
+  return String(country || '').toUpperCase() === 'US' ? US_STATE_NAMES[code] || code : code;
+}
+
+/**
+ * Expands a country code using the browser's localized region-name data.
+ * @param {string} country Country code from the station catalog.
+ * @returns {string} Human-readable country name, or the source code if unknown.
+ */
+function countryName(country) {
+  const code = String(country || '').trim().toUpperCase();
+  if (!code) return 'Unknown';
+  const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
+  return displayNames.of(code) || code;
+}
+
+/**
+ * Sorts mapped stations by their BUFKIT station code.
+ * @param {{code:string}} a First station.
+ * @param {{code:string}} b Second station.
+ * @returns {number} Locale-aware ordering result.
+ */
+function compareStationCodes(a, b) {
+  return a.code.localeCompare(b.code);
+}
+
+/**
+ * Formats an integer as a zero-padded UTC date or hour component.
+ * @param {number} value Integer to format.
+ * @returns {string} Two-character string.
+ */
+function pad(value) {
+  return String(value).padStart(2, '0');
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 17:31:43 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
