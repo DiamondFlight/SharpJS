@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: analysis.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: analysis.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Headless sounding analysis — the "do the heavy lifting for me" API.
+ *
+ *   import { parseSounding, analyze } from 'sharpjs/core';
+ *   const result = analyze(parseSounding(text), { parcel: 'ML', motion: 'RM' });
+ *   result.parcels.ML.cape, result.kinematics.layers['0-1km'].srh, result.indices.stpEffective, …
+ *
+ * Uses exactly the calculations the chart draws (calc/params.js), with no DOM.
+ */
+import { GetBM, GetLayerByPres, GetLayerByHght, LiftParcel, UpdateCSMotStorm, DrawInsetParams, ConvertPolartoCart } from './calc/skewtCalcs.js';
+import { computeThermo, computeWindParams } from './calc/params.js';
+import { toSounding } from './io/input.js';
+
+const MISSING = -9999;
+const MOTIONS = ['RM', 'LM', 'MM', 'US', 'DS', 'DTMR', 'DTML'];
+
+const round = (v, digits = 1) => (Number.isFinite(v) &amp;&amp; v !== MISSING ? Math.round(v * 10 ** digits) / 10 ** digits : null);
+
+/**
+ * Wind vector (knots, as produced by the calc functions) → direction it blows from and speed.
+ * Same conversion the chart uses for its labels.
+ */
+function polar(vec) {
+  if (!vec || typeof vec !== 'object' || !Number.isFinite(vec.x) || !Number.isFinite(vec.y)) return null;
+  const direction = ((Math.atan2(vec.y, vec.x) * 180) / Math.PI + 270 + 360) % 360;
+  return { direction: round(direction, 0), speed: round(Math.hypot(vec.x, vec.y), 1) };
+}
+
+/** Storm motions are kept with y flipped (screen space) once lifted into the chart; undo that. */
+const polarMotion = (vec) => (vec ? polar({ x: vec.x, y: -vec.y }) : null);
+
+/**
+ * Convert chart-space storm motion vectors back to meteorological y orientation.
+ * @param {object} motions Motion vectors keyed by storm-motion identifier; components are in kt.
+ * @returns {object} A new motion map with each y component sign reversed.
+ */
+function flipY(motions) {
+  const out = {};
+  for (const key of MOTIONS) out[key] = { x: motions[key].x, y: -motions[key].y };
+  return out;
+}
+
+/**
+ * Select and round the public diagnostic fields from a parcel calculation.
+ * @param {object|null} p Parcel result, including thermodynamic diagnostics.
+ * @returns {object|null} Rounded parcel fields: pressure (in hPa), heights (in m), CAPE/CIN (in J/kg), and NCAPE (in UNK); or null.
+ */
+function summarizeParcel(p) {
+  if (!p) return null;
+  return {
+    startPressure: round(p.Start &amp;&amp; p.Start.P, 1),
+    startHeight: round(p.Start &amp;&amp; p.Start.H, 0),
+    cape: round(p.Cape, 0),
+    cin: round(p.CINH, 0),
+    cape3km: round(p.Cape3, 0),
+    cape6km: round(p.Cape6, 0),
+    ecape: round(p.ECape &amp;&amp; p.ECape.Cape, 0),
+    ncape: round(p.NCape, 3),
+    lcl: round(p.LCL, 0),
+    lfc: round(p.LFC, 0),
+    el: round(p.EL, 0),
+    mpl: round(p.MPL, 0),
+  };
+}
+
+/**
+ * Normalize signed storm-relative helicity data to its rounded total.
+ * @param {number|object|null} srh A precomputed total or a result with SRHP and SRHM (in m²/s²).
+ * @returns {number|null} Total SRH (in m²/s²), rounded to an integer, or null when unavailable.
+ */
+function srhTotal(srh) {
+  if (typeof srh === 'number') return round(srh, 0);
+  if (!srh || !Number.isFinite(srh.SRHP)) return null;
+  return round(srh.SRHP + srh.SRHM, 0);
+}
+
+const LAYERS = {
+  '0-500m': '005',
+  '0-1km': '01',
+  '0-3km': '03',
+  '0-6km': '06',
+  '1-3km': '13',
+  '3-6km': '36',
+  '0-9km': '09',
+  '0-12km': '012',
+  '9-12km': '912',
+  'sfc-SBLCL': '0SBLCL',
+  'sfc-MLLFC': '0MLLFC',
+  'sfc-700mb': '0mb700',
+  'sfc-500mb': '0mb500',
+  'sfc-300mb': '0mb300',
+  'effBot-1km': 'Eb01',
+  'effBot-3km': 'Eb03',
+  'effBot-6km': 'Eb06',
+  'DGZ': 'DGZ',
+  'HGZ': 'HGZ',
+};
+
+/**
+ * Analyze a sounding.
+ *
+ * @param {string|object} input  sounding text, a parsed sounding, or arrays for fromArrays()
+ * @param {object} [options]
+ * @param {'MU'|'SB'|'ML'|'CU'} [options.parcel='MU']   parcel used for EHI
+ * @param {number} [options.parcelPressure=900]         start pressure for parcel "CU"
+ * @param {'RM'|'LM'|'MM'|'US'|'DS'|'DTMR'|'DTML'|{direction:number,speed:number}} [options.motion='RM']
+ *        storm motion for SRH / ECAPE (a custom motion is degrees-from and knots)
+ * @returns {object} see README "Headless analysis"
+ */
+export function analyze(input, options = {}) {
+  const sounding = toSounding(input);
+  const Sound = sounding.Sounding;
+
+  const motions = flipY(GetBM(Sound));
+  let CSMot;
+  if (options.motion &amp;&amp; typeof options.motion === 'object') {
+    const c = ConvertPolartoCart({ WD: Number(options.motion.direction) || 0, WS: Number(options.motion.speed) || 0 });
+    CSMot = { x: c.x, y: -c.y };
+  } else {
+    CSMot = motions[MOTIONS.includes(options.motion) ? options.motion : 'RM'];
+  }
+  UpdateCSMotStorm(CSMot);
+
+  const Info = computeThermo(Sound);
+  const parcelKey = options.parcel || 'MU';
+  let DP = Info.MUParcel;
+  if (parcelKey === 'SB') DP = Info.SBParcel;
+  else if (parcelKey === 'ML') DP = Info.MLParcel;
+  else if (parcelKey === 'CU') DP = LiftParcel(Sound, 'CU', Number(options.parcelPressure) || 900);
+
+  const Wnd = computeWindParams(sounding, Info, DP, CSMot);
+  const inset = DrawInsetParams(sounding, Wnd, { DCapeProf: Info.DCapeProf }, Info.SBParcel, Info.MLParcel, Info.MUParcel, true, {
+    WindLapse: 'Default',
+    Inset: 'Default',
+    Vertical: 'Default',
+  });
+
+  const layers = {};
+  for (const [name, key] of Object.entries(LAYERS)) {
+    if (!(`SRH${key}` in Wnd)) continue;
+    const mean = Wnd.MeanWind[`M${key}`];
+    layers[name] = {
+      srh: srhTotal(Wnd[`SRH${key}`]),
+      bulkShear: polar(Wnd[`BWD${key}`]),
+      meanWind: polar(mean),
+      stormRelativeWind: mean &amp;&amp; typeof mean === 'object' ? polar({ x: mean.x - CSMot.x, y: mean.y + CSMot.y }) : null,
+      ehi: round(Wnd[`EHI${key}`], 1),
+    };
+  }
+
+  const sfc = GetLayerByPres(Sound, 'SFC');
+  const eff = Info.EffInflow;
+  const effBottom = eff ? GetLayerByPres(Sound, eff.Bot) : null;
+  const effTop = eff ? GetLayerByPres(Sound, eff.Top) : null;
+  /**
+   * Read an inset diagnostic and normalize numeric strings and missing values.
+   * @param {string} k Inset field key.
+   * @returns {number|null} Finite diagnostic value (in UNK), or null when absent or invalid.
+   */
+  const pick = (k) => {
+    if (!inset || !(k in inset) || inset[k] === '--') return null;
+    const v = inset[k];
+    if (typeof v === 'string') {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    }
+    return Number.isFinite(v) ? v : null;
+  };
+
+  const motionOut = {};
+  for (const key of MOTIONS) motionOut[key] = polarMotion(motions[key]);
+
+  return {
+    title: sounding.Title ? String(sounding.Title).trim() : '',
+    surface: {
+      pressure: round(sfc.P, 1),
+      height: round(sfc.H, 0),
+      temperature: round(sfc.T, 1),
+      dewpoint: round(sfc.D, 1),
+      windDirection: round(sfc.WD, 0),
+      windSpeed: round(sfc.WS, 0),
+    },
+    parcels: {
+      SB: summarizeParcel(Info.SBParcel),
+      ML: summarizeParcel(Info.MLParcel),
+      MU: summarizeParcel(Info.MUParcel),
+      ...(parcelKey === 'CU' ? { CU: summarizeParcel(DP) } : {}),
+    },
+    downdraft: {
+      dcape: round(Info.DCapeProf &amp;&amp; Info.DCapeProf.DCape, 0),
+      downdraftTempF: round(Info.DCapeProf &amp;&amp; Info.DCapeProf.DownT, 0),
+    },
+    stormMotion: { used: polarMotion(CSMot), ...motionOut },
+    effectiveInflow: eff
+      ? {
+          bottomPressure: round(eff.Bot, 1),
+          topPressure: round(eff.Top, 1),
+          bottomHeightAgl: round(effBottom.H - sfc.H, 0),
+          topHeightAgl: round(effTop.H - sfc.H, 0),
+          srh: srhTotal(Wnd.ESRH),
+          /** shear across the inflow layer (the chart's "Eff Inflow" row) */
+          bulkShear: polar(Wnd.BWDE),
+          /** effective bulk wind difference: inflow base to half the parcel EL height */
+          ebwd: polar(Wnd.EBWD),
+          meanWind: polar(Wnd.MeanWind.ME),
+          stormRelativeWind: Wnd.MeanWind.ME &amp;&amp; typeof Wnd.MeanWind.ME === 'object'
+            ? polar({ x: Wnd.MeanWind.ME.x - CSMot.x, y: Wnd.MeanWind.ME.y + CSMot.y })
+            : null,
+          ehi: round(Wnd.EHIE, 1),
+        }
+      : null,
+    kinematics: { layers },
+    indices: {
+      stpFixed: pick('STP (fixed)'),
+      stpEffective: pick('STP (cin)'),
+      scp: pick('Supercell Comp'),
+      ship: pick('SHIP'),
+      sigSevere: pick('SigSvr'),
+      wndg: pick('WNDG'),
+      derecho: pick('Derecho Comp'),
+      pwat: pick('PWAT'),
+      kIndex: pick('K Index'),
+      totalTotals: pick('TT Index'),
+      freezingLevel: pick('Freezing Level'),
+      meanMixingRatio: pick('Mean Mix Rat'),
+      convectiveTempF: pick('ConvT'),
+      maxTempF: pick('MaxT'),
+      lclTempF: pick('LCL Temp'),
+      theta3kmDiff: pick('3km Theta Diff'),
+      rhSurface: pick('Sfc RelH'),
+      rhLow: pick('Low RelH'),
+      rhMid: pick('Mid RelH'),
+      rhDgzMean: pick('Avg DGZ RH'),
+    },
+    /** Raw engine structures, for anything the summary above leaves out. */
+    raw: { Info, WindParams: Wnd, inset, motions, sounding },
+  };
+}
+
+/** Interpolated level at a pressure (mb) or height (m AGL with { agl: true }). */
+export function levelAt(input, { pressure, height, agl = true } = {}) {
+  const Sound = toSounding(input).Sounding;
+  let lvl;
+  if (pressure != null) lvl = GetLayerByPres(Sound, Number(pressure));
+  else if (height != null) {
+    // GetLayerByHght measures from the first level unless told the height is already MSL.
+    lvl = GetLayerByHght(Sound, Number(height), agl);
+  } else throw new Error('SharpJS: levelAt needs pressure or height');
+  return {
+    pressure: round(lvl.P, 1),
+    height: round(lvl.H, 0),
+    temperature: round(lvl.T, 2),
+    dewpoint: round(lvl.D, 2),
+    windDirection: round(lvl.WD, 0),
+    windSpeed: round(lvl.WS, 1),
+    wetbulb: round(lvl.WB, 2),
+    virtualTemperature: round(lvl.VT, 2),
+  };
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 16:16:11 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

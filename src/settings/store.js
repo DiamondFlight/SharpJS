@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS, SETTINGS_VERSION, diffFromDefaults, migrate, sanitizeSettings } from './schema.js';
 import { resolveAdapter } from './storage.js';
+import { noop } from '../io/general.js';
 
 /**
  * Settings store: validated settings, persisted through an adapter.
@@ -97,7 +98,7 @@ export function createSettingsStore({ persist = 'auto', key = 'sharpjs:settings'
       settings = sanitizeSettings(overrides, base);
       try {
         const result = adapter.clear ? adapter.clear() : adapter.save({ v: SETTINGS_VERSION, settings: {} });
-        if (result && typeof result.catch === 'function') result.catch(() => {});
+        if (result && typeof result.catch === 'function') result.catch(noop);
       } catch {
         /* ignore */
       }

@@ -60,12 +60,14 @@
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
     "test:e2e": "node test/e2e/run.mjs",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "generate-docs": "jsdoc src/ -d docs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.11.0",
     "globals": "^17.13.0",
+    "jsdoc": "^4.0.5",
     "playwright": "1.63.0",
     "vite": "^8.3.2"
   }

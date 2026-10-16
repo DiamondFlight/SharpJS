@@ -12,6 +12,12 @@ const KT_PER = { kt: 1, 'm/s': 1.943844, mph: 0.868976, 'km/h': 0.539957 };
 const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v));
 const ok = (v) => Number.isFinite(v) && v !== MISSING;
 
+/**
+ * Convert a temperature value from the selected unit to Celsius.
+ * @param {number} v Temperature value (in the unit named by unit).
+ * @param {string} unit Input temperature unit: C, K, or F.
+ * @returns {number} Temperature (in °C), or NaN when v is invalid.
+ */
 function toCelsius(v, unit) {
   if (!ok(v)) return NaN;
   if (unit === 'K') return v - 273.15;

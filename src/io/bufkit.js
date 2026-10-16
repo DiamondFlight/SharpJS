@@ -7,6 +7,7 @@
  */
 import { RelHum, DewFromTRh, wetbulb, GetLayerByPres, VirtTemp } from '../calc/skewtCalcs.js';
 import { Process } from './sharppy.js';
+import { pad } from './general.js';
 
 const DEFAULT_COLUMNS = ['PRES', 'TMPC', 'TMWC', 'DWPC', 'THTE', 'DRCT', 'SKNT', 'OMEG', 'CFRL', 'HGHT'];
 const GFS_COLUMNS = ['PRES', 'TMPC', 'TMWC', 'DWPC', 'THTE', 'DRCT', 'SKNT', 'OMEG', 'HGHT'];
@@ -39,6 +40,11 @@ function readKeyValues(block) {
   return out;
 }
 
+/**
+ * Split BUFKIT text into station forecast sections and trim trailing station metadata.
+ * @param {string} text BUFKIT file contents.
+ * @returns {string[]} Forecast section strings in file order.
+ */
 function splitSections(text) {
   const sections = text.split('STID').slice(1).map((s) => `STID${s}`);
   if (sections.length > 0) {
@@ -49,6 +55,11 @@ function splitSections(text) {
   return sections;
 }
 
+/**
+ * Read the forecast lead time from a BUFKIT section.
+ * @param {string} section BUFKIT forecast section.
+ * @returns {number} Forecast lead time (in hours), or NaN when no STIM field is present.
+ */
 function forecastHourOf(section) {
   const m = /STIM\s*=\s*(-?[\d.]+)/.exec(section);
   return m ? parseFloat(m[1]) : NaN;
@@ -66,7 +77,6 @@ function parseBufkitTime(value) {
   return new Date(Date.UTC(2000 + parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), parseInt(m[4], 10), parseInt(m[5], 10)));
 }
 
-const pad = (n, w = 2) => String(n).padStart(w, '0');
 const mdy = (d) => `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}-${pad(d.getUTCFullYear(), 4)}`;
 
 /**

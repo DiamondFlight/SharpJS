@@ -1,4 +1,5 @@
 import {GetLayerByHght, GetLayerByPres, ConvertToInfo, VirtTemp} from "../calc/skewtCalcs.js"
+import { clamp, qc, RadToDeg, QCCheck, ConvertToRaw, celsiusToKelvin } from '../io/general.js';
 
 //First Lets Define Some Constants
 export const Constants = {
@@ -28,20 +29,20 @@ export const Constants = {
     lhov: 2500000, //latent_heat_of_vaporization
 };
 
-//lets define some functions i geuss :3
-function clamp(n, m, a){
-  return Math.max(Math.min(n, a), m);
-}
-
+/**
+ * Return the final element of an array.
+ * @param {Array} arr Source array.
+ * @returns {*} Last array element, or undefined when the array is empty.
+ */
 export function LastItem(arr){
     return arr[arr.length - 1];
 }
 
-function qc(val) {
-  if (val < -998.0 || val > 2.0E+05) return 0;
-  return 1;
-}
-
+/**
+ * Estimate saturation vapor pressure from temperature using the module's polynomial fit.
+ * @param {number} temp Temperature (in °C).
+ * @returns {number} Saturation vapor pressure (in hPa), or -9999 for an invalid temperature.
+ */
 function vappres(temp) {
   if (!qc(temp)) return -9999;
 
@@ -55,6 +56,12 @@ function vappres(temp) {
   return 6.1078 / (pol * pol);
 }
 
+/**
+ * Calculate saturation mixing ratio from pressure and temperature.
+ * @param {number} pres Ambient pressure (in hPa).
+ * @param {number} temp Temperature (in °C).
+ * @returns {number} Saturation mixing ratio (in g/kg), or -9999 for invalid input.
+ */
 function mixratio(pres, temp) {
   if (!qc(pres) || !qc(temp)) return -9999;
 
@@ -64,30 +71,52 @@ function mixratio(pres, temp) {
   return 621.97 * (fwesw / (pres - fwesw));
 }
 
+/**
+ * Linearly interpolate between two numeric values.
+ * @param {number} a Starting value
+ * @param {number} b Ending value
+ * @param {number} t Interpolation fraction.
+ * @returns {number} Interpolated value
+ */
 function Lerp(a, b, t){
   return a + (b-a)*t;
 }
 
-function RadToDeg(rad) {
-  return rad * (180 / Math.PI);
-}
-
+/**
+ * Convert an angle from degrees to radians.
+ * @param {number} deg Angle (in degrees).
+ * @returns {number} Angle (in radians).
+ */
 function DegToRad(deg) {
   return deg * (Math.PI / 180);
 }
 
+/**
+ * Find the interpolation fraction that places a value at g between a and b.
+ * @param {number} a Upper endpoint
+ * @param {number} b Lower endpoint
+ * @param {number} g Target value
+ * @returns {number} Interpolation fraction
+ */
 function GetLerpFactor(a, b, g){
   return (1-(g-b)/(a-b));
 }
 
-function QCCheck(N){
-  return (N != -9999 && !isNaN(N))
-}
-
+/**
+ * Convert speed and direction angle to Cartesian vector components.
+ * @param {number} Spd Vector magnitude (in kt).
+ * @param {number} Tta Direction angle (in degrees).
+ * @returns {{x: number, y: number}} Cartesian components (in kt).
+ */
 export function PolarToCartesianDeg(Spd, Tta){
   return {x: Spd * Math.cos(DegToRad(Tta)), y: Spd * Math.sin(DegToRad(Tta))};
 }
 
+/**
+ * Convert Cartesian vector components to magnitude and direction angle.
+ * @param {{x: number, y: number}} T Vector components (in kt).
+ * @returns {{r: number, theta: number}} Magnitude (in kt) and angle (in degrees).
+ */
 export function CartesianToPolarDeg(T){
   return {r: Math.sqrt(Math.pow(T.x, 2) + Math.pow(T.y, 2)), theta: RadToDeg(Math.atan2(T.y, T.x))};
 }
@@ -136,11 +165,7 @@ function LerpSoundingSlice(Pr, Rr, LerpFactor){
 
 
 
-export function ConvertToRaw(N, SP){
-  return [N.P, N.H, N.T, N.D, N.WD, N.WS, N.WB];
-}
-
-
+export { ConvertToRaw };
 
 /** Modified Lerpination
  * 
@@ -439,6 +464,12 @@ export function r_sat(tmp, prs, ice_flag, warmest_mixed_phase_temp=273.15, colde
     }
 }
 
+/**
+ * Evaluate a step function, using x2 as the value exactly at the threshold.
+ * @param {number} x1 Signed distance from the threshold
+ * @param {number} x2 Value at the threshold
+ * @returns {number} 0, x2, or 1 according to the sign of x1
+ */
 function heaviside(x1, x2) {
   if (x1 < 0) {
     return 0;
@@ -450,11 +481,25 @@ function heaviside(x1, x2) {
 }
 
 //Idk either
+/**
+ * Calculate the fractional mixed-phase ice content between two temperature limits.
+ * @param {number} T Temperature (in K).
+ * @param {number} T1 Warm mixed-phase limit (in K).
+ * @param {number} T2 Cold mixed-phase limit (in K).
+ * @returns {number} Ice fraction from 0 to 1 (in unitless).
+ */
 function omega(T, T1, T2){
     return ((T - T1)/(T2 - T1)) * heaviside((T - T1)/(T2 - T1), 1) * heaviside((1 - (T - T1)/(T2-T1)),1) + heaviside(-(1 - (T - T1)/(T2-T1)),1);
 }
 
 //Idk
+/**
+ * Calculate the temperature derivative of the mixed-phase ice fraction.
+ * @param {number} T Temperature (in K).
+ * @param {number} T1 Warm mixed-phase limit (in K).
+ * @param {number} T2 Cold mixed-phase limit (in K).
+ * @returns {number} Ice-fraction derivative (in K⁻¹).
+ */
 function domega(T, T1, T2){
     return (heaviside(T1-T,1) - heaviside(T2-T,1))/(T2-T1);
 }
@@ -608,7 +653,7 @@ export function calc_ecape_ncape(hght, pres, tmp, spechum, u_wind, v_wind, sndin
     var el_z = passedInfo.EL;
     var lfc_z = passedInfo.LFC;
 
-    const {NCAPE, MSE0_star, MSE0_bar} = compute_NCAPE(tmp.map(row => row+273.15), pres.map(row => row*100), spechum, hght, snding, 273.15, 253.15, lfc_z, el_z);
+    const {NCAPE, MSE0_star, MSE0_bar} = compute_NCAPE(tmp.map(celsiusToKelvin), pres.map(row => row*100), spechum, hght, snding, 273.15, 253.15, lfc_z, el_z);
     
     const sr_wind = calc_sr_wind(pres, u_wind, v_wind, hght, ifb, ift, passedInfo.StormMotion, sm)
     const psi = calc_psi(el_z);

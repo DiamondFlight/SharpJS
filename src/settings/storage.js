@@ -1,3 +1,5 @@
+import { alwaysAvailable } from '../io/general.js';
+
 /**
  * Where settings live. An adapter is any object with
  *   load(): payload | null | Promise<payload | null>
@@ -115,7 +117,7 @@ export function memoryAdapter(initial = null) {
   let payload = initial;
   return {
     kind: 'memory',
-    available: () => true,
+    available: alwaysAvailable,
     load: () => payload,
     save(next) {
       payload = JSON.parse(JSON.stringify(next));
@@ -136,7 +138,7 @@ export function autoAdapter(key = 'sharpjs:settings') {
   const primary = local.available() ? local : cookie.available() ? cookie : memoryAdapter();
   return {
     kind: primary.kind,
-    available: () => true,
+    available: alwaysAvailable,
     load() {
       return primary.load() ?? (primary !== cookie && cookie.available() ? cookie.load() : null);
     },

@@ -14,20 +14,30 @@ import { parseIemRaob } from '../io/iem.js';
 import { parseBufkit } from '../io/bufkit.js';
 import { buildVwpSounding } from '../io/vwp.js';
 import { withLocation } from '../io/location.js';
+import { pad } from '../io/general.js';
 
 const IEM_RAOB = 'https://mesonet.agron.iastate.edu/json/raob.py';
 const IEM_BUFKIT = 'https://mtarchive.geol.iastate.edu';
 const NEXRAD_L3 = 'https://unidata-nexrad-level3.s3.amazonaws.com';
 const IEM_RAOB_STATIONS = 'https://mesonet.agron.iastate.edu/geojson/network/RAOB.geojson';
 
-const pad = (n, w = 2) => String(n).padStart(w, '0');
-
+/**
+ * Normalize a supported date input and reject invalid timestamps.
+ * @param {Date|string|number} time Date, parseable date string, or numeric timestamp (in milliseconds).
+ * @returns {Date} Valid date object representing the same instant.
+ */
 function toDate(time) {
   const d = time instanceof Date ? time : new Date(time);
   if (Number.isNaN(d.getTime())) throw new Error(`SharpJS: invalid time ${time}`);
   return d;
 }
 
+/**
+ * Fetch a URL and reject non-success HTTP responses.
+ * @param {string} url Resource URL.
+ * @param {Function} fetchImpl Fetch-compatible function.
+ * @returns {Promise<Response>} Successful HTTP response.
+ */
 async function getOk(url, fetchImpl) {
   const res = await (fetchImpl || fetch)(url);
   if (!res.ok) {
@@ -117,6 +127,12 @@ export async function fetchIemBufkit({ model = 'hrrr', station, run, forecastHou
   return parseBufkit(await res.text(), { forecastHour, model, station: id });
 }
 
+/**
+ * List NEXRAD S3 object keys matching a prefix.
+ * @param {string} prefix Object-key prefix.
+ * @param {Function} fetchImpl Fetch-compatible function.
+ * @returns {Promise<string[]>} Matching S3 object keys.
+ */
 async function listKeys(prefix, fetchImpl) {
   const res = await getOk(`${NEXRAD_L3}/?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=100`, fetchImpl);
   const xml = await res.text();

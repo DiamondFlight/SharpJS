@@ -16,6 +16,7 @@ import {
   mean_rh_in_layer, GetCapeColor, CToF, UpdateCSMotStorm, UpdatePresets, VaporPressure, FtoC,
   GetAngleFromVector, theta
 } from "../calc/skewtCalcs.js";
+import { ConvertToRaw, ln, lerp, noop, arrayIndex, absoluteValue } from '../io/general.js';
 
 import { computeWindParams } from '../calc/params.js';
 import { Process } from '../io/sharppy.js';
@@ -288,7 +289,7 @@ function $(id) {
   }
   return el;
 }
-const emit = typeof options.emit === 'function' ? options.emit : () => {};
+const emit = typeof options.emit === 'function' ? options.emit : noop;
 
 const globalFont = options.font || '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
 const verString = DISPLAY_VERSION;
@@ -633,14 +634,6 @@ function PressuretoSkew(N, BP) {
   return (skv.bry - (scl2 / scl1) * (skv.bry - skv.tly)) / skv.bry;
 }
 
-/** Calculate the natural logarithm.
- * @param {*} x Parameter for ln.
- * @returns {*} Result of the function.
- */
-function ln(x) {
-  return Math.log(x) / Math.log(Math.E);
-}
-
 var SkewNumber = 0.75;
 /** The skew the user picked (SkewNumber can be overridden per sounding, e.g. dropsondes). */
 var UserSkewNumber = 0.75;
@@ -695,16 +688,6 @@ function CPerKmToCPerKft(N) {
   return N / 3.28084;
 }
 
-/** Converts to raw values.
- * @param {*} N Parameter for ConvertToRaw.
- * @param {*} SP Parameter for ConvertToRaw.
- * @returns {*} Result of the function.
- */
-function ConvertToRaw(N, SP) {
-  return [N.P, N.H, N.T, N.D, N.WD, N.WS, N.WB];
-}
-
-
 var HodographScaleMulti = 1.0;
 var OutsideFitBase = 0;
 
@@ -746,17 +729,6 @@ function rgbToHex(r, g, b) {
   return "#" + [r, g, b]
     .map(x => x.toString(16).padStart(2, "0"))
     .join("");
-}
-
-// Linear interpolate between two numbers
-/** Linearly interpolate between two numbers.
- * @param {*} a Parameter for lerp.
- * @param {*} b Parameter for lerp.
- * @param {*} t Parameter for lerp.
- * @returns {*} Result of the function.
- */
-function lerp(a, b, t) {
-  return a + (b - a) * t;
 }
 
 // NEXRAD VWP RMS on hodograph: strict errKt→px matches vector units but reads smaller than common VAD/AWIPS-style displays (~2× is typical visual envelope).
@@ -1093,7 +1065,7 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
 
   pushWind(layer.bot);
 
-  const indices = stepIdx && stepIdx.length ? stepIdx : W.map((_, i) => i);
+  const indices = stepIdx && stepIdx.length ? stepIdx : W.map(arrayIndex);
   for (const i of indices) {
     const w = W[i];
     if (!isUsableHodographWind(w)) continue;
@@ -2859,11 +2831,21 @@ function StormMotionBox(Sounding){
   const spdUnitLbl = impSpd ? "mph" : "kt";
 
 
+  /**
+   * Scale storm-relative wind speed to the storm-motion chart's horizontal percentage.
+   * @param {number} wndKts Wind speed (in kt).
+   * @returns {number} Horizontal chart position (in percent).
+   */
   function srWindXfract(wndKts) {
     const v = impSpd ? KtsToMph(wndKts) : wndKts;
     return 100 * (v / srSpdMax);
   }
 
+  /**
+   * Scale environmental wind speed to the environmental-wind chart's horizontal percentage.
+   * @param {number} wndKts Wind speed (in kt).
+   * @returns {number} Horizontal chart position (in percent).
+   */
   function envWindXfract(wndKts) {
     const v = impSpd ? KtsToMph(wndKts) : wndKts;
     return 100 * (v / envSpdMax);
@@ -3402,11 +3384,21 @@ function DrawVWPInsets(Sounding){
     const envSpdMax = impSpd ? KtsToMph(140) : 140;
     const spdUnitLbl = impSpd ? "mph" : "kt";
 
+    /**
+     * Scale storm-relative wind speed to the VWP inset's horizontal percentage.
+     * @param {number} wndKts Wind speed (in kt).
+     * @returns {number} Horizontal chart position (in percent).
+     */
     function srWindXfract(wndKts) {
       const v = impSpd ? KtsToMph(wndKts) : wndKts;
       return 100 * (v / srSpdMax);
     }
 
+    /**
+     * Scale environmental wind speed to the VWP inset's horizontal percentage.
+     * @param {number} wndKts Wind speed (in kt).
+     * @returns {number} Horizontal chart position (in percent).
+     */
     function envWindXfract(wndKts) {
       const v = impSpd ? KtsToMph(wndKts) : wndKts;
       return 100 * (v / envSpdMax);
@@ -7666,7 +7658,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
         }
       }
 
-      TAdVMax = Math.round(clamp(1 + Math.max(...TAdv.temp_adv.map(k => Math.abs(k))), 10, 20));
+      TAdVMax = Math.round(clamp(1 + Math.max(...TAdv.temp_adv.map(absoluteValue)), 10, 20));
       TAdVMax2 = TAdVMax*2;
 
       ctx.beginPath();
@@ -7733,7 +7725,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
 
     const TAdvW = fromVwpRedraw ? { temp_adv: null, pressure_bounds: null } : inferred_temp_adv(Sounding, -50, LATDW);
     if (TAdvW && Array.isArray(TAdvW.temp_adv) && Array.isArray(TAdvW.pressure_bounds)) {
-      TAdVMaxW = Math.round(clamp(1 + Math.max(...TAdvW.temp_adv.map(k => Math.abs(k))), 10, 20));
+      TAdVMaxW = Math.round(clamp(1 + Math.max(...TAdvW.temp_adv.map(absoluteValue)), 10, 20));
       TAdVMax2W = TAdVMaxW * 2;
 
       ctx.beginPath();

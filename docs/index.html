@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Home</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Home</h1>
+
+    
+
+
+
+    
+
+
+    <h3> </h3>
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+    <section>
+        <article><h1>SharpJS</h1>
+<p>Interactive Skew-T / hodograph sounding analysis that runs in the browser, plus a headless
+calculation core for Node and workers.</p>
+<p><img src="docs/screenshot.jpg" alt="SharpJS showing the 00Z 4 May 1999 Norman, OK sounding"></p>
+<p><strong>Try it:</strong> <a href="https:%5C/%5C/diamondflight.github.io/sharpjs/">https://diamondflight.github.io/sharpjs/</a>. Open a sounding file or drop it on the chart, pick a sample, or pull archived data.</p>
+<p>This repository is the standalone, open-source SharpJS sounding viewer: no accounts, no servers, no API keys.</p>
+<!-- My existing README content stays completely untouched here -->
+<h2>Usage</h2>
+<p>...</p>
+<!-- jsdoc-to-markdown -->
+<!-- jsdoc-to-markdown -->
+<h2>Features</h2>
+<ul>
+<li>Skew-T with SB / ML / MU / custom parcels, ECAPE, DCAPE, effective inflow layer, hail and dendritic-growth zones, inferred temperature advection, wind barbs</li>
+<li>Hodograph with Bunkers, Corfidi and Nixon deviant storm motions, custom motions, storm-relative mode, four colour tables, draw-a-front tool</li>
+<li>Parameter tables: SRH / bulk shear / mean and storm-relative wind / EHI by layer, STP (fixed and effective), SCP, SHIP, DCAPE, PWAT, and fire, winter and fog indices</li>
+<li>Side panels: height graphs, CONUS tornado climatology percentiles (EF0+ / EF2+), winter precipitation-type stats</li>
+<li>Presets for tornado, severe/MCS, dryline, elevated, winter, fire and fog/ambient. They are picked automatically per sounding, and any of them can be pinned</li>
+<li>Edit the sounding: drag points on the Skew-T or hodograph, edit the level table, change the surface temperature, dewpoint or wind</li>
+<li>Comparison overlays, averaging several soundings, NEXRAD VAD wind profiles (VWP)</li>
+<li>Units: default (kt / °C), metric or imperial</li>
+<li>Export SHARPpy text, SharpJS text (with omega) or CM1 <code>input_sounding</code>, plus a 2000 × 1200 PNG</li>
+<li><strong>Settings are remembered</strong> in the browser (localStorage, with a cookie fallback, or your own storage). They're versioned, so updates never reset them</li>
+<li>Works on phones (stacked layout)</li>
+</ul>
+<h2>Input formats</h2>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>How SharpJS recognises it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SHARPpy / SharpJS text (<code>%TITLE% … %RAW% … %END%</code>)</td>
+<td><code>%RAW%</code> block; 6 columns, or 7 with omega</td>
+</tr>
+<tr>
+<td>BUFKIT model files</td>
+<td><code>STID</code>, <code>STNM</code>, <code>STIM</code>; column order read from <code>SNPARM</code>, any forecast hour</td>
+</tr>
+<tr>
+<td>CM1 <code>input_sounding</code></td>
+<td>numbers only</td>
+</tr>
+<tr>
+<td>Chaser Archive JSON</td>
+<td><code>&quot;level&quot;</code>, <code>&quot;hght&quot;</code>, <code>&quot;temp&quot;</code>, … arrays</td>
+</tr>
+<tr>
+<td>NEXRAD Level III VWP (product 48, <code>NVW</code>)</td>
+<td>binary</td>
+</tr>
+<tr>
+<td>Arrays in memory</td>
+<td><code>fromArrays({ pressure, temperature, dewpoint or relativeHumidity, wind… })</code></td>
+</tr>
+</tbody>
+</table>
+<h2>Use it</h2>
+<h3>1. The standalone site</h3>
+<pre class="prettyprint source lang-sh"><code>git clone https://github.com/diamondflight/sharpjs.git
+cd sharpjs
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # static site in dist/ (deployable anywhere, e.g. GitHub Pages)
+</code></pre>
+<p>The <strong>Archive Data</strong> section loads observed soundings from the
+<a href="https://mesonet.agron.iastate.edu/archive/raob/">Iowa Environmental Mesonet</a> RAOB archive. It also loads model
+BUFKIT files from the <a href="https://mtarchive.geol.iastate.edu/">IEM BUFKIT archive</a> and the latest NEXRAD VAD wind
+profile from <a href="https://registry.opendata.aws/noaa-nexrad/">Unidata's NEXRAD Level III bucket</a>. All three are free
+public services that allow browser requests, so the site needs no backend. Please fetch on demand, not on a
+timer.</p>
+<h3>2. In your own page: one function call</h3>
+<pre class="prettyprint source lang-js"><code>import { SharpJS } from 'sharpjs';
+
+SharpJS('#chart', { sounding: text });       // draw
+SharpJS('#chart', { sounding: nextText });   // same element again → updates in place
+</code></pre>
+<p>That's the whole integration. SharpJS builds the chart and the controls panel, wires up the mouse and keyboard
+tools, remembers the reader's settings, accepts dropped files and handles export. <code>sounding</code> can be text in any
+format above, a parsed sounding, or arrays:</p>
+<pre class="prettyprint source lang-js"><code>SharpJS('#chart', {
+  sounding: {
+    pressure: p, height: z, temperature: t, relativeHumidity: rh, u, v, omega,
+    units: { temperature: 'K', windSpeed: 'm/s' },
+    title: 'GFS 2026-05-01 12Z F024',
+    location: { lat: 35.2, lon: -97.4 },
+    isModel: true,                       // gridded data: don't thin the hodograph
+  },
+  soundingKey: 'gfs|35.2|-97.4|2026050112', // same key = same place, new time: keep parcel/motion choices
+  controls: false,                         // you have your own UI
+  brandLabel: 'example.com',               // chart credit: &quot;example.com - powered by SharpJS v1.7&quot;
+  persist: myServerAdapter,                // or 'auto' | 'local' | 'cookie' | false
+  onChange: (state) => updateMyUi(state),
+});
+</code></pre>
+<details>
+<summary><strong>All props</strong></summary>
+<table>
+<thead>
+<tr>
+<th>Prop</th>
+<th>Default</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sounding</code></td>
+<td>–</td>
+<td>Text, parsed sounding or arrays. <code>null</code> clears the chart.</td>
+</tr>
+<tr>
+<td><code>soundingKey</code></td>
+<td>–</td>
+<td>Same key as the previous sounding keeps parcel / storm-motion choices (time scrubbing).</td>
+</tr>
+<tr>
+<td><code>title</code>, <code>location</code></td>
+<td>–</td>
+<td>Override the title; attach <code>{ lat, lon }</code> (enables the tornado climatology panel).</td>
+</tr>
+<tr>
+<td><code>comparisons</code></td>
+<td><code>[]</code></td>
+<td><code>[{ sounding, color?, label?, visible? }]</code> overlays.</td>
+</tr>
+<tr>
+<td><code>vwp</code></td>
+<td>–</td>
+<td>A VWP sounding (<code>buildVwpSounding</code>, <code>fetchNexradVwp</code>) or raw NVW bytes. <code>null</code> returns to the sounding.</td>
+</tr>
+<tr>
+<td><code>mapImage</code></td>
+<td>–</td>
+<td>Any <code>CanvasImageSource</code>, drawn in the hodograph corner (e.g. a map around the site).</td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td>–</td>
+<td>Settings to apply over what the reader saved.</td>
+</tr>
+<tr>
+<td><code>defaultSettings</code></td>
+<td>–</td>
+<td>Your defaults, under what the reader saved.</td>
+</tr>
+<tr>
+<td><code>persist</code></td>
+<td><code>'auto'</code></td>
+<td><code>'auto'</code> (localStorage, else cookie) · <code>'local'</code> · <code>'cookie'</code> · <code>false</code> · a custom adapter.</td>
+</tr>
+<tr>
+<td><code>storageKey</code></td>
+<td><code>'sharpjs:settings'</code></td>
+<td>Storage key / cookie name.</td>
+</tr>
+<tr>
+<td><code>controls</code></td>
+<td><code>true</code></td>
+<td>Built-in controls panel.</td>
+</tr>
+<tr>
+<td><code>sources</code></td>
+<td>–</td>
+<td>Data loaders for the Archive section, e.g. <code>import * as sources from 'sharpjs/sources'</code>.</td>
+</tr>
+<tr>
+<td><code>brandLabel</code>, <code>savedBy</code>, <code>filePrefix</code></td>
+<td>–</td>
+<td>Branding on the chart, the &quot;Saved by:&quot; export line, file names.</td>
+</tr>
+<tr>
+<td><code>fileDrop</code></td>
+<td><code>true</code></td>
+<td>Drop files on the chart to load them (Shift+drop adds comparisons).</td>
+</tr>
+<tr>
+<td><code>injectStyles</code></td>
+<td><code>true</code></td>
+<td>Add the stylesheet automatically (set <code>false</code> to ship your own).</td>
+</tr>
+<tr>
+<td><code>onChange</code>, <code>onSettingsChange</code>, <code>onLoad</code>, <code>onError</code></td>
+<td>–</td>
+<td>Callbacks (also available through <code>handle.on(event, fn)</code>).</td>
+</tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary><strong>The returned handle</strong></summary>
+<p><code>SharpJS()</code> returns the same handle every time for a given element (<code>SharpJS.get(el)</code> finds it later):</p>
+<pre class="prettyprint source lang-js"><code>const chart = SharpJS('#chart', { sounding });
+chart.load(text, { location: { lat, lon } });   // or chart.update({ sounding: text })
+chart.compare([textA, { sounding: textB, color: 'orange', label: 'NAM' }]);
+chart.average([text1, text2, text3]);
+chart.setVwp(nvwBytes);                         // chart.setVwp(null) to go back
+chart.analysis();                               // headless numbers for what is on screen
+chart.exportText('SharpJS');                    // { text, filename }
+await chart.screenshot({ scale: 2 });           // PNG data URL
+chart.getSettings(); chart.setSettings({ units: 'metric' }); chart.resetSettings();
+chart.on('change', (state) => …);
+chart.destroy();
+</code></pre>
+<p><code>chart.engine</code> exposes the lower-level chart engine (parcel and storm-motion selection, presets, surface edits,
+custom layers…) for hosts that build their own controls. See <code>src/index.d.ts</code>.</p>
+</details>
+<p>Several charts can live on one page; each <code>SharpJS()</code> call is independent.</p>
+<h3>3. Headless: let SharpJS do the math</h3>
+<pre class="prettyprint source lang-js"><code>import { parseSounding, analyze } from 'sharpjs/core';   // no DOM needed
+
+const a = analyze(parseSounding(text), { parcel: 'ML', motion: 'RM' });
+a.parcels.ML.cape;                       // 2554
+a.kinematics.layers['0-1km'].srh;        // 270
+a.stormMotion.RM;                        // { direction: 233, speed: 27.6 }
+a.effectiveInflow.srh;                   // 293
+a.indices.stpEffective;                  // 2.9
+</code></pre>
+<p><code>analyze()</code> runs the same functions the chart draws with, so the numbers always match what is on screen. Try
+<code>node examples/analyze.mjs path/to/sounding.txt</code>. The raw calculation functions (<code>LiftParcel</code>, <code>GetSRH</code>, <code>GetBM</code>,
+…) are in <code>sharpjs/calc</code>.</p>
+<h2>Settings</h2>
+<p>Everything a reader changes persists: units, skew, hodograph options, pinned presets, default parcel and storm
+motion, export format, which control sections are collapsed, and so on. Only values that differ from the defaults are
+stored, inside a versioned payload (<code>{ v, settings }</code>), and every value is validated on load. So:</p>
+<ul>
+<li>a new SharpJS version adds options without touching anyone's saved settings,</li>
+<li>improving a default reaches everyone who never changed it,</li>
+<li>a renamed option gets a migration step in <code>src/settings/schema.js</code> instead of a reset.</li>
+</ul>
+<p>Storage is pluggable. <code>persist: 'cookie'</code> keeps settings in a first-party cookie (a few hundred bytes). A site with
+accounts can pass its own adapter:</p>
+<pre class="prettyprint source lang-js"><code>const profileAdapter = {
+  kind: 'profile',
+  load: () => fetch('/api/me/sharpjs').then((r) => r.json()),
+  save: (payload) => fetch('/api/me/sharpjs', { method: 'PUT', body: JSON.stringify(payload) }),
+};
+SharpJS('#chart', { persist: profileAdapter });
+</code></pre>
+<p>The standalone site also remembers the last sounding you opened.</p>
+<h2>Development</h2>
+<pre class="prettyprint source lang-sh"><code>npm run dev         # standalone site with hot reload
+npm test            # unit tests (node:test): parsers, exports, analysis, settings, sources
+npm run test:e2e    # browser tests (Playwright; run `npx playwright install chromium` once)
+npm run lint
+</code></pre>
+<p><a href="CONTRIBUTING.md">CONTRIBUTING.md</a> explains how the code is organised, how to add a setting, and what is planned.</p>
+<pre class="prettyprint source"><code>src/
+  index.js            SharpJS() + everything below
+  core.js             headless entry (parsers, analyze, settings)
+  analysis.js         analyze(), levelAt()
+  viewer/             chart engine, markup, styles, controls panel, the SharpJS() wrapper
+  calc/               thermodynamics, parcels, kinematics, ECAPE, composite indices
+  io/                 parsers (SHARPpy, CM1, BUFKIT, IEM JSON, VWP, arrays), general functions and exporters
+  settings/           schema, store, storage adapters
+  sources/            optional public-data loaders (IEM, Unidata)
+  data/climo/         tornado climatology tables
+app/                  the standalone site
+</code></pre>
+<h2>Business Inquiries</h2>
+<p>For all business or related inquiries, contact the developers through sharpjsteam@gmail.com</p>
+<h2>Credits</h2>
+<p>Thanks to Amelia Urquhart (<a href="https://github.com/a-urq">@a-urq</a>) for help with the ECAPE parcel calculations. Thanks to Michael Barletta (<a href="https://github.com/michael-barletta">@michael-barletta</a>) for help with maintenence and porting. Parts of the
+thermodynamics follow <a href="https://github.com/sharppy/SHARPpy">SHARPpy</a>. See
+<a href="THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a> for licences and data credits.</p>
+<h2>License</h2>
+<p><a href="LICENSE">Custom</a></p></article>
+    </section>
+
+
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Oct 16 2026 16:18:25 GMT-0500 (Central Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

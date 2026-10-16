@@ -4,8 +4,17 @@ import { r_sat, ice_fraction, ice_fraction_deriv, ModifLerp, dwp_from_vaporpres,
     PolarToCartesianDeg, CartesianToPolarDeg, LastItem, calc_ecape_ncape, calc_sr_wind, Constants
  } from './ecapeCalc.js';
 import {GetLayerByHght, GetLayerByPres, ConvertToInfo, ConvertToRaw, VirtTemp} from "../calc/skewtCalcs.js"
+import { celsiusToKelvin } from '../io/general.js';
 
 //Next Functionos
+/**
+ * Calculate the density temperature including water-vapor and total-water loading.
+ * @param {number|number[]} tmp Parcel or environmental temperature (in K).
+ * @param {number|number[]} qv Specific humidity (in kg/kg).
+ * @param {number|number[]} qt Total water mixing ratio (in kg/kg).
+ * @returns {number|number[]} Density temperature (in K), preserving the input temperature shape.
+ * @see https://glossary.ametsoc.org/wiki/virtual-temperature/
+ */
 export function density_temperature(tmp, qv, qt){
     if (Array.isArray(tmp)){
         if (tmp[0] == null){
@@ -245,7 +254,7 @@ export function ecape_parcel(pres, hght, tmp, dwp, u_wind, v_wind, atipv, e_swit
 
     var dqt_dz = 0 / ECAPE_PARCEL_DZ;
 
-    var tmp_K = tmp.map(row => row + 273.15);
+    var tmp_K = tmp.map(celsiusToKelvin);
 
     while (pPres >= LastItem(pres)*100){
         var eTemp = linear_interp(hght, tmp_K, pHght);

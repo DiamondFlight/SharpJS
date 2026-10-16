@@ -32,6 +32,11 @@ class BufReader {
 
 let _inflate;
 
+/**
+ * Decompress a zlib-compressed product using the available runtime implementation.
+ * @param {Uint8Array|ArrayBuffer} bytes Compressed product bytes (in bytes).
+ * @returns {Uint8Array} Decompressed product bytes.
+ */
 function inflate(bytes) {
   // Node.js — use built-in zlib (getBuiltinModule works from ES modules, Node ≥ 20.16)
   const zlib = typeof process !== 'undefined' && typeof process.getBuiltinModule === 'function'
@@ -171,6 +176,11 @@ function parseVWP(raw) {
 
 // ─── Unwrapping ──────────────────────────────────────────────────────────────
 
+/**
+ * Remove transport headers and decompress a raw NEXRAD product when needed.
+ * @param {Uint8Array|ArrayBuffer|Buffer} raw Product data from the feed (in bytes).
+ * @returns {BufReader} Reader positioned at the NEXRAD message header.
+ */
 function unwrap(raw) {
   let buf = new BufReader(raw);
 
@@ -195,6 +205,11 @@ function unwrap(raw) {
   return buf;
 }
 
+/**
+ * Locate the end of a leading WMO/AWIPS text header.
+ * @param {BufReader} buf Product bytes.
+ * @returns {number} Header end offset (in bytes), or 0 when no delimiter is found.
+ */
 function findTextHeaderEnd(buf) {
   let last = 0;
   const limit = Math.min(buf.length - 2, 300);
@@ -210,6 +225,11 @@ function findTextHeaderEnd(buf) {
   return last;
 }
 
+/**
+ * Find a valid VWP message header inside a routed or padded byte buffer.
+ * @param {BufReader} buf Product bytes to search.
+ * @returns {number} Message start offset (in bytes), or -1 when no VWP message is found.
+ */
 function findMessageStart(buf) {
   for (let i = 0; i < buf.length - 20; i++) {
     if (buf.u16(i) === MSG_CODE_VWP) {
@@ -226,6 +246,12 @@ function findMessageStart(buf) {
 
 // ─── Product Description Block ───────────────────────────────────────────────
 
+/**
+ * Read radar and volume metadata from a NEXRAD Product Description Block.
+ * @param {BufReader} buf Product bytes.
+ * @param {number} offset PDB start offset (in bytes).
+ * @returns {object} Radar metadata with latitude/longitude (in degrees), height (in ft), product/VCP codes, and volume/generation dates and times.
+ */
 function parsePDB(buf, offset) {
   const o = offset;
   return {
@@ -244,6 +270,12 @@ function parsePDB(buf, offset) {
 
 // ─── Block / Packet parsing ──────────────────────────────────────────────────
 
+/**
+ * Find a length-validated NEXRAD product block by identifier.
+ * @param {BufReader} buf Product bytes.
+ * @param {number} blockId Block identifier (in unitless).
+ * @returns {number} Block offset (in bytes), or -1 when absent.
+ */
 function findBlock(buf, blockId) {
   for (let i = 0; i < buf.length - 8; i += 2) {
     if (buf.u16(i) === 0xFFFF && buf.u16(i + 2) === blockId) {
@@ -256,6 +288,13 @@ function findBlock(buf, blockId) {
 
 // ─── Symbology Block (fallback path) ─────────────────────────────────────────
 
+/**
+ * Decode wind barbs and chart labels from the symbology block fallback.
+ * @param {BufReader} buf Product bytes.
+ * @param {number} offset Symbology block offset (in bytes).
+ * @param {object} pdb Parsed product description, including radar height (in ft).
+ * @returns {object[]} Wind levels with altitude (in km AGL and ft MSL), direction (in degrees), and speed/error (in kt).
+ */
 function parseSymbologyWinds(buf, offset, pdb) {
   const blockLen = buf.u32(offset + 4);
   const blockEnd = Math.min(offset + 8 + blockLen, buf.length);
@@ -371,6 +410,13 @@ function parseSymbologyWinds(buf, offset, pdb) {
 
 // ─── Tabular Block (preferred path) ──────────────────────────────────────────
 
+/**
+ * Decode the tabular VAD output and its adaptation metadata.
+ * @param {BufReader} buf Product bytes.
+ * @param {number} offset Tabular block offset (in bytes).
+ * @param {number} radarHeightKm Radar height above mean sea level (in km).
+ * @returns {{winds: object[], metadata: object}} Wind levels (altitude in km AGL/ft MSL, direction in degrees, speed/error in kt, range in nmi, elevation in degrees) and parsed thresholds.
+ */
 function parseTabularFull(buf, offset, radarHeightKm) {
   const blockLen = buf.u32(offset + 4);
   const blockEnd = Math.min(offset + 8 + blockLen, buf.length);
@@ -467,6 +513,13 @@ function parseTabularFull(buf, offset, radarHeightKm) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Find the array value nearest to a target when it is within the allowed distance.
+ * @param {number[]} arr Candidate numeric values
+ * @param {number} target Target value
+ * @param {number} maxDist Maximum accepted absolute distance
+ * @returns {number|null} Nearest candidate, or null when none is close enough.
+ */
 function nearestVal(arr, target, maxDist) {
   let best = null;
   let bestDist = Infinity;
@@ -477,6 +530,12 @@ function nearestVal(arr, target, maxDist) {
   return bestDist <= maxDist ? best : null;
 }
 
+/**
+ * Convert a NEXRAD epoch-based Julian day and seconds-of-day to an ISO timestamp.
+ * @param {number} julianDate One-based day count since 1970-01-01 UTC (in days).
+ * @param {number} seconds Seconds elapsed in the day (in seconds).
+ * @returns {string} UTC timestamp in ISO 8601 format.
+ */
 function nexradDate(julianDate, seconds) {
   // NEXRAD Julian date is 1-based (day 1 = 1970-01-01 UTC); Unix ms uses 0-based day count.
   // Matches e.g. MetPy nexrad_to_datetime(julian_date - 1, ...).

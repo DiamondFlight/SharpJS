@@ -85,6 +85,11 @@ export function migrate(payload) {
   return settings;
 }
 
+/**
+ * Deep-copy JSON-compatible values while leaving primitives unchanged.
+ * @param {*} value Value to copy.
+ * @returns {*} A JSON-deep copy of objects or the original primitive value.
+ */
 function clone(value) {
   return value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value;
 }

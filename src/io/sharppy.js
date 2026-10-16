@@ -8,23 +8,37 @@
  * Pure functions: no DOM, no network.
  */
 import { Lerp, clamp, VirtTemp, wetbulb } from '../calc/skewtCalcs.js';
+import { lerp, KTStoMPS } from './general.js';
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
+/**
+ * Calculate the fractional position of V between range endpoints B and T.
+ * @param {number} V Value to locate
+ * @param {number} B First endpoint
+ * @param {number} T Second endpoint
+ * @returns {number} Relative position within the range
+ */
 function GetNumFromRange(V, B, T) {
   return (B - V) / (B - T);
 }
 
+/**
+ * Convert wind speed from meters per second to knots.
+ * @param {number} n Wind speed (in m/s).
+ * @returns {number} Wind speed (in kt).
+ */
 function MPStoKTS(n){
   return n * 1.94384;
 }
 
-function KTStoMPS(n){
-  return n / 1.94384;
-}
-
+/**
+ * Estimate pressure one height increment above a level using the hypsometric equation.
+ * @param {number} pLower Pressure at the lower level (in hPa).
+ * @param {number} deltaZ Height increment (in m).
+ * @param {number} theta Potential temperature (in K).
+ * @param {number} qv_gkg Water-vapor mixing ratio (in g/kg).
+ * @returns {number} Pressure at the upper level (in hPa).
+ * @see https://glossary.ametsoc.org/wiki/hypsometric-equation/
+ */
 function calcNxtPrs(pLower, deltaZ, theta, qv_gkg) {
   const Rd = 287.04;
   const g = 9.80665;
@@ -37,10 +51,23 @@ function calcNxtPrs(pLower, deltaZ, theta, qv_gkg) {
   return pLower / Math.exp(deltaZ / (vTemp * (Rd / g)));
 }
 
+/**
+ * Convert potential temperature to air temperature at a pressure level.
+ * @param {number} theta Potential temperature (in K).
+ * @param {number} p Pressure (in hPa).
+ * @returns {number} Air temperature (in °C).
+ * @see https://glossary.ametsoc.org/wiki/potential-temperature/
+ */
 function tempCFromTheta(theta, p) {
   return theta * Math.pow(p / 1000.0, 0.2854) - 273.15;
 }
 
+/**
+ * Derive dewpoint from water-vapor mixing ratio and pressure.
+ * @param {number} qv Water-vapor mixing ratio (in g/kg).
+ * @param {number} p Pressure (in hPa).
+ * @returns {number} Dewpoint temperature (in °C).
+ */
 function dewpointCFromQv(qv, p) {
   const eps = 0.62195691;
   const w = qv / 1000.0; 
@@ -49,6 +76,12 @@ function dewpointCFromQv(qv, p) {
   return (243.5 * ln) / (17.67 - ln);
 }
 
+/**
+ * Convert CM1 surface metadata and profile rows into pressure-level records.
+ * @param {number[]} header Surface pressure (hPa), potential temperature (K), and mixing ratio (g/kg).
+ * @param {string[]} lines CM1 sounding lines; profile height is in m, theta in K, mixing ratio in g/kg, and wind components in m/s.
+ * @returns {object[]} Profile records with pressure (in hPa), height (in m), temperature/dewpoint (in °C), direction (in degrees), and speed (in m/s).
+ */
 function parseCM1Sounding(header, lines) {
   const [sfcP, sfcTheta, sfcQV] = header;
 
@@ -81,6 +114,11 @@ function parseCM1Sounding(header, lines) {
   });
 }
 
+/**
+ * Convert a CM1 input_sounding text file into SHARPpy raw sounding text.
+ * @param {string} Text CM1 sounding text.
+ * @returns {string} SHARPpy-format sounding text.
+ */
 function breakdownCM1(Text){
   const lines = Text.trim().split('\n');
 
@@ -112,6 +150,11 @@ function breakdownCM1(Text){
   return txt;
 }
 
+/**
+ * Parse supported sounding text and construct the normalized SharpJS sounding object.
+ * @param {string} text SHARPpy, Chaser Archive JSON, or CM1 sounding text.
+ * @returns {object|false} Parsed sounding with level arrays and metadata (pressure in hPa, height in m, temperature/dewpoint in °C, direction in degrees, wind speed in kt), or false when text is null.
+ */
 export function Process(text) {
   let Json = {
     Sounding: {

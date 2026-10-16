@@ -192,7 +192,7 @@ src/
   analysis.js         analyze(), levelAt()
   viewer/             chart engine, markup, styles, controls panel, the SharpJS() wrapper
   calc/               thermodynamics, parcels, kinematics, ECAPE, composite indices
-  io/                 parsers (SHARPpy, CM1, BUFKIT, IEM JSON, VWP, arrays) and exporters
+  io/                 parsers (SHARPpy, CM1, BUFKIT, IEM JSON, VWP, arrays), general functions and exporters
   settings/           schema, store, storage adapters
   sources/            optional public-data loaders (IEM, Unidata)
   data/climo/         tornado climatology tables

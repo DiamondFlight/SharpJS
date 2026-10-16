@@ -3,11 +3,14 @@
  * Pure functions: no DOM.
  */
 import { ConvertPolartoCart, ConvertToInfo, GetLayerByPres } from '../calc/skewtCalcs.js';
+import { KTStoMPS } from './general.js';
 
-function KTStoMPS(n){
-  return n / 1.94384;
-}
-
+/**
+ * Round a CM1 value to the precision selected by tt.
+ * @param {number} N Value to round
+ * @param {number} tt Precision selector (1, 2, or other; in unitless).
+ * @returns {number} Rounded value
+ */
 function CM1Round(N, tt=1){
   if (tt == 1){
     return Math.round(N * 10**4)/10**4;
@@ -18,6 +21,12 @@ function CM1Round(N, tt=1){
   }
 }
 
+/**
+ * Convert pressure and dewpoint to water-vapor mixing ratio for CM1 output.
+ * @param {number} pressure Pressure (in hPa).
+ * @param {number} dewpoint Dewpoint temperature (in °C).
+ * @returns {number} Water-vapor mixing ratio (in g/kg).
+ */
 function calculateQV(pressure, dewpoint) {
   const EPSILON = 0.62197; 
   const e = 6.1121 * Math.exp((17.67 * dewpoint) / (dewpoint + 243.5));
@@ -25,6 +34,12 @@ function calculateQV(pressure, dewpoint) {
   return qv*1000;
 }
 
+/**
+ * Calculate high-precision water-vapor mixing ratio from pressure and dewpoint.
+ * @param {number} p Pressure (in hPa).
+ * @param {number} tdC Dewpoint temperature (in °C).
+ * @returns {number} Water-vapor mixing ratio (in g/kg).
+ */
 function mixratiohighprec(p, tdC) {
   const eps = 0.62195691;
   const e = 6.112 * Math.exp((17.67 * tdC) / (tdC + 243.5));
@@ -32,10 +47,23 @@ function mixratiohighprec(p, tdC) {
   return w * 1000.0;
 }
 
+/**
+ * Calculate potential temperature for a pressure level.
+ * @param {number} p Pressure (in hPa).
+ * @param {number} tC Air temperature (in °C).
+ * @param {number} p0 Reference pressure (in hPa).
+ * @returns {number} Potential temperature (in K).
+ */
 function thetahighprec(p, tC, p0 = 1000) {
   return (tC + 273.15) * Math.pow(p0 / p, 0.2854);
 }
 
+/**
+ * Format one row of values as fixed-width CM1 sounding text.
+ * @param {Array<number|string>} values Values to write; columns have the units required by CM1.
+ * @param {boolean} isQV Whether the row is the surface header row.
+ * @returns {string} Space-padded numeric fields for one CM1 row.
+ */
 function formatCM1Line(values, isQV = false) {
   return values.map((val, i) => {
     val = parseFloat(val);
@@ -44,6 +72,11 @@ function formatCM1Line(values, isQV = false) {
   }).join("");
 }
 
+/**
+ * Serialize a sounding as a CM1 input_sounding file.
+ * @param {object} Snding Parsed SharpJS sounding.
+ * @returns {{text: string, filename: string}} CM1 text and its suggested file name.
+ */
 function exportToCm1(Snding){
   let text = "";
   const Sound = Snding.Sounding;
@@ -75,6 +108,12 @@ function exportToCm1(Snding){
   };
 }
 
+/**
+ * Round a value to the nearest multiple of 1/m.
+ * @param {number} N Value to round
+ * @param {number} m Scale factor (in unitless).
+ * @returns {number} Rounded value
+ */
 function RoundTo(N, m){
   return Math.round(N * m)/m;
 }

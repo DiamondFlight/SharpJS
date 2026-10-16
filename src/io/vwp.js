@@ -27,6 +27,12 @@ function vwpVolumeMetaFromParse(P, radarLabel) {
   return { volumeUnix, title };
 }
 
+/**
+ * Calculate the signed shortest angular difference between two wind directions.
+ * @param {number} dir1 First wind direction (in degrees).
+ * @param {number} dir2 Second wind direction (in degrees).
+ * @returns {number} Signed angular difference (in degrees).
+ */
 function windDirDiff(dir1, dir2) {
     let diff = (dir1 - dir2 + 180) % 360 - 180;
     return diff < -180 ? diff + 360 : diff;
@@ -37,6 +43,12 @@ const avgAngle = (a, b) => {
   return (a + diff / 2 + 360) % 360;
 };
 
+/**
+ * Populate a VWP sounding's wind and thermodynamic profile columns from parsed radar levels.
+ * @param {object} VWPSounding Sounding structure to update in place.
+ * @param {object} P Parsed VWP product containing times, profiles, and wind levels.
+ * @returns {void} Updates the sounding's wind, pressure, height, temperature, moisture, and slice columns.
+ */
 function fillVwpWindColumnsFromParse(VWPSounding, P) {
   const rProf = P.profiles[P.times[0]];
   let sW = [];
@@ -185,6 +197,11 @@ function buildNexradVwpSkeletonSoundingFromParse(P, snding) {
   const T0 = 288.15;
   const P0 = 1013.25;
 
+  /**
+   * Estimate standard-atmosphere pressure at a mean-sea-level height.
+   * @param {number} h Height above mean sea level (in m).
+   * @returns {number} Pressure (in hPa).
+   */
   function pressureMbAtHeightMsl(h) {
     const hh = Math.min(Math.max(h, 0), 11000);
     const T = T0 - L * hh;
@@ -192,6 +209,11 @@ function buildNexradVwpSkeletonSoundingFromParse(P, snding) {
     return P0 * Math.pow(T / T0, g / (R * L));
   }
 
+  /**
+   * Estimate standard-atmosphere temperature at a mean-sea-level height.
+   * @param {number} h Height above mean sea level (in m).
+   * @returns {number} Temperature (in °C).
+   */
   function tempCAtHeightMsl(h) {
     return 15 - L * h;
   }

@@ -30,6 +30,11 @@ const COMPARISON_COLORS = ['rgb(0, 225, 255)', 'rgb(255, 0, 0)', 'rgb(246, 255, 
 
 const instances = new WeakMap();
 
+/**
+ * Resolve a selector or validate an existing element as the chart mount target.
+ * @param {Element|string} target CSS selector or DOM element.
+ * @returns {Element} The element that will contain the chart.
+ */
 function resolveTarget(target) {
   if (typeof target === 'string') {
     if (typeof document === 'undefined') throw new Error('SharpJS: no document');
@@ -83,6 +88,12 @@ export function SharpJS(target, props = {}) {
 SharpJS.get = (target) => instances.get(resolveTarget(target)) || null;
 SharpJS.version = VERSION;
 
+/**
+ * Create the chart DOM, engine, settings store, controls, and public handle for one target.
+ * @param {Element} el Validated container element.
+ * @param {object} initialProps Initial chart, data, and settings options.
+ * @returns {object} Mounted chart handle.
+ */
 function mount(el, initialProps) {
   let props = { ...initialProps };
   let destroyed = false;
@@ -170,6 +181,10 @@ function mount(el, initialProps) {
   const engine = createEngine(viz, engineOptions);
   engine.attach();
 
+  /**
+   * Queue one state synchronization after engine updates settle.
+   * @returns {void} Synchronizes persisted settings, controls, and change listeners asynchronously.
+   */
   function scheduleStateCheck() {
     if (stateTimer !== null || destroyed) return;
     stateTimer = Promise.resolve().then(() => {
@@ -203,6 +218,11 @@ function mount(el, initialProps) {
   engine.applyState(pick(store.get(), ENGINE_SETTINGS), { redraw: false });
 
   // ── data ───────────────────────────────────────────────────────────────────────────────
+  /**
+   * Normalize and report an error through the callback, event listeners, console, and controls.
+   * @param {*} err Error or error-like value to report.
+   * @returns {void} Notifies configured error surfaces.
+   */
   function reportError(err) {
     const error = err instanceof Error ? err : new Error(String(err));
     if (!listeners.get('error')?.size && typeof props.onError !== 'function') console.error(error);
@@ -210,10 +230,20 @@ function mount(el, initialProps) {
     controls?.status(error.message, true);
   }
 
+  /**
+   * Set whether the empty-chart prompt is visible.
+   * @param {boolean} show Whether to show the prompt.
+   * @returns {void} Updates the prompt display style.
+   */
   function showEmpty(show) {
     empty.style.display = show ? '' : 'none';
   }
 
+  /**
+   * Parse comparison inputs and attach labels, visibility, and chart colors.
+   * @param {Array<object|string>} list Comparison sounding inputs and optional metadata.
+   * @returns {object[]} Valid comparison records ready for the chart engine.
+   */
   function normalizeComparisons(list) {
     if (!Array.isArray(list)) return [];
     return list
@@ -243,11 +273,22 @@ function mount(el, initialProps) {
       .filter(Boolean);
   }
 
+  /**
+   * Toggle the chart layout when the active sounding represents dropsonde data.
+   * @param {object|null} snd Parsed sounding, if one is active.
+   * @returns {void} Updates the chart's dropsonde-mode class.
+   */
   function setDropsondeLayout(snd) {
     const isDrop = !!(snd && (snd.isDropsonde === true || /dropsonde|·\s*drop\b/i.test(`${snd.STitle || ''} ${snd.Title || ''}`)));
     viz.classList.toggle('dropsonde-mode', isDrop);
   }
 
+  /**
+   * Draw the main sounding and comparison overlays, leaving VWP mode.
+   * @param {object} options Drawing options.
+   * @param {boolean} options.reset Whether to reset chart zoom and layout state.
+   * @returns {void} Updates the engine and empty-state display.
+   */
   function drawMain({ reset }) {
     if (!main) return;
     setDropsondeLayout(main);
@@ -284,6 +325,10 @@ function mount(el, initialProps) {
     }
   }
 
+  /**
+   * Remove the active sounding, comparisons, VWP state, and chart drawings.
+   * @returns {void} Resets the chart to its empty state.
+   */
   function clear() {
     main = null;
     comparisons = [];
@@ -300,6 +345,11 @@ function mount(el, initialProps) {
     scheduleStateCheck();
   }
 
+  /**
+   * Replace the active sounding comparison overlays.
+   * @param {Array<object|string>} list Comparison sounding inputs.
+   * @returns {void} Updates the chart engine when a main sounding is displayed.
+   */
   function setComparisons(list) {
     comparisons = normalizeComparisons(list);
     if (main && !vwpOn) engine.setComparisons(comparisons);
@@ -364,6 +414,12 @@ function mount(el, initialProps) {
     }
   }
 
+  /**
+   * Read selected files and load, compare, average, or display their sounding data.
+   * @param {FileList|File[]} files Browser files to read.
+   * @param {string} mode Loading behavior: auto, compare, or average.
+   * @returns {Promise<void>} Completes after files are read and the selected operation is applied.
+   */
   async function loadFiles(files, mode = 'auto') {
     const list = [...(files || [])];
     if (list.length === 0) return;
@@ -388,10 +444,21 @@ function mount(el, initialProps) {
   }
 
   // ── exports ────────────────────────────────────────────────────────────────────────────
+  /**
+   * Ask the chart engine to serialize the active sounding.
+   * @param {string} format Export format identifier.
+   * @returns {object|null} Export text and filename, or null when no sounding is available.
+   */
   function exportText(format) {
     return engine.GetSoundingTextContent(format);
   }
 
+  /**
+   * Trigger a browser download for a Blob and revoke its temporary object URL.
+   * @param {Blob} blob File content.
+   * @param {string} filename Suggested download filename.
+   * @returns {void} Starts a browser download.
+   */
   function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = el.ownerDocument.createElement('a');
@@ -404,6 +471,11 @@ function mount(el, initialProps) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  /**
+   * Export the active sounding as text and trigger its download.
+   * @param {string} format Export format identifier.
+   * @returns {object|null} Export payload, or null when no sounding can be exported.
+   */
   function downloadText(format) {
     const data = exportText(format);
     if (!data) return null;
@@ -417,6 +489,12 @@ function mount(el, initialProps) {
     return engine.Screenshot(false, scale);
   }
 
+  /**
+   * Capture the chart and download it as a PNG image.
+   * @param {object} options Image options.
+   * @param {number} options.scale Image scale multiplier (in unitless).
+   * @returns {Promise<string|null>} PNG data URL, or null when no sounding is available.
+   */
   async function downloadImage({ scale = 2 } = {}) {
     const url = await screenshot({ scale });
     if (!url) return null;
@@ -426,6 +504,12 @@ function mount(el, initialProps) {
     return url;
   }
 
+  /**
+   * Capture the chart and copy its PNG image to the system clipboard.
+   * @param {object} options Image options.
+   * @param {number} options.scale Image scale multiplier (in unitless).
+   * @returns {Promise<boolean>} Whether an image was copied.
+   */
   async function copyImage({ scale = 2 } = {}) {
     const url = await screenshot({ scale });
     if (!url) return false;
@@ -544,6 +628,11 @@ function mount(el, initialProps) {
     : createControls(controlsHost, { handle, engine, store, sources: props.sources, options: props.controls });
   if (!controls) controlsHost.remove();
 
+  /**
+   * Merge new chart properties and update affected data, settings, and drawings.
+   * @param {object} next Properties to merge into the current chart configuration.
+   * @returns {object} The chart handle, including when the chart has already been destroyed.
+   */
   function update(next = {}) {
     if (destroyed) return handle;
     props = { ...props, ...next };
@@ -579,6 +668,10 @@ function mount(el, initialProps) {
     return handle;
   }
 
+  /**
+   * Remove event handlers, controls, engine resources, chart DOM, and instance registration.
+   * @returns {void} Destroys the mounted chart.
+   */
   function destroy() {
     if (destroyed) return;
     destroyed = true;

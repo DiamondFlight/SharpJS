@@ -1,20 +1,9 @@
 import { calc_ecape_ncape, calc_sr_wind, linear_interp, spechum_from_dwp, rev_linear_interp } from './ecapeCalc.js';
 import { ecape_parcel, density_temperature } from './ecape.js';
+import { ConvertToRaw, ln, RadToDeg, QCCheck, qc, clamp } from '../io/general.js';
+export { ConvertToRaw, qc, clamp };
 const globalFont = '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
 
-
-export function ConvertToRaw(N, SP){
-  return [N.P, N.H, N.T, N.D, N.WD, N.WS, N.WB];
-}
-
-/**
- * Function to calculate the natural logarithm of a number using log identities
- * @param {number} x 
- * @returns Natural Logarithm of X
- */
-function ln(x) {
-  return Math.log(x) / Math.log(Math.E);
-}
 
 /**
  * Retrieves the layers within the specified pressure or height bounds.
@@ -96,16 +85,6 @@ export function GetAngleFromVector(B) {
  */
 export function M2TOKTS(N) {
   return N / 0.514444444;
-}
-
-
-/**
- * Tests whether a scalar is neither the missing-data sentinel nor NaN.
- * @param {number} N Value to test.
- * @returns {boolean} True when the value passes the missing-data check (in 1).
- */
-function QCCheck(N) {
-  return (N != -9999 && !isNaN(N))
 }
 
 
@@ -208,15 +187,6 @@ function PolarToCartesianDeg(speed, theta) {
   };
 }
 
-
-/**
- * Converts an angle from radians to degrees.
- * @param {number} rad Angle (in rad).
- * @returns {number} Angle (in deg).
- */
-function RadToDeg(rad) {
-  return rad * (180 / Math.PI);
-}
 
 /**
  * Converts Cartesian components to polar magnitude and direction.
@@ -727,16 +697,6 @@ export function CtoK(N) {
 }
 
 /**
- * Checks whether a value lies within the accepted non-missing numerical range.
- * @param {number} val Value to validate (in ANY).
- * @returns {number} 1 when accepted and 0 otherwise (in 1).
- */
-export function qc(val) {
-  if (val < -998.0 || val > 2.0E+05) return 0;
-  return 1;
-}
-
-/**
  * Estimates the temperature of a parcel at its lifting-condensation level.
  * @param {number} temp Parcel temperature (in C).
  * @param {number} dwpt Parcel dew-point temperature (in C).
@@ -962,17 +922,6 @@ function GetMoistLapse(l, t, td, p) {
  */
 function RoundTo(N, V) {
   return Math.round(N / V) * V;
-}
-
-/**
- * Restricts a scalar to an inclusive lower and upper bound.
- * @param {number} n Value to restrict
- * @param {number} m Lower bound (in the same unit as n).
- * @param {number} a Upper bound (in the same unit as n).
- * @returns {number} Clamped value (in the same unit as n).
- */
-export function clamp(n, m, a) {
-  return Math.max(Math.min(n, a), m);
 }
 
 /**

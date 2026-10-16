@@ -7,6 +7,12 @@ import { Process } from './sharppy.js';
 
 const KEYS = ['pres', 'hght', 'tmpc', 'dwpc', 'drct', 'sknt'];
 
+/**
+ * Wrap a sounding title and raw level rows in SHARPpy text-file markers.
+ * @param {string} title Sounding title.
+ * @param {string} body Formatted raw sounding rows.
+ * @returns {string} Complete SHARPpy-format sounding text.
+ */
 function sharppyText(title, body) {
   return `%TITLE%
   ${title}

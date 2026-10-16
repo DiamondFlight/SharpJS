@@ -35,6 +35,14 @@ const UNITS = { default: 'Default (kt / °C)', metric: 'Metric', imperial: 'Impe
 const EXPORTS = { Default: 'SHARPpy', SharpJS: 'SharpJS (SHARPpy + omega)', CM1: 'CM1 input_sounding' };
 const BUFKIT_MODELS = { hrrr: 'HRRR', rap: 'RAP', ruc: 'RUC', nam: 'NAM', nam4km: 'NAM 3 km', gfs: 'GFS' };
 
+/**
+ * Create a DOM element, apply attributes/listeners, and append flattened children.
+ * @param {Document} doc Owner document for the element.
+ * @param {string} tag HTML tag name.
+ * @param {object} attrs Element properties, attributes, styles, and event handlers.
+ * @param {...(Node|string|number|null|boolean)} children Child nodes or text values.
+ * @returns {HTMLElement} Created element.
+ */
 function h(doc, tag, attrs = {}, ...children) {
   const el = doc.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -90,6 +98,13 @@ export function createControls(host, { handle, engine, store, sources = null, op
   const fieldRow = (cols, ...children) => H('div', { class: 'sjs-field-row', style: `--cols:${cols}` }, ...children);
   const num = (el) => (el.value.trim() === '' ? undefined : Number(el.value));
 
+  /**
+   * Create a collapsible controls section and persist its expanded state.
+   * @param {string} id Stable section identifier.
+   * @param {string} title Visible section heading.
+   * @param {...Node} children Content nodes for the section.
+   * @returns {HTMLDetailsElement} Created details element.
+   */
   function section(id, title, ...children) {
     const collapsed = store.get().collapsedSections.includes(id);
     const el = H('details', { class: 'sjs-section', 'data-section': id, open: !collapsed }, H('summary', {}, title), ...children);
@@ -105,6 +120,12 @@ export function createControls(host, { handle, engine, store, sources = null, op
 
   const statusEl = H('p', { class: 'sjs-status', role: 'status', 'aria-live': 'polite' });
   let statusTimer = null;
+  /**
+   * Display a status message and mark errors for assistive technology and styling.
+   * @param {string} message Text to display.
+   * @param {boolean} isError Whether the message represents an error.
+   * @returns {void} Updates the controls status element.
+   */
   function status(message, isError = false) {
     clearTimeout(statusTimer);
     statusEl.textContent = message || '';
@@ -112,6 +133,12 @@ export function createControls(host, { handle, engine, store, sources = null, op
     if (message && !isError) statusTimer = setTimeout(() => { statusEl.textContent = ''; }, 6000);
   }
 
+  /**
+   * Run an asynchronous controls action and show its progress or error.
+   * @param {string} label Progress message shown while the action runs.
+   * @param {Function} fn Asynchronous action to invoke.
+   * @returns {Promise<void>} Resolves after the action or after its error is displayed.
+   */
   async function run(label, fn) {
     status(label);
     try {
@@ -150,6 +177,10 @@ export function createControls(host, { handle, engine, store, sources = null, op
 
   const archive = H('div');
   const archiveSection = section('archive', 'Archive Data', archive);
+  /**
+   * Rebuild the archive controls from the currently available data-source callbacks.
+   * @returns {void} Updates archive panel contents and visibility.
+   */
   function renderArchive() {
     archive.innerHTML = '';
     if (!currentSources) {
@@ -313,17 +344,32 @@ export function createControls(host, { handle, engine, store, sources = null, op
   renderArchive();
 
   // ── actions ──────────────────────────────────────────────────────────────────────────────
+  /**
+   * Apply the selected parcel to the chart and persist non-custom parcel choices.
+   * @param {string} id Parcel identifier (SB, ML, MU, or CU).
+   * @returns {void} Updates chart parcel state.
+   */
   function selectParcel(id) {
     engine.LoadNewParcel(id, id === 'CU' ? num(refs.parcelPressure) : undefined);
     if (id !== 'CU') engine.applyState({ defaultParcel: id }, { redraw: false });
   }
 
+  /**
+   * Apply the selected storm motion, including custom direction and speed when requested.
+   * @param {string} id Storm-motion identifier.
+   * @returns {void} Updates chart storm-motion state.
+   */
   function selectMotion(id) {
     const custom = id === 'CM' ? { direction: num(refs.motionDir), speed: num(refs.motionSpd) } : null;
     engine.LoadNewWind(id, true, custom);
     if (id !== 'CM') engine.applyState({ defaultMotion: id }, { redraw: false });
   }
 
+  /**
+   * Toggle cursor readout and disable modification mode when readout is enabled.
+   * @param {boolean} on Whether cursor readout should be active.
+   * @returns {void} Updates chart interaction state.
+   */
   function setReadout(on) {
     engine.setReadOutOnState(on);
     if (on) engine.setModifyMode(false);
@@ -332,6 +378,13 @@ export function createControls(host, { handle, engine, store, sources = null, op
   }
 
   // ── render ───────────────────────────────────────────────────────────────────────────────
+  /**
+   * Update a toggle control's displayed label and pressed state.
+   * @param {string} key Toggle reference key.
+   * @param {string} label Text displayed in the toggle.
+   * @param {boolean} pressed Whether the toggle is pressed.
+   * @returns {void} Updates the referenced control when it exists.
+   */
   function setToggle(key, label, pressed) {
     const r = refs[key];
     if (!r) return;
@@ -343,6 +396,12 @@ export function createControls(host, { handle, engine, store, sources = null, op
     if (el && doc.activeElement !== el && el.value !== String(value)) el.value = String(value);
   };
 
+  /**
+   * Synchronize controls with the current chart state and persisted UI settings.
+   * @param {object} state Chart-engine state.
+   * @param {object} settings User settings.
+   * @returns {void} Updates controls and section visibility.
+   */
   function render(state = engine.getState(), settings = store.get()) {
     for (const [id] of PARCELS) refs[`parcel${id}`].setAttribute('aria-pressed', state.parcel === id ? 'true' : 'false');
     for (const [id] of MOTIONS) refs[`motion${id}`].setAttribute('aria-pressed', state.motion === id ? 'true' : 'false');

@@ -29,12 +29,22 @@ function polar(vec) {
 /** Storm motions are kept with y flipped (screen space) once lifted into the chart; undo that. */
 const polarMotion = (vec) => (vec ? polar({ x: vec.x, y: -vec.y }) : null);
 
+/**
+ * Convert chart-space storm motion vectors back to meteorological y orientation.
+ * @param {object} motions Motion vectors keyed by storm-motion identifier; components are in kt.
+ * @returns {object} A new motion map with each y component sign reversed.
+ */
 function flipY(motions) {
   const out = {};
   for (const key of MOTIONS) out[key] = { x: motions[key].x, y: -motions[key].y };
   return out;
 }
 
+/**
+ * Select and round the public diagnostic fields from a parcel calculation.
+ * @param {object|null} p Parcel result, including thermodynamic diagnostics.
+ * @returns {object|null} Rounded parcel fields: pressure (in hPa), heights (in m), CAPE/CIN (in J/kg), and NCAPE (in UNK); or null.
+ */
 function summarizeParcel(p) {
   if (!p) return null;
   return {
@@ -53,6 +63,11 @@ function summarizeParcel(p) {
   };
 }
 
+/**
+ * Normalize signed storm-relative helicity data to its rounded total.
+ * @param {number|object|null} srh A precomputed total or a result with SRHP and SRHM (in m²/s²).
+ * @returns {number|null} Total SRH (in m²/s²), rounded to an integer, or null when unavailable.
+ */
 function srhTotal(srh) {
   if (typeof srh === 'number') return round(srh, 0);
   if (!srh || !Number.isFinite(srh.SRHP)) return null;
@@ -137,6 +152,11 @@ export function analyze(input, options = {}) {
   const eff = Info.EffInflow;
   const effBottom = eff ? GetLayerByPres(Sound, eff.Bot) : null;
   const effTop = eff ? GetLayerByPres(Sound, eff.Top) : null;
+  /**
+   * Read an inset diagnostic and normalize numeric strings and missing values.
+   * @param {string} k Inset field key.
+   * @returns {number|null} Finite diagnostic value (in UNK), or null when absent or invalid.
+   */
   const pick = (k) => {
     if (!inset || !(k in inset) || inset[k] === '--') return null;
     const v = inset[k];
