@@ -3,7 +3,7 @@
 Interactive Skew-T / hodograph sounding analysis that runs in the browser, plus a headless
 calculation core for Node and workers.
 
-![SharpJS showing a RUC Model sounding for 19z 04/27/2011 in Central Alabama](public/SharpJS_Sounding_ruc_04_27_2011_19z_f000_valid_04_27_2011_19z_location_32_89n_87_24w (1).png)
+![SharpJS showing a RUC Model sounding for 19z 04/27/2011 in Central Alabama](app/public/SharpJS_Sounding_ruc_04_27_2011_19z_f000_valid_04_27_2011_19z_location_32_89n_87_24w (1).png)
 
 **Try it:** <https://diamondflight.github.io/sharpjs/>. Open a sounding file or drop it on the chart, pick a sample, or pull archived data.
 
