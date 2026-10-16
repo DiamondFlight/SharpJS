@@ -2,6 +2,8 @@
 
 ## 1.7.0 — 2026-10-15
 
+First Public Release
+
 ### Added
 - A BUFKIT station picker in the controls with a searchable, zoomable map. Station locations
   come from the bundled station catalog, while available station IDs are read from the IEM archive.
