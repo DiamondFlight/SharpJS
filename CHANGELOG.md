@@ -7,9 +7,15 @@
   come from the bundled station catalog, while available station IDs are read from the IEM archive.
 - A location inset on the hodograph showing OpenStreetMap tiles around the sounding, with a marker
   for the sounding location and map attribution.
+- A UTC time slider for BUFKIT forecast hours and archived NEXRAD VWP volumes. BUFKIT slider
+  selections update the forecast hour from the same file; VWP archives can be loaded for a chosen
+  date and hour, covering the preceding three hours.
 - Function documentation throughout the viewer engine and reusable canvas path/line helpers.
 
 ### Changed
+- BUFKIT archive downloads now load and cache all forecast hours together, reducing repeat requests
+  when selecting different hours from the same run. VWP location maps are shown in the panel above
+  the wind-barb display, and VWP timeline playback is disabled.
 - Bunkers right/left storm motions now use the parcel-based method described by Bunkers et al. (2014),
   with the SHARPpy non-parcel calculation retained as a fallback; related kinematic reference values
   and tests were updated.
