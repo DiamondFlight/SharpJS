@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchIemRaob, fetchIemBufkit, fetchNexradVwp } from '../src/sources/index.js';
+import {
+  fetchIemRaob,
+  fetchIemBufkit,
+  fetchIemBufkitForecasts,
+  fetchNexradVwp,
+  fetchNexradVwpArchive,
+} from '../src/sources/index.js';
 import { fixture } from './helpers.js';
 
 function mockFetch(routes) {
@@ -41,6 +47,19 @@ test('fetchIemBufkit picks the archive path for the model', async () => {
   assert.ok(fetch.calls.at(-1).endsWith('/bufkit/06/gfs/gfs3_kdsm.buf'));
 });
 
+test('fetchIemBufkitForecasts parses every forecast from one archive download', async () => {
+  const fetch = mockFetch([['bufkit/12/rap/rap_kdsm.buf', fixture('rap_kdsm_2024052612.buf')]]);
+  const soundings = await fetchIemBufkitForecasts({
+    model: 'rap',
+    station: 'kdsm',
+    run: '2024-05-26T12:00:00Z',
+    fetch,
+  });
+  assert.equal(fetch.calls.length, 1);
+  assert.ok(soundings.length > 1);
+  assert.deepEqual(soundings.map((sounding) => sounding.meta.forecastHour), soundings.map((sounding) => sounding.meta.forecastHour).sort((a, b) => a - b));
+});
+
 test('fetchNexradVwp lists the hour and loads the newest volume', async () => {
   const listing = '<ListBucketResult><Contents><Key>OAX_NVW_2024_05_26_12_01_43</Key></Contents><Contents><Key>OAX_NVW_2024_05_26_12_08_40</Key></Contents></ListBucketResult>';
   const fetch = mockFetch([
@@ -51,4 +70,44 @@ test('fetchNexradVwp lists the hour and loads the newest volume', async () => {
   assert.match(fetch.calls[0], /prefix=OAX_NVW_2024_05_26_12/);
   assert.ok(fetch.calls[1].endsWith('/OAX_NVW_2024_05_26_12_08_40'));
   assert.match(s.Title, /^VWP OAX/);
+});
+
+test('fetchNexradVwpArchive loads every volume in the inclusive UTC window incrementally', async () => {
+  const fixtureBytes = fixture('OAX_NVW_2024_05_26_12_01_43', null);
+  const calls = [];
+  const fetch = async (url) => {
+    calls.push(url);
+    if (url.includes('list-type=2')) {
+      const prefix = new URL(url).searchParams.get('prefix');
+      const keys = prefix.endsWith('_12')
+        ? ['OAX_NVW_2024_05_26_12_01_43', 'OAX_NVW_2024_05_26_12_08_40']
+        : prefix.endsWith('_13')
+          ? ['OAX_NVW_2024_05_26_13_00_00']
+          : [];
+      return {
+        ok: true,
+        status: 200,
+        text: async () => `<ListBucketResult>${keys.map((key) => `<Contents><Key>${key}</Key></Contents>`).join('')}</ListBucketResult>`,
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => fixtureBytes.buffer.slice(fixtureBytes.byteOffset, fixtureBytes.byteOffset + fixtureBytes.byteLength),
+    };
+  };
+  const progress = [];
+  const soundings = await fetchNexradVwpArchive({
+    radar: 'KOAX',
+    start: '2024-05-26T12:00:00Z',
+    end: '2024-05-26T13:00:00Z',
+    fetch,
+    onVolume(sounding, state) {
+      progress.push([sounding, state.index, state.total]);
+    },
+  });
+  assert.equal(soundings.length, 3);
+  assert.deepEqual(progress.map(([, index, total]) => [index, total]), [[1, 3], [2, 3], [3, 3]]);
+  assert.equal(calls.filter((url) => url.includes('list-type=2')).length, 2);
+  assert.equal(calls.filter((url) => !url.includes('list-type=2')).length, 3);
 });

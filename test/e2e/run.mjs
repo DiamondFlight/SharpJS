@@ -140,13 +140,28 @@ try {
 
   await check('VWP from raw NVW bytes, then back', async () => {
     const st = await page.evaluate(async (b64) => {
+      const previous = window.h.getSounding()?.Location;
       const buf = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
-      window.h.setVwp(buf);
+      const prototype = CanvasRenderingContext2D.prototype;
+      const originalFillRect = prototype.fillRect;
+      let mapInVwpPanel = false;
+      prototype.fillRect = function (x, y, width, height) {
+        if (this.canvas.dataset.sjs === 'Values8' && x === 600 && y === 0 && width === 300 && height === 350) {
+          mapInVwpPanel = true;
+        }
+        return originalFillRect.call(this, x, y, width, height);
+      };
+      await window.h.setVwp(buf);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      prototype.fillRect = originalFillRect;
       const on = window.h.getState();
+      const location = window.h.getSounding()?.Location;
       window.h.setVwp(null);
-      return [on.vwpActive, on.title, window.h.getState().vwpActive];
+      return [on.vwpActive, on.title, window.h.getState().vwpActive, previous, location, mapInVwpPanel];
     }, fixture('OAX_NVW_2024_05_26_12_01_43').toString('base64'));
     assert(st[0] === true && /^VWP OAX/.test(st[1]) && st[2] === false, JSON.stringify(st));
+    assert(st[4] && st[4][0] !== st[3]?.[0], `VWP location was not applied: ${JSON.stringify(st.slice(3))}`);
+    assert(st[5], `VWP location inset was not drawn in the panel above the wind barbs: ${JSON.stringify(st.slice(5))}`);
   });
 
   await check('file drop loads a sounding', async () => {
@@ -214,11 +229,50 @@ try {
     assert(/KOUN 19990504\/0000/.test(st.title) && st.tornadoClimoAvailable, JSON.stringify([st.title, st.tornadoClimoAvailable]));
     await app.getByRole('button', { name: 'Load RAOB' }).click();
     await app.waitForFunction(() => /KOAX 20140616\/1900/.test(window.sharpjs.getState().title));
+    const bufkitRequests = [];
+    app.on('request', (request) => {
+      if (request.url().includes('mtarchive.geol.iastate.edu') && request.url().endsWith('.buf')) bufkitRequests.push(request);
+    });
+    const bufkitSelection = {
+      date: await app.getByLabel('Run date').inputValue(),
+      run: await app.getByLabel('Run (Z)').inputValue(),
+    };
     await app.getByRole('button', { name: 'Load BUFKIT' }).click();
     await app.waitForFunction(() => /^\s*RAP 05-26-2024 12Z - F000/.test(window.sharpjs.getState().title));
+    const firstBufkitDownloads = bufkitRequests.length;
+    await app.getByLabel('Run date').fill(bufkitSelection.date);
+    await app.getByLabel('Run (Z)').fill(bufkitSelection.run);
+    await app.getByRole('button', { name: 'Load BUFKIT' }).click();
+    await app.waitForTimeout(50);
+    const secondBufkitDownloads = bufkitRequests.length;
+    assert(firstBufkitDownloads === 1 && secondBufkitDownloads === firstBufkitDownloads, `BUFKIT file was fetched repeatedly (${firstBufkitDownloads} → ${secondBufkitDownloads})`);
+    const bufkitRange = app.locator('#chart .sjs-timeslider input[type="range"]');
+    assert(await app.locator('#chart .sjs-timeslider').isVisible(), 'BUFKit time slider is hidden');
+    const bufkitMax = Number(await bufkitRange.getAttribute('max'));
+    assert(bufkitMax > 0, `expected multiple BUFKit times, max=${bufkitMax}`);
+    await bufkitRange.evaluate((range) => {
+      range.value = range.max;
+      range.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await app.waitForFunction(() => Number(window.sharpjs.getSounding().meta.forecastHour) > 0);
+    const selectedFhour = await app.evaluate(() => window.sharpjs.getSounding().meta.forecastHour);
+    assert(await app.getByLabel('F hour').inputValue() === String(selectedFhour), 'BUFKit forecast-hour control did not follow the slider');
+    const sliderGeometry = await app.locator('#chart .sjs-timeslider').evaluate((slider) => {
+      const bounds = slider.getBoundingClientRect();
+      const stage = document.querySelector('#chart .sjs-stage').getBoundingClientRect();
+      return { height: bounds.height, left: bounds.left, right: bounds.right, stageLeft: stage.left, stageRight: stage.right };
+    });
+    assert(sliderGeometry.height <= 50, `slider exceeds 5% of 1000px viewport: ${sliderGeometry.height}px`);
+    assert(sliderGeometry.left >= sliderGeometry.stageLeft - 1 && sliderGeometry.right <= sliderGeometry.stageRight + 1, 'slider extends beyond chart display width');
     await app.getByRole('button', { name: 'Latest VWP' }).click();
     await app.waitForFunction(() => window.sharpjs.getState().vwpActive);
     await app.getByRole('button', { name: 'Back to sounding' }).click();
+    await app.getByLabel('Archive date (UTC)').fill('2024-05-26');
+    await app.getByLabel('Archive hour (UTC)').fill('13');
+    await app.getByRole('button', { name: 'Load 3-hour VWP archive' }).click();
+    await app.waitForFunction(() => window.sharpjs.getState().vwpActive && document.querySelector('#chart .sjs-timeslider output')?.textContent.includes('2024-05-26'));
+    assert(await app.locator('#chart .sjs-timeslider').isVisible(), 'VWP archive time slider is hidden');
+    assert(await app.locator('#chart .sjs-time-play').isHidden(), 'VWP playback should be disabled by default');
     await app.locator('.sjs-section[data-section="display"] select').nth(1).selectOption('metric');
     await app.reload({ waitUntil: 'networkidle' });
     await app.waitForFunction(() => window.sharpjs?.getState().hasSounding);
@@ -231,6 +285,20 @@ try {
   await check('phone layout has no horizontal scroll', async () => {
     const app = await newPage(appUrl, { width: 390, height: 844 });
     await app.waitForFunction(() => window.sharpjs?.getState().hasSounding);
+    await app.getByRole('button', { name: 'Load BUFKIT' }).click();
+    await app.waitForFunction(() => document.querySelector('#chart .sjs-timeslider[hidden]'));
+    await app.evaluate(() => window.scrollTo(0, 0));
+    await app.waitForFunction(() => document.querySelector('#chart .sjs-timeslider:not([hidden])'));
+    const bounds = await app.locator('#chart .sjs-timeslider').evaluate((slider) => ({
+      slider: slider.getBoundingClientRect().toJSON(),
+      controls: document.querySelector('#chart .sjs-controls').getBoundingClientRect().toJSON(),
+      stage: document.querySelector('#chart .sjs-stage').getBoundingClientRect().toJSON(),
+    }));
+    assert(bounds.slider.height <= 844 * 0.05 + 1, `mobile slider exceeds 5% viewport: ${bounds.slider.height}px`);
+    assert(bounds.slider.bottom <= bounds.controls.top + 1 || bounds.controls.top >= 844, `mobile slider overlaps controls: ${JSON.stringify(bounds)}`);
+    assert(bounds.slider.left >= bounds.stage.left - 1 && bounds.slider.right <= bounds.stage.right + 1, 'mobile slider extends beyond display');
+    await app.getByRole('button', { name: 'Load BUFKIT' }).scrollIntoViewIfNeeded();
+    await app.waitForFunction(() => document.querySelector('#chart .sjs-timeslider[hidden]'));
     const overflow = await app.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     assert(overflow <= 0, `overflow ${overflow}px`);
     await app.context().close();

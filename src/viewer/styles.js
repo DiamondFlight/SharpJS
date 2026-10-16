@@ -44,12 +44,37 @@ export const SHARPJS_CSS = `
 
 .sharpjs .sjs-timeslider {
   position: fixed;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  aspect-ratio: 20;
-  width: 0%;
-  background: #fff;
-  margin: 0;
-  padding: 0;
+  max-height: 5vh;
+  padding: 2px 6px;
+  overflow: hidden;
+  color: var(--sjs-text);
+  background: var(--sjs-surface);
+  border: 1px solid var(--sjs-border);
+  border-radius: var(--sjs-radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.sharpjs .sjs-timeslider[hidden] { display: none; }
+.sharpjs .sjs-time-play[hidden] { display: none; }
+.sharpjs .sjs-timeslider .sjs-time-play {
+  flex: 0 0 auto;
+  min-width: 2.2em;
+  height: 100%;
+  padding: 0 5px;
+  font-size: clamp(0.55rem, 1.2vh, 0.8rem);
+}
+.sharpjs .sjs-time-range { flex: 1 1 auto; min-width: 0; height: 100%; margin: 0; accent-color: var(--sjs-accent); }
+.sharpjs .sjs-time-label {
+  flex: 0 0 auto;
+  min-width: 9.7em;
+  text-align: right;
+  color: var(--sjs-text);
+  font: 500 clamp(0.55rem, 1.2vh, 0.75rem) / 1 var(--sjs-font);
+  white-space: nowrap;
 }
 
 /* ───────── Chart box ───────── */

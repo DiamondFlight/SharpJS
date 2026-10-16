@@ -11,7 +11,7 @@
  * Please be kind to these free services: fetch on user action, not on a timer.
  */
 import { parseIemRaob } from '../io/iem.js';
-import { parseBufkit } from '../io/bufkit.js';
+import { parseBufkit, listBufkitForecastHours } from '../io/bufkit.js';
 import { buildVwpSounding } from '../io/vwp.js';
 import { withLocation } from '../io/location.js';
 import { pad } from '../io/general.js';
@@ -111,6 +111,27 @@ export const BUFKIT_MODELS = ['hrrr', 'rap', 'ruc', 'nam', 'nam4km', 'gfs'];
  * @param {Function} [q.fetch]
  */
 export async function fetchIemBufkit({ model = 'hrrr', station, run, forecastHour = 0, fetch: fetchImpl }) {
+  const { id, text } = await fetchIemBufkitText({ model, station, run, fetch: fetchImpl });
+  return parseBufkit(text, { forecastHour, model, station: id });
+}
+
+/**
+ * Fetch and parse every forecast hour from one IEM BUFKIT file.
+ * @param {object} q BUFKIT archive selection.
+ * @param {string} q.model Model identifier.
+ * @param {string} q.station BUFKIT station identifier.
+ * @param {Date|string|number} q.run Model run time (UTC).
+ * @param {Function} [q.fetch] Fetch-compatible function.
+ * @returns {Promise<object[]>} Soundings for each forecast hour, in file order.
+ */
+export async function fetchIemBufkitForecasts({ model = 'hrrr', station, run, fetch: fetchImpl }) {
+  const { id, text } = await fetchIemBufkitText({ model, station, run, fetch: fetchImpl });
+  const hours = listBufkitForecastHours(text);
+  if (hours.length === 0) throw new Error('SharpJS: no forecasts found in BUFKIT file');
+  return hours.map((forecastHour) => parseBufkit(text, { forecastHour, model, station: id }));
+}
+
+async function fetchIemBufkitText({ model, station, run, fetch: fetchImpl }) {
   const id = String(station || '').trim();
   if (!id) throw new Error('SharpJS: station is required');
   const r = toDate(run);
@@ -124,7 +145,7 @@ export async function fetchIemBufkit({ model = 'hrrr', station, run, forecastHou
     }
     throw err;
   }
-  return parseBufkit(await res.text(), { forecastHour, model, station: id });
+  return { id, text: await res.text() };
 }
 
 /**
@@ -134,7 +155,7 @@ export async function fetchIemBufkit({ model = 'hrrr', station, run, forecastHou
  * @returns {Promise<string[]>} Matching S3 object keys.
  */
 async function listKeys(prefix, fetchImpl) {
-  const res = await getOk(`${NEXRAD_L3}/?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=100`, fetchImpl);
+  const res = await getOk(`${NEXRAD_L3}/?list-type=2&prefix=${encodeURIComponent(prefix)}&max-keys=1000`, fetchImpl);
   const xml = await res.text();
   return [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]);
 }
@@ -175,4 +196,52 @@ export async function fetchNexradVwp({ radar, time, background, fetch: fetchImpl
   const sounding = buildVwpSounding(await res.arrayBuffer(), { radar: id, background });
   if (!sounding) throw new Error(`VWP for ${id} has no wind levels`);
   return sounding;
+}
+
+/**
+ * Fetch every archived NEXRAD VWP volume in an inclusive UTC time window.
+ * @param {object} q Archive query and optional progress callback.
+ * @param {string} q.radar Three- or four-letter radar id.
+ * @param {Date|string|number} q.start Inclusive window start.
+ * @param {Date|string|number} q.end Inclusive window end.
+ * @param {object} [q.background] Sounding to take thermodynamics from.
+ * @param {Function} [q.fetch] Fetch-compatible function.
+ * @param {(sounding: object, progress: { index: number, total: number }) => void} [q.onVolume] Called as each volume is ready.
+ * @returns {Promise<object[]>} Soundings ordered by volume time.
+ */
+export async function fetchNexradVwpArchive({ radar, start, end, background, fetch: fetchImpl, onVolume }) {
+  let id = String(radar || '').trim().toUpperCase();
+  if (id.length === 4) id = id.slice(1);
+  if (!/^[A-Z0-9]{3}$/.test(id)) throw new Error('SharpJS: radar must be a 3- or 4-letter id');
+
+  const first = toDate(start);
+  const last = toDate(end);
+  if (first > last) throw new Error('SharpJS: VWP archive start must not be after end');
+
+  const keys = new Set();
+  const hour = new Date(first);
+  hour.setUTCMinutes(0, 0, 0);
+  const finalHour = new Date(last);
+  finalHour.setUTCMinutes(0, 0, 0);
+  for (; hour <= finalHour; hour.setUTCHours(hour.getUTCHours() + 1)) {
+    const prefix = `${id}_NVW_${hour.getUTCFullYear()}_${pad(hour.getUTCMonth() + 1)}_${pad(hour.getUTCDate())}_${pad(hour.getUTCHours())}`;
+    for (const key of await listKeys(prefix, fetchImpl)) {
+      const timestamp = keyUnix(key) * 1000;
+      if (timestamp >= first.getTime() && timestamp <= last.getTime()) keys.add(key);
+    }
+  }
+
+  const orderedKeys = [...keys].sort((a, b) => keyUnix(a) - keyUnix(b));
+  if (orderedKeys.length === 0) throw new Error(`No VWP volumes for ${id} from ${first.toISOString()} to ${last.toISOString()}`);
+
+  const soundings = [];
+  for (let index = 0; index < orderedKeys.length; index++) {
+    const key = orderedKeys[index];
+    const res = await getOk(`${NEXRAD_L3}/${key}`, fetchImpl);
+    const sounding = buildVwpSounding(await res.arrayBuffer(), { radar: id, background });
+    if (!sounding) throw new Error(`VWP for ${id} has no wind levels at ${key}`);
+    soundings.push(sounding);
+    onVolume?.(sounding, { index: index + 1, total: orderedKeys.length });
+  }
+  return soundings;
 }

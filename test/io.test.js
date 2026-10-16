@@ -117,9 +117,11 @@ test('NEXRAD VWP', () => {
   assert.equal(s.Title, 'VWP OAX — valid 26 May 2024 12:01 UTC');
   assert.equal(s.Sounding.W.length, 11, 'surface + radar gates');
   assert.equal(s.Sounding.W[0].H, 0);
+  assert.deepEqual(s.Coords, { lat: 41.32, lon: -96.367 });
   assert.deepEqual(s.Location, [41.32, -96.367]);
   const over = buildVwpSounding(bytes, { background: parseSounding(sample('koax-2014-06-16-19z.txt')) });
   assert.equal(over.Sounding.W.length, 11);
+  assert.deepEqual(over.Coords, { lat: 41.32, lon: -96.367 });
 });
 
 test('toSounding / withLocation', () => {

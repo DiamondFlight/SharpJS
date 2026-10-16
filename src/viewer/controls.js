@@ -4,6 +4,7 @@
  */
 import { PRESET_VALUES } from '../settings/schema.js';
 import { createBufkitMapButton } from '../io/bufkit_map.js';
+import { expandBufkitTimeSeries } from './time-slider.js';
 
 const PARCELS = [
   ['SB', 'Surface-Based'],
@@ -71,16 +72,26 @@ function lastSynoptic(now = new Date()) {
 
 /**
  * @param {HTMLElement} host
- * @param {{ handle, engine, store, sources?, options? }} ctx
+ * @param {{ handle, engine, store, sources?, options?, setTimeSeries, setTimeSeriesLoading }} ctx
  */
-export function createControls(host, { handle, engine, store, sources = null, options = {} }) {
+export function createControls(host, {
+  handle,
+  engine,
+  store,
+  sources = null,
+  options = {},
+  setTimeSeries,
+  setTimeSeriesLoading,
+}) {
   const doc = host.ownerDocument;
   const H = (...args) => h(doc, ...args);
   const opts = options && typeof options === 'object' ? options : {};
   let currentSources = sources;
   let bufkitMap = null;
+  const bufkitCache = new Map();
   const refs = {};
   const sections = {};
+  let removeLoadListener = null;
 
   // ── helpers ──────────────────────────────────────────────────────────────────────────────
   const button = (label, onclick, attrs = {}) => H('button', { type: 'button', class: 'sjs-button', onclick, ...attrs }, label);
@@ -227,12 +238,35 @@ export function createControls(host, { handle, engine, store, sources = null, op
         H('p', { class: 'sjs-hint' }, 'RAP/RUC use 4-letter ids (kdsm); HRRR/NAM/GFS often use 3 (dsm).'),
         row(1, button('Load BUFKIT', () => run('Downloading BUFKIT…', async () => {
           const run = new Date(`${refs.bufkitDate.value}T${String(refs.bufkitRun.value || 0).padStart(2, '0')}:00:00Z`);
-          handle.load(await currentSources.fetchIemBufkit({
+          const query = {
             model: refs.bufkitModel.value,
             station: refs.bufkitStation.value,
             run,
-            forecastHour: Number(refs.bufkitFh.value) || 0,
-          }));
+          };
+          if (currentSources.fetchIemBufkitForecasts) {
+            const cacheKey = `${query.model}|${query.station.trim().toLowerCase()}|${run.toISOString()}`;
+            if (!bufkitCache.has(cacheKey)) {
+              const promise = currentSources.fetchIemBufkitForecasts(query);
+              bufkitCache.set(cacheKey, promise);
+              promise.catch(() => {
+                if (bufkitCache.get(cacheKey) === promise) bufkitCache.delete(cacheKey);
+              });
+              while (bufkitCache.size > 3) {
+                bufkitCache.delete(bufkitCache.keys().next().value);
+              }
+            }
+            const soundings = await bufkitCache.get(cacheKey);
+            const timeline = expandBufkitTimeSeries(soundings);
+            const selectedHour = Number(refs.bufkitFh.value) || 0;
+            const selected = timeline.findIndex((item) => item.sounding?.meta?.forecastHour === selectedHour);
+            if (selected === -1) throw new Error(`F${selectedHour} is not available in this BUFKIT file`);
+            setTimeSeries(timeline, selected);
+          } else {
+            handle.load(await currentSources.fetchIemBufkit({
+              ...query,
+              forecastHour: Number(refs.bufkitFh.value) || 0,
+            }));
+          }
         }))),
       );
       refs.bufkitModel.value = 'rap';
@@ -241,12 +275,52 @@ export function createControls(host, { handle, engine, store, sources = null, op
       children.push(
         H('div', { class: 'sjs-sub' }, 'NEXRAD VAD Wind Profile'),
         field('Radar', input('vwpRadar', { placeholder: 'OAX', value: opts.vwpRadar || 'OAX', autocomplete: 'off' })),
+        ...(currentSources.fetchNexradVwpArchive ? [field('Archive date (UTC)', input('vwpDate', {
+          type: 'date',
+          min: '2020-01-01',
+          max: utcDate(new Date()),
+          value: utcDate(new Date()),
+        }))] : []),
+        ...(currentSources.fetchNexradVwpArchive ? [field('Archive hour (UTC)', input('vwpHour', {
+          type: 'number',
+          min: 0,
+          max: 23,
+          value: new Date().getUTCHours(),
+        }))] : []),
         row(2,
           button('Latest VWP', () => run('Fetching VWP…', async () => {
             const snd = await currentSources.fetchNexradVwp({ radar: refs.vwpRadar.value, background: handle.getState().vwpActive ? undefined : handle.getSounding() || undefined });
             handle.setVwp(snd);
           })),
           (refs.vwpExit = button('Back to sounding', () => handle.setVwp(null)))),
+        ...(currentSources.fetchNexradVwpArchive ? [row(1, button('Load 3-hour VWP archive', () => run('Loading VWP archive…', async () => {
+          const hour = Number(refs.vwpHour.value);
+          if (!refs.vwpDate.value || !Number.isInteger(hour) || hour < 0 || hour > 23) {
+            throw new Error('Choose a valid VWP archive date and hour');
+          }
+          const end = new Date(`${refs.vwpDate.value}T${String(hour).padStart(2, '0')}:00:00Z`);
+          if (end.getTime() > Date.now()) throw new Error('VWP archive time must not be in the future');
+          const archiveStart = Date.UTC(2020, 0, 1);
+          const start = new Date(Math.max(end.getTime() - 3 * 60 * 60 * 1000, archiveStart));
+          const items = [];
+          setTimeSeries([]);
+          setTimeSeriesLoading(true);
+          try {
+            await currentSources.fetchNexradVwpArchive({
+              radar: refs.vwpRadar.value,
+              start,
+              end,
+              background: handle.getState().vwpActive ? undefined : handle.getSounding() || undefined,
+              onVolume(sounding, progress) {
+                items.push({ kind: 'vwp', time: sounding.volumeUnix * 1000, sounding });
+                status(`Loaded VWP volume ${progress.index} of ${progress.total}`);
+              },
+            });
+            setTimeSeries(items, items.length - 1);
+          } finally {
+            setTimeSeriesLoading(false);
+          }
+        })))] : []),
         H('p', { class: 'sjs-hint' }, 'Uses the loaded sounding for temperature/moisture, or a standard atmosphere.'),
       );
     }
@@ -451,6 +525,16 @@ export function createControls(host, { handle, engine, store, sources = null, op
   }
 
   render();
+  removeLoadListener = handle.on('load', (sounding) => {
+    const meta = sounding.meta;
+    if (meta?.source !== 'bufkit') return;
+    if (refs.bufkitFh) refs.bufkitFh.value = String(meta.forecastHour);
+    if (meta.run && refs.bufkitDate && refs.bufkitRun) {
+      const run = new Date(meta.run);
+      refs.bufkitDate.value = utcDate(run);
+      refs.bufkitRun.value = String(run.getUTCHours());
+    }
+  });
 
   return {
     render,
@@ -461,6 +545,7 @@ export function createControls(host, { handle, engine, store, sources = null, op
       render();
     },
     destroy() {
+      removeLoadListener?.();
       clearTimeout(statusTimer);
       bufkitMap?.destroy();
       host.innerHTML = '';

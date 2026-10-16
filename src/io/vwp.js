@@ -306,6 +306,7 @@ export function buildVwpSounding(input, options = {}) {
   }
   if (!built) return null;
 
+  built.Coords = { lat: parsed.radar.latitude, lon: parsed.radar.longitude };
   built.Location = [parsed.radar.latitude, parsed.radar.longitude];
   built.Location2 = [parsed.radar.latitude, -parsed.radar.longitude];
   const { volumeUnix, title } = vwpVolumeMetaFromParse(parsed, radar);

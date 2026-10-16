@@ -16,8 +16,10 @@ import { createSettingsStore } from '../settings/store.js';
 import { toSounding, isSounding } from '../io/input.js';
 import { withLocation } from '../io/location.js';
 import { buildVwpSounding } from '../io/vwp.js';
+import { isBufkitText, listBufkitForecastHours, parseBufkit } from '../io/bufkit.js';
 import { analyze } from '../analysis.js';
 import { VERSION } from '../version.js';
+import { createTimeSlider, expandBufkitTimeSeries } from './time-slider.js';
 
 /** Settings the chart engine owns (the rest belong to the controls panel). */
 const ENGINE_SETTINGS = [
@@ -152,6 +154,21 @@ function mount(el, initialProps) {
   let vwpOn = false;
   let controls = null;
   const hasSounding = () => !!(main || vwpOn);
+  const timeSliderController = createTimeSlider(timeSlider, stage, controlsHost, el.ownerDocument, (_index, item, reset) => {
+    displayTimeSeriesItem(item, reset);
+  });
+
+  function setTimeSeries(items, selected, reset = true) {
+    timeSliderController.setItems(items, selected, reset);
+  }
+
+  function setTimeSeriesLoading(loading) {
+    timeSliderController.setLoading(loading);
+  }
+
+  function clearTimeSeries() {
+    timeSliderController.clear();
+  }
 
   // ── settings ───────────────────────────────────────────────────────────────────────────
   const store = createSettingsStore({
@@ -298,6 +315,21 @@ function mount(el, initialProps) {
     showEmpty(false);
   }
 
+  function displayTimeSeriesItem(item, reset) {
+    if (item.kind === 'vwp') {
+      applyVwpSounding(item.sounding);
+      return;
+    }
+    main = item.sounding;
+    setDropsondeLayout(main);
+    vwpOn = false;
+    engine.setVwpActive(false);
+    engine.Load(main, true, { reset, comparisons });
+    showEmpty(false);
+    fire('load', main);
+    scheduleStateCheck();
+  }
+
   /**
    * Load the main sounding.
    * @param {string|object} input
@@ -305,18 +337,47 @@ function mount(el, initialProps) {
    */
   function load(input, opts = {}) {
     try {
-      const parsed = toSounding(input, opts.parseOptions);
-      if (opts.location) withLocation(parsed, opts.location);
-      if (opts.title || props.title) {
-        parsed.Title = opts.title || props.title;
-        parsed.STitle = parsed.Title;
+      let parsed = toSounding(input, opts.parseOptions);
+      let timeline = [];
+      let selectedIndex = 0;
+      if (typeof input === 'string' && isBufkitText(input)) {
+        const hours = listBufkitForecastHours(input);
+        const soundings = hours.map((forecastHour) => {
+          const sounding = forecastHour === parsed.meta?.forecastHour
+            ? parsed
+            : parseBufkit(input, { ...opts.parseOptions, forecastHour });
+          return sounding;
+        });
+        timeline = expandBufkitTimeSeries(soundings);
+        selectedIndex = Math.max(0, timeline.findIndex((item) => item.sounding?.meta?.forecastHour === parsed.meta?.forecastHour));
+        parsed = timeline[selectedIndex]?.sounding || parsed;
+      } else if (parsed.meta?.source === 'bufkit' && parsed.meta.valid) {
+        timeline = expandBufkitTimeSeries([parsed]);
+      }
+      for (const item of timeline) {
+        if (opts.location) withLocation(item.sounding, opts.location);
+        if (opts.title || props.title) {
+          item.sounding.Title = opts.title || props.title;
+          item.sounding.STitle = item.sounding.Title;
+        }
+      }
+      if (!timeline.length) {
+        if (opts.location) withLocation(parsed, opts.location);
+        if (opts.title || props.title) {
+          parsed.Title = opts.title || props.title;
+          parsed.STitle = parsed.Title;
+        }
       }
       const key = opts.key;
       const reset = opts.reset ?? !(key !== undefined && key === soundingKey);
       soundingKey = key;
       main = parsed;
-      drawMain({ reset });
-      fire('load', parsed);
+      if (timeline.length) setTimeSeries(timeline, selectedIndex, reset);
+      else {
+        clearTimeSeries();
+        drawMain({ reset });
+        fire('load', parsed);
+      }
       scheduleStateCheck();
       return parsed;
     } catch (err) {
@@ -330,6 +391,7 @@ function mount(el, initialProps) {
    * @returns {void} Resets the chart to its empty state.
    */
   function clear() {
+    clearTimeSeries();
     main = null;
     comparisons = [];
     vwpOn = false;
@@ -374,6 +436,7 @@ function mount(el, initialProps) {
     try {
       const list = (Array.isArray(texts) ? texts : [texts]).filter((t) => typeof t === 'string');
       if (list.length < 2) throw new Error('SharpJS: averaging needs at least two sounding texts');
+      clearTimeSeries();
       setDropsondeLayout(null);
       engine.AverageAll(list.map((t, i) => [`${i}`, t]));
       main = engine.getSnding();
@@ -389,9 +452,18 @@ function mount(el, initialProps) {
    * Show a NEXRAD VWP. `input` is a VWP sounding (buildVwpSounding / sources.fetchNexradVwp) or raw
    * NVW bytes. Pass null to go back to the main sounding.
    */
+  function applyVwpSounding(stored) {
+    viz.classList.remove('dropsonde-mode');
+    vwpOn = true;
+    engine.applyNexradVwpStoredSounding(stored);
+    showEmpty(false);
+    scheduleStateCheck();
+  }
+
   function setVwp(input, opts = {}) {
     try {
       if (!input) {
+        clearTimeSeries();
         if (vwpOn) {
           vwpOn = false;
           if (main) drawMain({ reset: false });
@@ -402,11 +474,12 @@ function mount(el, initialProps) {
       }
       const stored = isSounding(input) ? input : buildVwpSounding(input, { background: main || undefined, ...opts });
       if (!stored) throw new Error('SharpJS: VWP product has no wind levels');
-      viz.classList.remove('dropsonde-mode');
-      vwpOn = true;
-      engine.applyNexradVwpStoredSounding(stored);
-      showEmpty(false);
-      scheduleStateCheck();
+      if (Number.isFinite(stored.volumeUnix)) {
+        setTimeSeries([{ kind: 'vwp', time: stored.volumeUnix * 1000, sounding: stored }], 0);
+      } else {
+        clearTimeSeries();
+        applyVwpSounding(stored);
+      }
       return stored;
     } catch (err) {
       reportError(err);
@@ -625,7 +698,15 @@ function mount(el, initialProps) {
 
   controls = props.controls === false
     ? null
-    : createControls(controlsHost, { handle, engine, store, sources: props.sources, options: props.controls });
+    : createControls(controlsHost, {
+      handle,
+      engine,
+      store,
+      sources: props.sources,
+      options: props.controls,
+      setTimeSeries,
+      setTimeSeriesLoading,
+    });
   if (!controls) controlsHost.remove();
 
   /**
@@ -677,6 +758,7 @@ function mount(el, initialProps) {
     destroyed = true;
     for (const fn of cleanups) fn();
     controls?.destroy();
+    timeSliderController.destroy();
     engine.detach();
     root.remove();
     instances.delete(el);

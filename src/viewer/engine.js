@@ -147,46 +147,49 @@ function getHodographMapTile(zoom, x, y, view, onReady) {
 }
 
 /**
- * Draws a 100-pixel OpenStreetMap inset centered on a sounding's coordinates.
+ * Draws an OpenStreetMap inset centered on a sounding's coordinates.
  * OpenStreetMap tiles include mapped state and county administrative boundaries.
  * @param {CanvasRenderingContext2D} ctx Hodograph drawing context.
  * @param {HTMLCanvasElement} canvas Hodograph canvas.
  * @param {object} sounding Current sounding object.
  * @param {() => void} onTilesReady Schedules a redraw when pending tiles finish.
+ * @param {{x:number,y:number,width:number,height:number}} [bounds] Optional inset bounds.
  * @returns {void}
  */
-function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady) {
+function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady, bounds) {
   const location = sounding?.Coords;
   const lat = Number(location?.lat ?? sounding?.Location?.[0]);
   const lon = Number(location?.lon ?? sounding?.Location?.[1]);
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
 
-  const insetSize = 200;
-  const insetX = canvas.width - insetSize;
-  const insetY = canvas.height - insetSize;
+  const insetWidth = bounds?.width ?? 200;
+  const insetHeight = bounds?.height ?? 200;
+  const insetX = bounds?.x ?? canvas.width - insetWidth;
+  const insetY = bounds?.y ?? canvas.height - insetHeight;
   const center = projectHodographMapCoordinate(lat, lon, HODO_MAP_ZOOM);
   const north = projectHodographMapCoordinate(Math.min(85.05112878, lat + 2.5), lon, HODO_MAP_ZOOM);
   const south = projectHodographMapCoordinate(Math.max(-85.05112878, lat - 2.5), lon, HODO_MAP_ZOOM);
-  const worldSpan = Math.max(
+  const worldSpanY = Math.max(
     HODO_MAP_TILE_SIZE * (2 ** HODO_MAP_ZOOM) * (5 / 360),
     south.y - north.y,
   );
-  const scale = insetSize / worldSpan;
-  const left = center.x - worldSpan / 2;
-  const top = center.y - worldSpan / 2;
+  const worldSpanX = worldSpanY * insetWidth / insetHeight;
+  const scale = insetHeight / worldSpanY;
+  const left = center.x - worldSpanX / 2;
+  const top = center.y - worldSpanY / 2;
   const firstTileX = Math.floor(left / HODO_MAP_TILE_SIZE);
-  const lastTileX = Math.floor((left + worldSpan) / HODO_MAP_TILE_SIZE);
+  const lastTileX = Math.floor((left + worldSpanX) / HODO_MAP_TILE_SIZE);
   const firstTileY = Math.floor(top / HODO_MAP_TILE_SIZE);
-  const lastTileY = Math.floor((top + worldSpan) / HODO_MAP_TILE_SIZE);
+  const lastTileY = Math.floor((top + worldSpanY) / HODO_MAP_TILE_SIZE);
   let failedTiles = 0;
   let loadedTiles = 0;
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#17232c';
-  ctx.fillRect(insetX, insetY, insetSize, insetSize);
+  ctx.fillRect(insetX, insetY, insetWidth, insetHeight);
   ctx.beginPath();
-  ctx.rect(insetX, insetY, insetSize, insetSize);
+  ctx.rect(insetX, insetY, insetWidth, insetHeight);
   ctx.clip();
 
   for (let tileY = firstTileY; tileY <= lastTileY; tileY++) {
@@ -210,14 +213,14 @@ function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (loadedTiles === 0 && failedTiles > 0) {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
-    ctx.fillRect(insetX, insetY, insetSize, insetSize);
+    ctx.fillRect(insetX, insetY, insetWidth, insetHeight);
     ctx.fillStyle = '#fff';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Map unavailable', insetX + insetSize / 2, insetY + insetSize / 2);
+    ctx.fillText('Map unavailable', insetX + insetWidth / 2, insetY + insetHeight / 2);
   }
   ctx.beginPath();
-  ctx.arc(insetX + insetSize / 2, insetY + insetSize / 2, 3, 0, Math.PI * 2);
+  ctx.arc(insetX + insetWidth / 2, insetY + insetHeight / 2, 3, 0, Math.PI * 2);
   ctx.fillStyle = '#f04438';
   ctx.fill();
   ctx.strokeStyle = '#fff';
@@ -225,13 +228,13 @@ function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady) {
   ctx.stroke();
   ctx.strokeStyle = 'rgba(255,255,255,0.95)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(insetX + 1, insetY + 1, insetSize - 2, insetSize - 2);
+  ctx.strokeRect(insetX + 1, insetY + 1, insetWidth - 2, insetHeight - 2);
   ctx.fillStyle = 'rgba(0,0,0,0.72)';
-  ctx.fillRect(insetX + insetSize - 27, insetY + insetSize - 12, 25, 10);
+  ctx.fillRect(insetX + insetWidth - 27, insetY + insetHeight - 12, 25, 10);
   ctx.fillStyle = '#fff';
   ctx.font = '7px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText('© OSM', insetX + insetSize - 4, insetY + insetSize - 4);
+  ctx.fillText('© OSM', insetX + insetWidth - 4, insetY + insetHeight - 4);
   ctx.restore();
 }
 
@@ -1643,9 +1646,11 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   }
   ctx.textAlign = "center";
 
-  drawHodographLocationInset(ctx, Canv, Json, () => {
-    scheduleHodographMapRedraw(Json, ghst, comparisonSoundings, drawVersion);
-  });
+  if (!VWPActive) {
+    drawHodographLocationInset(ctx, Canv, Json, () => {
+      scheduleHodographMapRedraw(Json, ghst, comparisonSoundings, drawVersion);
+    });
+  }
 
   if (mapImage && !VWPActive) {
     const mapSize = 200;
@@ -3919,6 +3924,9 @@ function DrawVWPInsets(Sounding){
       ctx3.drawImage(mapImage, 0, 0, mapImage.width || mapSize, mapImage.height || mapSize, 600, 0, 300, 350);
       ctx3.restore();
     }
+    drawHodographLocationInset(ctx3, Canv3, Sounding, () => {
+      if (VWPActive) DrawVWPInsets(VWPSounding);
+    }, { x: 600, y: 0, width: 300, height: 350 });
 }
 
 /** Returns box pos data.
@@ -9972,6 +9980,7 @@ function applyNexradVwpStoredSounding(stored) {
   VWPActive = true;
   VWPSounding = JSON.parse(JSON.stringify(stored));
   applyVwpMotionsAndSndingFromVWPSounding();
+  DrawHodograph(VWPSounding, false, currentComparisonSoundings);
   redrawSkewTFromVwp(VWPSounding);
 }
 

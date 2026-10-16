@@ -107,6 +107,13 @@ SharpJS('#chart', {
 
 </details>
 
+When the built-in Archive controls are given `import * as sources from 'sharpjs/sources'`, loading a
+BUFKIT run adds a UTC time slider for that file's hourly forecasts; forecast-hour gaps are disabled.
+The VWP archive controls accept a UTC date and hour from 2020 onward and load every available radar
+volume in the inclusive three-hour lookback. The slider stays within the chart display width, uses
+UTC labels, and docks above the controls on narrow screens; it hides while the controls fill the
+viewport rather than covering them.
+
 <details>
 <summary><strong>The returned handle</strong></summary>
 
