@@ -103,14 +103,22 @@ try {
   });
 
   await check('controls drive the chart', async () => {
+    const sectionNav = page.locator('#chart .sjs-section-nav');
+    assert(await sectionNav.locator('button').count() === 10, 'expected ten section buttons');
+    assert(await sectionNav.evaluate((nav) => getComputedStyle(nav).gridTemplateColumns.split(' ').length) === 5, 'section buttons are not in five columns');
+    await sectionNav.getByRole('button', { name: 'Parcel' }).click();
+    assert(await page.locator('#chart .sjs-section[data-section="parcel"]').isVisible(), 'parcel section did not open');
+    assert(await page.locator('#chart .sjs-section[data-section="display"]').isHidden(), 'display section remained open');
     await page.locator('#chart').getByRole('button', { name: 'Surface-Based' }).click();
+    await sectionNav.getByRole('button', { name: 'Display' }).click();
     await page.locator('#chart .sjs-section[data-section="display"] button', { hasText: 'Hodograph colors' }).click();
+    await sectionNav.getByRole('button', { name: 'Presets' }).click();
     await page.locator('#chart .sjs-section[data-section="presets"] select').first().selectOption('Fire');
     const st = await page.evaluate(() => window.h.getState());
     assert(st.parcel === 'SB', `parcel ${st.parcel}`);
     assert(st.hodographColorTable === 1, `color table ${st.hodographColorTable}`);
     assert(st.presets.WindLapse === 'Fire' && st.presetOverrides.WindLapse === 'Fire', JSON.stringify(st.presets));
-    assert(await page.locator('#chart').getByRole('button', { name: 'Surface-Based' }).getAttribute('aria-pressed') === 'true', 'button not pressed');
+    assert(await page.locator('#chart .sjs-section[data-section="parcel"] button').first().getAttribute('aria-pressed') === 'true', 'button not pressed');
   });
 
   await check('analysis() matches the chart', async () => {
@@ -227,6 +235,7 @@ try {
     await app.waitForFunction(() => window.sharpjs?.getState().hasSounding);
     let st = await app.evaluate(() => window.sharpjs.getState());
     assert(/KOUN 19990504\/0000/.test(st.title) && st.tornadoClimoAvailable, JSON.stringify([st.title, st.tornadoClimoAvailable]));
+    await app.locator('#chart .sjs-section-nav').getByRole('button', { name: 'Archive' }).click();
     await app.getByRole('button', { name: 'Load RAOB' }).click();
     await app.waitForFunction(() => /KOAX 20140616\/1900/.test(window.sharpjs.getState().title));
     const bufkitRequests = [];
@@ -273,6 +282,7 @@ try {
     await app.waitForFunction(() => window.sharpjs.getState().vwpActive && document.querySelector('#chart .sjs-timeslider output')?.textContent.includes('2024-05-26'));
     assert(await app.locator('#chart .sjs-timeslider').isVisible(), 'VWP archive time slider is hidden');
     assert(await app.locator('#chart .sjs-time-play').isHidden(), 'VWP playback should be disabled by default');
+    await app.locator('#chart .sjs-section-nav').getByRole('button', { name: 'Display' }).click();
     await app.locator('.sjs-section[data-section="display"] select').nth(1).selectOption('metric');
     await app.reload({ waitUntil: 'networkidle' });
     await app.waitForFunction(() => window.sharpjs?.getState().hasSounding);
@@ -285,6 +295,7 @@ try {
   await check('phone layout has no horizontal scroll', async () => {
     const app = await newPage(appUrl, { width: 390, height: 844 });
     await app.waitForFunction(() => window.sharpjs?.getState().hasSounding);
+    await app.locator('#chart .sjs-section-nav').getByRole('button', { name: 'Archive' }).click();
     await app.getByRole('button', { name: 'Load BUFKIT' }).click();
     await app.waitForFunction(() => document.querySelector('#chart .sjs-timeslider[hidden]'));
     await app.evaluate(() => window.scrollTo(0, 0));

@@ -35,6 +35,18 @@ const SKEWS = { 0.5: 'Low', 0.625: 'Medium', 0.75: 'Default', 0.825: 'High' };
 const UNITS = { default: 'Default (kt / °C)', metric: 'Metric', imperial: 'Imperial' };
 const EXPORTS = { Default: 'SHARPpy', SharpJS: 'SharpJS (SHARPpy + omega)', CM1: 'CM1 input_sounding' };
 const BUFKIT_MODELS = { hrrr: 'HRRR', rap: 'RAP', ruc: 'RUC', nam: 'NAM', nam4km: 'NAM 3 km', gfs: 'GFS' };
+const SECTION_NAV = [
+  ['display', 'Display/Graphics'],
+  ['file', 'Export/Import Sounding'],
+  ['archive', 'Archive Data'],
+  ['parcel', 'Parcel Selection'],
+  ['motion', 'Motion Selection'],
+  ['presets', 'Sounding Presets'],
+  ['cursor', 'Cursor Settings'],
+  ['surface', 'Surface Settings'],
+  ['layers', 'Custom Layers'],
+  ['settings', 'Reset Settings'],
+];
 
 /**
  * Create a DOM element, apply attributes/listeners, and append flattened children.
@@ -91,6 +103,9 @@ export function createControls(host, {
   const bufkitCache = new Map();
   const refs = {};
   const sections = {};
+  const sectionNavButtons = {};
+  const sectionAvailability = Object.fromEntries(SECTION_NAV.map(([id]) => [id, true]));
+  let activeSection = 'display';
   let removeLoadListener = null;
 
   // ── helpers ──────────────────────────────────────────────────────────────────────────────
@@ -127,6 +142,28 @@ export function createControls(host, {
     });
     sections[id] = el;
     return el;
+  }
+
+  function syncSectionNavigation() {
+    for (const [id] of SECTION_NAV) {
+      const available = sectionAvailability[id];
+      sections[id].hidden = !available || id !== activeSection;
+      sectionNavButtons[id].hidden = !available;
+      sectionNavButtons[id].setAttribute('aria-pressed', id === activeSection && available ? 'true' : 'false');
+    }
+  }
+
+  function showSection(id) {
+    if (!sectionAvailability[id]) return;
+    activeSection = id;
+    sections[id].open = true;
+    syncSectionNavigation();
+  }
+
+  function setSectionAvailability(id, available) {
+    sectionAvailability[id] = available;
+    if (!available && activeSection === id) activeSection = 'display';
+    syncSectionNavigation();
   }
 
   const statusEl = H('p', { class: 'sjs-status', role: 'status', 'aria-live': 'polite' });
@@ -175,15 +212,15 @@ export function createControls(host, {
 
   // ── sections ─────────────────────────────────────────────────────────────────────────────
   const fileSection = section('file', 'Sounding',
+    field('Data format', select('exportFormat', EXPORTS, { onchange: (e) => engine.setExportFormat(e.target.value) })),
+    row(2, button('Download .txt file', () => { if (!handle.downloadText()) status('Load a sounding first', true); }), button('Save image', () => run('Rendering image…', async () => { if (!(await handle.downloadImage())) throw new Error('Load a sounding first'); }))),
+    row(1, button('Copy image', () => run('Copying…', async () => { if (!(await handle.copyImage())) throw new Error('Load a sounding first'); status('Image copied'); }))),
+    H('div', { class: 'sjs-sub' }, 'Upload'),
+    fileInput,
     row(1, button('Open sounding file…', () => pick('auto'))),
     row(2, button('Add comparison…', () => pick('compare')), button('Clear comparisons', () => handle.clearComparisons())),
     row(1, button('Average several files…', () => pick('average'))),
     H('p', { class: 'sjs-hint' }, 'Or drop files on the chart (Shift+drop adds comparisons).'),
-    H('div', { class: 'sjs-sub' }, 'Export'),
-    field('Data format', select('exportFormat', EXPORTS, { onchange: (e) => engine.setExportFormat(e.target.value) })),
-    row(2, button('Download data', () => { if (!handle.downloadText()) status('Load a sounding first', true); }), button('Save image', () => run('Rendering image…', async () => { if (!(await handle.downloadImage())) throw new Error('Load a sounding first'); }))),
-    row(1, button('Copy image', () => run('Copying…', async () => { if (!(await handle.copyImage())) throw new Error('Load a sounding first'); status('Image copied'); }))),
-    fileInput,
   );
 
   const archive = H('div');
@@ -195,10 +232,10 @@ export function createControls(host, {
   function renderArchive() {
     archive.innerHTML = '';
     if (!currentSources) {
-      archiveSection.hidden = true;
+      setSectionAvailability('archive', false);
       return;
     }
-    archiveSection.hidden = false;
+    setSectionAvailability('archive', true);
     const syn = lastSynoptic();
     const children = [];
     if (currentSources.fetchIemRaob) {
@@ -347,6 +384,8 @@ export function createControls(host, {
       toggle('hodoScale', 'Hodograph scale', () => engine.ChangeStateDynamicHodo()),
       toggle('trimWind', 'Hodograph wind', () => engine.setHodographTrimWindProfile(!engine.getState().hodographTrimWindProfile)),
       toggle('stormMotions', 'Storm motions', () => engine.LoadStormMotions()),
+      toggle('ehiInWindBox', 'EHI within Wind Box', () => engine.LoadEHIWindBox()),
+      toggle('onMapCape', 'HGZ/DGZ Cape on Skew-T', () => engine.LoadOnMapCape()),
       toggle('skew', 'Skew-T skew', () => engine.ChangeStateSkewTSkew()),
     ),
     field('Hodograph mode', select('hodoMode', { Relative: 'Hodo-relative (centered)', Storm: 'Storm-relative (fixed)' }, { onchange: (e) => engine.SetHodoMode(e.target.value) })),
@@ -414,8 +453,19 @@ export function createControls(host, {
     })),
   );
 
-  host.append(statusEl, fileSection, archiveSection, parcelSection, motionSection, displaySection, presetSection, cursorSection, surfaceSection, layerSection, settingsSection);
+  const sectionNavigation = H('nav', { class: 'sjs-section-nav', 'aria-label': 'Control sections' },
+    SECTION_NAV.map(([id, label]) => (sectionNavButtons[id] = H('button', {
+      type: 'button',
+      class: 'sjs-button sjs-section-button',
+      title: sections[id].querySelector('summary').textContent,
+      'aria-pressed': 'false',
+      onclick: () => showSection(id),
+    }, label))),
+  );
+
+  host.append(statusEl, sectionNavigation, displaySection, fileSection, archiveSection, parcelSection, motionSection, presetSection, cursorSection, surfaceSection, layerSection, settingsSection);
   renderArchive();
+  showSection(activeSection);
 
   // ── actions ──────────────────────────────────────────────────────────────────────────────
   /**
@@ -486,6 +536,8 @@ export function createControls(host, {
     setToggle('hodoScale', SCALE_MODES[state.hodographScaleMode] || 'None', state.hodographScaleMode !== 0);
     setToggle('trimWind', state.hodographTrimWindProfile ? 'Trimmed' : 'Full resolution', !state.hodographTrimWindProfile);
     setToggle('stormMotions', state.showStormMotions ? 'Shown' : 'Hidden', state.showStormMotions);
+    setToggle('ehiInWindBox', state.showEhiInWindBox ? 'Shown' : 'Hidden', state.showEhiInWindBox);
+    setToggle('onMapCape', state.showCapeOnMap ? 'Shown' : 'Hidden', state.showCapeOnMap);
     setToggle('skew', SKEWS[state.skewTSkew] || 'Default', state.skewTSkew !== 0.75);
     setToggle('readout', state.readOut ? 'On' : 'Off', state.readOut);
     setToggle('front', state.frontActive ? 'On' : 'Off', state.frontActive);
@@ -514,10 +566,10 @@ export function createControls(host, {
 
     if (refs.vwpExit) refs.vwpExit.disabled = !state.vwpActive;
     const vwp = state.vwpActive;
-    parcelSection.hidden = vwp;
-    surfaceSection.hidden = vwp;
-    layerSection.hidden = vwp;
-    cursorSection.hidden = vwp;
+    setSectionAvailability('parcel', !vwp);
+    setSectionAvailability('surface', !vwp);
+    setSectionAvailability('layers', !vwp);
+    setSectionAvailability('cursor', !vwp);
 
     savedNote.textContent = store.storage === 'memory'
       ? 'Settings are kept for this page only.'

@@ -24,7 +24,8 @@ import { createTimeSlider, expandBufkitTimeSeries } from './time-slider.js';
 /** Settings the chart engine owns (the rest belong to the controls panel). */
 const ENGINE_SETTINGS = [
   'units', 'skewTSkew', 'hodographNumbers', 'hodographColorTable', 'hodographScaleMode',
-  'hodographTrimWindProfile', 'hodographMode', 'readOut', 'verticalBarsWindSpeed', 'showStormMotions',
+  'hodographTrimWindProfile', 'hodographMode', 'readOut', 'verticalBarsWindSpeed', 'showStormMotions', 
+  'showEhiInWindBox', 'showCapeOnMap',
   'presetOverrides', 'efScale', 'defaultParcel', 'defaultMotion', 'exportFormat',
 ];
 
@@ -434,11 +435,11 @@ function mount(el, initialProps) {
   /** Average several soundings into one (drawn with the members as ghosts). */
   function average(texts) {
     try {
-      const list = (Array.isArray(texts) ? texts : [texts]).filter((t) => typeof t === 'string');
+      const list = (Array.isArray(texts) ? texts : [texts]).filter((t) => typeof t.text === 'string');
       if (list.length < 2) throw new Error('SharpJS: averaging needs at least two sounding texts');
       clearTimeSeries();
       setDropsondeLayout(null);
-      engine.AverageAll(list.map((t, i) => [`${i}`, t]));
+      engine.AverageAll(list.map((t, i) => [`${i}`, t.text, t.name]));
       main = engine.getSnding();
       vwpOn = false;
       showEmpty(false);
@@ -505,7 +506,7 @@ function mount(el, initialProps) {
       }
       const texts = read.filter((r) => r.text);
       if (texts.length === 0) throw new Error('SharpJS: no readable sounding files');
-      if (mode === 'average') return average(texts.map((t) => t.text));
+      if (mode === 'average') return average(texts.map((t) => t));
       if (mode === 'compare' && main) return compare(texts.map((t) => ({ sounding: toSounding(t.text, { fileName: t.name }), label: t.name })));
       load(texts[0].text, { parseOptions: { fileName: texts[0].name } });
       if (texts.length > 1) {

@@ -31,6 +31,8 @@ export const SETTINGS_SCHEMA = {
   readOut: isBool,
   verticalBarsWindSpeed: isBool,
   showStormMotions: isBool,
+  showEhiInWindBox: isBool,
+  showCapeOnMap: isBool,
   presetOverrides: (v) =>
     v !== null && typeof v === 'object' &&
     Object.entries(PRESET_VALUES).every(([k, allowed]) => v[k] === undefined || allowed.includes(v[k])),
@@ -56,6 +58,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   readOut: true,
   verticalBarsWindSpeed: true,
   showStormMotions: false,
+  showEhiInWindBox: false,
+  showCapeOnMap: true,
   presetOverrides: Object.freeze({ WindLapse: 'auto', Inset: 'auto', Vertical: 'auto', SidePanel: 'auto' }),
   efScale: 'EF2+',
   defaultParcel: 'MU',

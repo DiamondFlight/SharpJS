@@ -5,6 +5,7 @@ export declare const ROCP: number;
 export declare const RMISSD: number;
 export declare function LiftParcel(sound: unknown, type: 'SB' | 'ML' | 'MU' | 'CU' | 'EFF', start?: number, doEcape?: boolean): any;
 export declare function GetBM(sound: unknown): any;
+export declare function GetSWV(sound: unknown, bottom: number, top: number, type: 'Pres' | 'Hght', stormMotion?: unknown): { SWV: number, CWV: number, SWPercent: number};
 export declare function GetSRH(sound: unknown, bottom: number, top: number, type: 'Pres' | 'Hght', stormMotion?: unknown): { SRHP: number; SRHM: number };
 export declare function GetLayerByPres(sound: unknown, level: number | 'SFC' | 'Last', type?: string): any;
 export declare function GetLayerByHght(sound: unknown, level: number | 'SFC', addTo?: boolean): any;

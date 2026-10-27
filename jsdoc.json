@@ -1,0 +1,8 @@
+{
+  "source": {
+    "include": ["src"],
+    "exclude": [
+      "src/viewer/research.js"
+    ]
+  }
+}
