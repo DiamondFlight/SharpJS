@@ -344,6 +344,24 @@ ${v('Values8')} { top: 55%; left: 0; height: 40% !important; width: 100% !import
 .sharpjs .sjs-status { min-height: 1.1em; margin: 4px 0 0; font-size: 0.72rem; color: #fbbf24; }
 .sharpjs .sjs-status.is-error { color: #f87171; }
 .sharpjs .sjs-saved { font-size: 0.7rem; color: var(--sjs-muted); margin: 4px 2px 0; }
+.sharpjs .sjs-section-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 0 8px;
+}
+.sharpjs .sjs-section-nav > .sjs-button {
+  width: 100%;
+  min-width: 0;
+  min-height: clamp(30px, 4vh, 38px);
+  padding: 4px 2px;
+  font-size: clamp(0.58rem, 0.75vw, 0.72rem);
+  line-height: 1.1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.sharpjs .sjs-controls > .sjs-section > summary { cursor: default; pointer-events: none; }
+.sharpjs .sjs-controls > .sjs-section > summary::after { display: none; }
 
 /* Controls stack above the chart on narrow screens */
 @media (max-width: 900px) {

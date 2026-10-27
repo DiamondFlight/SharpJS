@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.7.1 — 2026-10-27
+
+### Added
+- A `GetSWV` calculation API for streamwise and crosswise vorticity and streamwiseness.
+- Optional EHI in wind boxes and HGZ/DGZ CAPE annotations on the Skew-T.
+- Section-navigation buttons in the controls panel to make settings and analysis choices easier to find.
+- Streamwise-vorticity diagnostics in wind parameter boxes and the vertical-profile display.
+
+### Changed
+- Wind-layer SRH, shear, and mean-wind calculations now use the requested upper pressure bound instead of stopping 1 hPa below it.
+- Lapse-rate calculations can return two decimal places and skip unneeded wind interpolation.
+- Parcel calculations reuse environmental and virtual-temperature data while constructing the parcel profile and scanning for the LFC; Bunkers-motion calculations reuse an available effective-inflow layer.
+- Persist the EHI and CAPE display options with the other chart settings.
+
+### Fixed
+- Prevent negative layer contributions from reducing integrated parcel CAPE.
+- Controls now switch between sections using navigation buttons rather than nested dropdowns.
+
 ## 1.7.0 — 2026-10-15
 
 First Public Release

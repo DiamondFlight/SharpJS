@@ -178,6 +178,7 @@ export interface Settings {
   readOut: boolean;
   verticalBarsWindSpeed: boolean;
   showStormMotions: boolean;
+  showEhiInWindBox: boolean;
   presetOverrides: {
     WindLapse: PresetValue<'Default' | 'Severe' | 'Dryline' | 'Elevated' | 'Winter' | 'Fire'>;
     Inset: PresetValue<'Default' | 'Severe' | 'Ambient' | 'Winter' | 'Fire'>;
@@ -234,7 +235,7 @@ export function resolveAdapter(persist: PersistOption, key?: string): StorageAda
 
 export interface ChartState extends Pick<Settings,
   'units' | 'skewTSkew' | 'hodographNumbers' | 'hodographColorTable' | 'hodographScaleMode' | 'hodographTrimWindProfile'
-  | 'hodographMode' | 'readOut' | 'verticalBarsWindSpeed' | 'showStormMotions' | 'presetOverrides' | 'efScale'
+  | 'hodographMode' | 'readOut' | 'verticalBarsWindSpeed' | 'showStormMotions' | 'showEhiInWindBox' | 'presetOverrides' | 'efScale'
   | 'defaultParcel' | 'defaultMotion' | 'exportFormat'> {
   presets: { WindLapse: string; Inset: string; Vertical: string; SidePanel: string };
   autoPresets: { WindLapse: string; Inset: string; Vertical: string; SidePanel: string };

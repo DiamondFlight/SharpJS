@@ -219,10 +219,11 @@ export function Lerp(minimum, maximum, time) {
  * @param {object} Sounding Sounding profile containing pressure, height and layer data (hPa, m).
  * @param {number|string} Level Requested height above the first sounding level (in m), or "SFC".
  * @param {boolean} addTo Whether to offset Level by the first row's height (in 1).
+ * @param {boolean} quickSearch Whether to omit wind related fields
  * @returns {object|false} Interpolated/named sounding layer with its field-specific units,
  * or false when no bracketing layer is found (in ANY).
  */
-export function GetLayerByHght(Sounding, Level, addTo = true) {
+export function GetLayerByHght(Sounding, Level, addTo = true, quickSearch = false) {
   if (Level == "SFC") {
     let P = Sounding.Slice[0];
     if (QCCheck(P[0]) && QCCheck(P[1]) && QCCheck(P[2]) && QCCheck(P[3]) && QCCheck(P[4]) && QCCheck(P[5]) && QCCheck(P[6])) {
@@ -265,7 +266,7 @@ export function GetLayerByHght(Sounding, Level, addTo = true) {
       let Pr = Sounding.Slice[i];
 
       for (let x = 0; x < Sounding.Slice[i].length; x++) {
-        if (x == 4 || x == 5) {
+        if (x == 4 || x == 5 && !quickSearch) {
           if (x == 5) {
             continue;
           }
@@ -461,6 +462,7 @@ export function WindShear(L1, L2) {
  * non-parcel method. Also calculates mean wind, Corfidi upshear/downshear
  * motions, and deviant tornado motions.
  * @param {object} Sounding Sounding profile (pressure in hPa, height in m, wind in kt).
+ * @param {object} EffInflows Effective Inflow Layer to save a ton of computational time
  * @returns {object} Named storm-motion vectors RM, LM, MM, US, DS, DTMR, and DTML;
  * each x/y component is in kt.
  * @see Bunkers et al. (2000), Predicting supercell motion using a new hodograph technique,
@@ -469,7 +471,7 @@ export function WindShear(L1, L2) {
  * @see Corfidi et al. (2003), A proposed methodology for the prediction of mesoscale convective system movement,
  * https://doi.org/10.1175/1520-0434(2003)018%3C0997:CPAMPF%3E2.0.CO;2
  */
-export function GetBM(Sounding) {
+export function GetBM(Sounding, EffInflows=null) {
   let d = M2TOKTS(7.5);
 
   //let MUPrcl = LiftParcel(Sounding, "MU", 767, false);
@@ -513,7 +515,22 @@ export function GetBM(Sounding) {
   // extends through 65% of the most-unstable parcel's EL depth. Fall back to
   // the non-parcel 0–6-km motions when the parcel/layer is not usable.
   const MUParcel = LiftParcel(Sounding, "MU", 0, false);
-  const EffInflow = EffInflowCalc(Sounding, hght0km);
+  const SBParcel = LiftParcel(Sounding, "SB", 0, false);
+  var EffInflow;
+
+  if (EffInflows){
+    EffInflow = EffInflows;
+  } else {
+    if (SBParcel.Path != false){
+      if (MUParcel.EL != -9999 && MUParcel.LFC != -9999 && MUParcel.Cape > 0){
+        EffInflow = EffInflowCalc(Sounding, hght0km);
+      } else {
+        EffInflow = false;
+      }
+    } else {
+      EffInflow = false;
+    }
+  }
 
   if (MUParcel.Cape > 100 && qc(MUParcel.EL) && EffInflow) {
     const EffBase = GetLayerByPres(Sounding, EffInflow.Bot);
@@ -860,11 +877,11 @@ export function thetae(p, t, td) {
  */
 function GetDryLapse(l, ST, P, eSlice=false) {
   let r = []
-  let lr = 9.8;
+  //let lr = 9.8;
 
-  let dl = drylift(ST.P, ST.T, ST.D);
-  let plcl = dl[0];
-  let tlcl = dl[1];
+  //let dl = drylift(ST.P, ST.T, ST.D);
+  //let plcl = dl[0];
+  //let tlcl = dl[1];
 
   let T = virtemp(P[0], P[1], P[1]);
 
@@ -892,16 +909,12 @@ function GetDryLapse(l, ST, P, eSlice=false) {
 /**
  * Generates moist-adiabatic parcel temperatures at the supplied sounding levels.
  * @param {Array<object>} l Sounding levels with pressure (in hPa).
- * @param {number} t Starting parcel temperature (in C).
- * @param {number} td Starting parcel dew-point temperature (in C).
+ * @param {number} plcl Pressure of LCL (in hPa).
+ * @param {number} tlcl Temperature of LCL (in C).
  * @param {number} p Starting parcel pressure (in hPa).
  * @returns {Array<number>} Parcel virtual temperatures aligned with l (in C).
  */
-function GetMoistLapse(l, t, td, p) {
-  let dl = drylift(p, t, td);
-  let plcl = dl[0];
-  let tlcl = dl[1];
-
+function GetMoistLapse(l, plcl, tlcl) {
   let r = [];
 
   for (let i = 0; i < l.length; i++) {
@@ -909,6 +922,7 @@ function GetMoistLapse(l, t, td, p) {
     let t3 = wetlift(plcl, tlcl, l[i].P);
     //let t3 = wetlift(p, t, l[i].P);
     r.push(virtemp(l[i].P, t3, t3));
+    //virtemp(l[i].P, t3, t3));
   }
 
   return r
@@ -1066,35 +1080,46 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
   let P = drylift(StartSlice.P, StartSlice.T, StartSlice.D);
 
   let Iter = 1;
+  let doFastProfile = false;
 
   // OPTIMIZATION: Main Loop Construction
-  for (let i = Math.floor(StartSlice.P); EndSlice.P <= i; i -= Iter) {
-    let Slice;
-
-    // FAST LOOKUP O(1)
-    if (FastProfile && FastProfile[i]) {
-      Slice = FastProfile[i];
-    } else {
-      Slice = GetLayerByPres(Sounding, i, "Thermo"); // "Thermo" skips wind calc
-    }
-
-    TSounding.push(Slice);
-
-    if (Slice.P > StartSlice.P) {
-      levels += 1;
-    } else {
-      if (Slice.P >= Math.round(P[0])) {
-        Lower.push(Slice);
-      } else {
-        Upper.push(Slice);
-      }
-    }
+  if (FastProfile){
+    doFastProfile = true;
   }
 
+  const getThermoLayer = (pressure) => {
+    if (
+      FastProfile &&
+      Number.isInteger(pressure) &&
+      FastProfile[pressure]
+    ) {
+      return FastProfile[pressure];
+    }
+
+    return GetLayerByPres(Sounding, pressure, "Thermo");
+  };
   //Minor change to change LCL to be calculated with drylift instead of the imperial
   ReturnTable.LCL = Math.max(RoundTo(GetLayerByPres(Sounding, P[0]).H - StartSlice.H, 10), 10);
 
   if (ReturnTable.LCL > EndSlice.H) {
+    for (let i = Math.floor(StartSlice.P); EndSlice.P <= i; i -= Iter) {
+      let Slice;
+
+      // FAST LOOKUP O(1)
+      if (doFastProfile && FastProfile[i]) {
+        Slice = FastProfile[i];
+      } else {
+        Slice = getThermoLayer(i); // "Thermo" skips wind calc
+      }
+
+      TSounding.push(Slice);
+
+      if (Slice.P > StartSlice.P) {
+        levels += 1;
+      }
+    }
+
+    Lower = TSounding.slice(0, Math.floor(StartSlice.P) - Math.round(P[0])+1);
     let LowerT = GetDryLapse(Lower, StartSlice, P, EndSlice);
     let Rtn = [...LowerT];
 
@@ -1128,17 +1153,6 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
 
   let EnvTempLCL = P[1];
 
-  let LowerT = GetDryLapse(Lower, StartSlice, P);
-  let UpperT = GetMoistLapse(Upper, StartSlice.T, StartSlice.D, StartSlice.P);
-
-  // Performance: Spread operator can be slow on huge arrays, but okay here.
-  // Concat is slightly safer for strict optimization but this is fine.
-  let Rtn = [...LowerT, ...UpperT];
-
-  for (let i = 0; i < Rtn.length; i++) {
-    ReturnTable.Path[i + levels] = Rtn[i];
-  }
-
   let FoundEL = false;
 
   let pe1 = P[0];
@@ -1148,18 +1162,52 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
   let lyrlast = 0;
   let hasNegative = false;
 
-  const pBot = Math.round(P[0]);
+  const pBot = Math.floor(StartSlice.P);//Math.round(P[0]);
   const pTop = EndSlice.P;
 
+  let plcl = P[0];
+  let tlcl = P[1];
+  let startTempDry = virtemp(P[0], P[1], P[1]);
+
   for (let p = pBot; p >= pTop; p -= 1) {
+    let Slice;
+
+    // FAST LOOKUP O(1)
+    if (doFastProfile && FastProfile[p]) {
+      Slice = FastProfile[p];
+    } else {
+      Slice = getThermoLayer(p); // "Thermo" skips wind calc
+    }
+
+    Slice.virt_temp = virtemp(Slice.P, Slice.T, Slice.D);
+    if (Slice.virt_temp != Slice.virt_temp){
+      console.log(P, Slice);
+    }
+
+    TSounding.push(Slice);
+
+    if (Slice.P > StartSlice.P) {
+      levels += 1;
+    }
+
+    if (p > Math.round(P[0])-1){
+      ReturnTable.Path.push(Lerp(StartSlice.VT, startTempDry, ((Math.floor(StartSlice.P) - Math.round(p)) / (Math.floor(StartSlice.P) - Math.round(P[0])+1 - 1))))
+    } else {
+      let t3 = wetlift(plcl, tlcl, p);
+      ReturnTable.Path.push(virtemp(p, t3, t3));
+    }
+
+    if (p > Math.round(P[0])){
+      continue;
+    }
+    
+    //LFC CODE
     const tp2 = wetlift(pe1, tp1, p);
 
-    let lyr1 = GetLayerByPres(Sounding, pe1);
-    let lyr2 = GetLayerByPres(Sounding, p);
+    let lyr1 = getThermoLayer(pe1);
+    let lyr2 = getThermoLayer(p);
     const te1 = virtemp(lyr1.P, lyr1.T, lyr1.D);//lyr1.VT;
-    const h1  = lyr1.H;
     const te2 = virtemp(lyr2.P, lyr2.T, lyr2.D);
-    const h2  = lyr2.H;
 
     const tdef1 = (virtemp(pe1, tp1, tp1) - te1) / CtoK(te1);
     const tdef2 = (virtemp(p,   tp2, tp2) - te2) / CtoK(te2);
@@ -1172,22 +1220,24 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
         let tp3 = tp1;
         let pe2 = pe1;
         let pe3 = pelast;
-        let lyr3 = GetLayerByPres(Sounding, pe3);
+        let lyr3 = getThermoLayer(pe3);
+        let wLift1 = wetlift(pe2, tp3, pe3)
 
-        if (virtemp(lyr3.P, lyr3.T, lyr3.D) < virtemp(pe3, wetlift(pe2, tp3, pe3), wetlift(pe2, tp3, pe3))) {
+        if (virtemp(lyr3.P, lyr3.T, lyr3.D) < virtemp(pe3, wLift1, wLift1)) {
             ReturnTable.LFC = Math.max(ReturnTable.LCL, Math.round(lyr3.H - StartSlice.H));
         } else {
             while (
-                virtemp(lyr3.P, lyr3.T, lyr3.D) > virtemp(pe3, wetlift(pe2, tp3, pe3), wetlift(pe2, tp3, pe3))
+                virtemp(lyr3.P, lyr3.T, lyr3.D) > virtemp(pe3, wLift1, wLift1)
                 && pe3 > 0
                 && pe3 >= p
             ) {
                 pe3 -= 5;
-                lyr3 = GetLayerByPres(Sounding, pe3);
+                lyr3 = getThermoLayer(pe3);
+                wLift1 = wetlift(pe2, tp3, pe3);
             }
 
             if (pe3 > 0) {
-              lyr3 = GetLayerByPres(Sounding, pe3);
+              lyr3 = getThermoLayer(pe3);
               ReturnTable.LFC = Math.max(ReturnTable.LCL, Math.round(lyr3.H - StartSlice.H));
             }
         }
@@ -1197,8 +1247,9 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
     pe1    = p;
     tp1    = tp2;
   }
-
-  if (ReturnTable.LFC == -9999 && type == "EFF") {
+  
+  if (Math.abs(-9999 + ReturnTable.LFC) < 1e-5 && type == "EFF") {
+    ReturnTable.EL = -9999;
     return false;
   }
 
@@ -1220,13 +1271,7 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
         break;
       }
 
-      // Previous interpolation used only upper-level buoyancy over environmental temperature difference.
-      // (ReturnTable.Path[i] - N.VT) / (NP.VT - N.VT)
-      const lowerBuoyancy = ReturnTable.Path[i - 1] - NP.VT;
-      const upperBuoyancy = ReturnTable.Path[i] - N.VT;
-      let Lrp = Lerp(NP.H, N.H, clamp((ReturnTable.Path[i] - N.VT) / (NP.VT - N.VT), 0, 1));
-
-      ReturnTable.EL = Lrp;
+      ReturnTable.EL = Lerp(NP.H, N.H, clamp((ReturnTable.Path[i] - N.VT) / (NP.VT - N.VT), 0, 1));
       break;
     }
   }
@@ -1248,20 +1293,24 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
 
         if (N2.H > ReturnTable.EL){
           HPart = (ReturnTable.EL - N.H);
-          N2 = GetLayerByHght(Sounding, ReturnTable.EL, false);
+          N2 = GetLayerByHght(Sounding, ReturnTable.EL, false, true);
+          N2.virt_temp = virtemp(N2.P, N2.T, N2.D);
         }
 
         if (N.H <= ReturnTable.LFC){
           HPart = (N2.H - ReturnTable.LFC);
-          N = GetLayerByHght(Sounding, ReturnTable.LFC, false);
+          N = GetLayerByHght(Sounding, ReturnTable.LFC, false, true);
+          N.virt_temp = virtemp(N.P, N.T, N.D);
         }
-        let NVT = virtemp(N.P, N.T, N.D);
-        let N2VT = virtemp(N2.P, N2.T, N2.D);
+
+        let NVT = N.virt_temp;
+        let N2VT = N2.virt_temp;
 
         let B1 = (ReturnTable.Path[i] - NVT) / CtoK(NVT);
         let B2 = (ReturnTable.Path[i + 1] - N2VT) / CtoK(N2VT);
 
-        let LayerCape = GRAVITY * (((B1 + B2) / 2) * HPart);
+        let LayerCape = Math.max(0, GRAVITY * (((B1 + B2) / 2) * HPart));
+
         ReturnTable.Cape += LayerCape;
 
         if (N.H <= 6000) {
@@ -1286,8 +1335,8 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
 
       } else if ((ReturnTable.Path[i] - N.VT) < 0 && (N.H < ReturnTable.LFC)) {
         let HPart = (N2.H - N.H);
-        let NVT = virtemp(N.P, N.T, N.D);
-        let N2VT = virtemp(N2.P, N2.T, N2.D);
+        let NVT = N.virt_temp;
+        let N2VT = N2.virt_temp;
 
         let B1 = (NVT - ReturnTable.Path[i]) / CtoK(NVT);
         let B2 = (N2VT - ReturnTable.Path[i + 1]) / CtoK(N2VT);
@@ -1565,14 +1614,15 @@ export function GetDCape(Sound) {
  * @param {number|string} hb Bottom height above ground or "SFC" (in m).
  * @param {number} ht Top height above ground (in m).
  * @param {boolean} type Whether to average incremental lapse rates (in 1).
+ * @param {number} rnd Rounding factor (default 10)
  * @returns {number|string} Lapse rate (in C/km), or "--" when unavailable.
  */
-export function LapseRateHght(Sounding, hb, ht, type = false) {
+export function LapseRateHght(Sounding, hb, ht, type = false, rnd=10) {
   if (!type) {
-    let Bot = GetLayerByHght(Sounding, hb);
-    let Top = GetLayerByHght(Sounding, ht);
+    let Bot = GetLayerByHght(Sounding, hb, undefined, true);
+    let Top = GetLayerByHght(Sounding, ht, undefined, true);
 
-    let N = Math.round(10 * ((Top.VT - Bot.VT) / ((Bot.H - Top.H) * 1 / 1000))) / 10;
+    let N = Math.round(rnd * ((Top.VT - Bot.VT) / ((Bot.H - Top.H) * 1 / 1000))) / rnd;
 
     if (N != N) {
       return "--";
@@ -1581,16 +1631,16 @@ export function LapseRateHght(Sounding, hb, ht, type = false) {
   } else {
     let N = 0;
     let iter = 0;
-    let LastLyr = GetLayerByHght(Sounding, hb);
+    let LastLyr = GetLayerByHght(Sounding, hb, undefined, true);
 
     for (let i = LastLyr.H; i < ht; i += 50) {
-      let NextLyr = GetLayerByHght(Sounding, i + 50)
+      let NextLyr = GetLayerByHght(Sounding, i + 50, undefined, true)
       N += ((LastLyr.VT - NextLyr.VT) / ((50) * 1 / 1000))
       iter += 1;
       LastLyr = NextLyr;
     }
 
-    return Math.round(10 * (N / iter)) / 10;
+    return Math.round(rnd * (N / iter)) / rnd;
   }
 }
 
@@ -1601,9 +1651,10 @@ export function LapseRateHght(Sounding, hb, ht, type = false) {
  * @param {number} PBot Bottom pressure (in hPa).
  * @param {number} PTop Top pressure (in hPa).
  * @param {boolean} type Whether to average incremental lapse rates (in 1).
+ * @param {number} rnd Number to round to 
  * @returns {number|string} Lapse rate (in C/km), or "--" when unavailable.
  */
-export function LapseRatePres(Sounding, PBot, PTop, type = false) {
+export function LapseRatePres(Sounding, PBot, PTop, type = false, rnd = 10) {
   if (!type) {
     let S = GetLayerByPres(Sounding, "SFC");
 
@@ -1614,7 +1665,7 @@ export function LapseRatePres(Sounding, PBot, PTop, type = false) {
     let Bot = GetLayerByPres(Sounding, PBot);
     let Top = GetLayerByPres(Sounding, PTop);
 
-    return Math.round(10 * (Top.VT - Bot.VT) / ((Bot.H - Top.H) * 1 / 1000)) / 10;
+    return Math.round(rnd * (Top.VT - Bot.VT) / ((Bot.H - Top.H) * 1 / 1000)) / rnd;
   } else {
     let N = 0;
     let iter = 0;
@@ -1627,7 +1678,7 @@ export function LapseRatePres(Sounding, PBot, PTop, type = false) {
       LastLyr = NextLyr;
     }
 
-    return Math.round(10 * (N / iter)) / 10;
+    return Math.round(rnd * (N / iter)) / rnd;
   }
 }
 
@@ -1828,6 +1879,97 @@ export function GetSRH(Sounding, Hbot, Htop, type, RMot = false) {
   return { SRHP, SRHM };
 }
 
+
+/**
+ * Integrates streamwise and crosswise vorticity through a pressure- or height-bounded layer.
+ * @param {object} sound Sounding profile (pressure in hPa, height in m, wind in kt).
+ * @param {number} bot Bottom pressure (hPa) or height above ground (m).
+ * @param {number} top Top pressure (hPa) or height above ground (m).
+ * @param {"Pres"|"Hght"} type Selects pressure-coordinate or height-coordinate bounds.
+ * @param {{x: number, y: number}|false} RMot Storm-motion vector; uses configured motion if false (kt).
+ * @returns {{SWV: number, CWV: number, SWPercent: number, LevelHght:number}} Layer-integrated streamwise and
+ * crosswise vorticity (m/s), and the mean pointwise streamwiseness (percent).
+ */
+export function GetSWV(sound, bot, top, type, RMot = false, Skip=false){
+  const soundingTop = GetLayerByPres(sound, "Last");
+  if ((type === "Pres" && (top < soundingTop.P || bot < top)) ||
+      (type === "Hght" && (top > soundingTop.H || bot > top)) ||
+      (type !== "Pres" && type !== "Hght")) {
+    return { SWV: NaN, CWV: NaN, SWPercent: NaN, LevelHght: NaN };
+  }
+
+  const configuredMotion = RMot || CSMot;
+  const motion = {
+    x: Number.isFinite(configuredMotion?.x) ? configuredMotion.x : 0,
+    y: Number.isFinite(configuredMotion?.y) ? configuredMotion.y : 0,
+  };
+  let layers = getLayersWithinBounds(sound, bot, top, type);
+  if (Skip){
+    //Idea here is for it to be 100m increments, but if the layer is less than 100m, it will just use the two endpoints
+    //Interpolate the layers to 100m increments
+    layers = [];
+
+    if (type === "Pres") {
+      const botLayer = GetLayerByPres(sound, bot);
+      const topLayer = GetLayerByPres(sound, top);
+      const heightDiff = topLayer.H - botLayer.H;
+      const numIncrements = Math.floor(heightDiff / 100);
+
+      for (let i = 0; i <= numIncrements; i++) {
+        const interpHeight = botLayer.H + (i * 100);
+        layers.push(GetLayerByHght(sound, interpHeight));
+      }
+
+      // Ensure the top layer is included
+      if (layers[layers.length - 1].H < topLayer.H) {
+        layers.push(topLayer);
+      }
+    } else {
+      const botLayer = GetLayerByHght(sound, bot);
+      const topLayer = GetLayerByHght(sound, top);
+      const heightDiff = topLayer.H - botLayer.H;
+      const numIncrements = Math.floor(heightDiff / 100);
+
+      for (let i = 0; i <= numIncrements; i++) {
+        const interpHeight = botLayer.H + (i * 100);
+        layers.push(GetLayerByHght(sound, interpHeight));
+      }
+
+      // Ensure the top layer is included
+      if (layers[layers.length - 1].H < topLayer.H) {
+        layers.push(topLayer);
+      }
+    }
+
+  }
+  let SWV = 0;
+  let CWV = 0;
+  let SP = 0;
+  for (let i = 0; i < layers.length - 1; i++) {
+    const lowerWind = ConvertPolartoCart(layers[i]);
+    const upperWind = ConvertPolartoCart(layers[i + 1]);
+    const stormRelativeWind = {
+      x: KTSTOM2((lowerWind.x + upperWind.x) / 2 - motion.x),
+      y: KTSTOM2((lowerWind.y + upperWind.y) / 2 - motion.y),
+    };
+    const stormRelativeSpeed = Mag(stormRelativeWind);
+    const shear = {
+      x: KTSTOM2(upperWind.x - lowerWind.x),
+      y: KTSTOM2(upperWind.y - lowerWind.y),
+    };
+
+    if (stormRelativeSpeed === 0) continue;
+
+    SWV += Math.abs(stormRelativeWind.x * shear.y - stormRelativeWind.y * shear.x) / stormRelativeSpeed;
+    CWV += Math.abs(stormRelativeWind.x * shear.x + stormRelativeWind.y * shear.y) / stormRelativeSpeed;
+  }
+
+  const LevelHght = (type === "Pres") ? (GetLayerByPres(sound, bot).H - GetLayerByPres(sound, top).H) : (top - bot);
+  const totalVorticity = Math.hypot(SWV, CWV);
+  const SWPercent = totalVorticity === 0 ? 0 : (Math.abs(SWV) / totalVorticity) * 100;
+  return { SWV, CWV, SWPercent, LevelHght };
+}
+
 /**
  * Retrieves winds at two height levels and calculates their shear vector, or
  * their average vector when modify is true.
@@ -1945,21 +2087,21 @@ export function MeanWind(Sounding, PBot, PTop, Inc) {
 
   if (Inc == 1){
     for (let i = PBot; i > PTop; i -= Inc) {
-      let Layer = GetLayerByPres(Sounding, i);
+      let Layer = GetLayerByPres(Sounding, i, "Wind");
       let Wind = ConvertPolartoCart(Layer);
 
       TWeight += Layer.P;
       WX += Wind.x * Layer.P;
       WY += Wind.y * Layer.P;
     }
-    let TopLayer = GetLayerByPres(Sounding, PTop);
+    let TopLayer = GetLayerByPres(Sounding, PTop, "Wind");
     let TopWind = ConvertPolartoCart(TopLayer);
     TWeight += TopLayer.P;
     WX += TopWind.x * TopLayer.P;
     WY += TopWind.y * TopLayer.P;
   } else {
     for (let i = PBot; i > PTop; i -= Inc) {
-      let Layer = GetLayerByPres(Sounding, i);
+      let Layer = GetLayerByPres(Sounding, i, "Wind");
       let Wind = ConvertPolartoCart(Layer);
 
       TWeight += i;
@@ -1996,7 +2138,7 @@ export function VaporPressure(temp) {
  * @param {{x: number, y: number}} V1 Cartesian wind components (in kt).
  * @returns {{WD: number, WS: number}} Rounded wind direction (in deg) and speed (in kt).
  */
-function ConvertCartToPolarReal(V1) {
+export function ConvertCartToPolarReal(V1) {
   const dy = V1.y - 0;
   const dx = V1.x - 0;
   const radians = Math.atan2(dy, dx); // Angle in radians
@@ -2247,7 +2389,7 @@ export function GetParams(Info, Type, STPF = false) {
     if (PrclStart == undefined){
       return 0;
     }
-    let LR = LapseRatePres(Info.Sounding.Sounding, 700, 500, false);
+    let LR = LapseRatePres(Info.Sounding.Sounding, 700, 500, false, 100);
     let BWD = clamp(KTSTOM2(Mag(Info.Wnd.BWD06)), 7, 27);
     let MR = clamp(mixratio(PrclStart.P, PrclStart.D), 11, 13.6);
     let tmp500 = -Math.min(-5.5, GetLayerByPres(Info.Sounding.Sounding, 500).T);
@@ -2535,7 +2677,7 @@ export function GetParams(Info, Type, STPF = false) {
     let HGZDepth = Math.abs(T10.H - T30.H);
 
     let HGZTerm = (3200 - HGZDepth)/500;
-    let LRTerm = (LapseRatePres(Info.Sounding.Sounding, 700, 500) - 6.5)/2;
+    let LRTerm = (LapseRatePres(Info.Sounding.Sounding, 700, 500, undefined, 100) - 6.5)/2;
     let mucapeTerm = (Info.Parcels.MU.Cape-2000)/1000;
 
 
@@ -2866,8 +3008,8 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   let Coloumns = 4;
 
   let Sfc = GetLayerByPres(Sounding.Sounding, "SFC");
-  let Low = GetLayerByHght(Sounding.Sounding, 1000);
-  let Mid = GetLayerByHght(Sounding.Sounding, 3000);
+  let Low = GetLayerByHght(Sounding.Sounding, 1000, undefined, true);
+  let Mid = GetLayerByHght(Sounding.Sounding, 3000, undefined, true);
 
   let D = drylift(Sfc.P, Sfc.T, Sfc.D);
 

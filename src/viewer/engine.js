@@ -1,3 +1,4 @@
+
 /**
  * SharpJS rendering engine.
  *
@@ -9,7 +10,7 @@
 import {
   GetBM, LiftParcel, GetDCape, LapseRateHght, LapseRatePres,
   GetLayerByPres, EffInflowCalc, GetLayerByHght, WindShearFindP,
-  GetSRH, WindShearFind, WindShear, ConvertPolartoCart,
+  GetSRH, GetSWV, WindShearFind, WindShear, ConvertPolartoCart,
   GetParams, DrawInsetParams, thetae, wetbulb, mean_layer_temp, mean_relh,
   GetLayerByTemp, RelHum, mixratio, MeanWind, MeanWindNW, ConvertToInfo, virtemp,
   CtoK, clamp, Mag, VirtTemp, degtoRad, Lerp, RMISSD, ROCP, temp_at_mixrat, qc, DewFromTRh,
@@ -1031,10 +1032,7 @@ function resolveHodographSrhFillLayer(Sounding, inflow) {
       return { bot, top };
     }
   }
-  if (!sfc || !isUsableHodographWind(sfc)) return null;
-  const top3 = GetLayerByHght(Sounding, 3000, true);
-  if (!top3 || !isUsableHodographWind(top3) || top3.H <= sfc.H) return null;
-  return { bot: sfc, top: top3 };
+  return null;
 }
 
 /**
@@ -1201,7 +1199,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   ctx.setLineDash([4, 4]);
 
   let Sounding = Json.Sounding;
-  let BRM = GetBM(Sounding);
+  let BRM = GetBM(Sounding, GlobalEffInflow);
 
   ctx.fillStyle = "rgba(255,255,255,1)";
 
@@ -2812,7 +2810,7 @@ function LapseRateColor(N) {
  */
 const convertLapse = (rate) => {
   if (rate === "--") return "--";
-  return useImperialUnits === 2 ? Math.round(10 * CPerKmToCPerKft(rate)) / 10 : rate;
+  return useImperialUnits === 2 ? Math.round(100 * CPerKmToCPerKft(rate)) / 100 : rate;
 };
 
 
@@ -2856,7 +2854,7 @@ function StormMotionBox(Sounding){
     return 100 * (v / envSpdMax);
   }
 
-  let BRM = GetBM(Sounding);
+  let BRM = GetBM(Sounding, GlobalEffInflow);
   let FntSiz = Canv2.width / 20;
 
   ctx2.fillStyle = "rgba(255,255,255,1)";
@@ -2930,18 +2928,17 @@ function GetLapseBox(Sounding) {
   let StartSlice = GetLayerByPres(Sounding, "SFC");
   const sh = StartSlice.H;
 
-  let LLLR = LapseRateHght(Sounding, "SFC", 3000 + sh, LapseType);
-  let LSLR = LapseRateHght(Sounding, "SFC", ((DP.Start != undefined && DP.Start.H || 0) + DP.LCL+ sh) || 1000, LapseType);
-  let LFCLR = LapseRateHght(Sounding, "SFC", ((DP.Start != undefined && DP.Start.H || 0) + DP.LFC+ sh) || 1000, LapseType);
-  let MLLR = LapseRateHght(Sounding, 3000+ sh, 6000 + sh, LapseType);
-  let MMR = LapseRatePres(Sounding, 700, 500, LapseType);
-  let LMR = LapseRatePres(Sounding, 850, 500, LapseType);
+  let LLLR = LapseRateHght(Sounding, "SFC", 3000 + sh, LapseType, 100);
+  let LSLR = LapseRateHght(Sounding, "SFC", ((DP.Start != undefined && DP.Start.H || 0) + DP.LCL+ sh) || 1000, LapseType, 100);
+  let LFCLR = LapseRateHght(Sounding, "SFC", ((DP.Start != undefined && DP.Start.H || 0) + DP.LFC+ sh) || 1000, LapseType, 100);
+  let MLLR = LapseRateHght(Sounding, 3000+ sh, 6000 + sh, LapseType, 100);
+  let MMR = LapseRatePres(Sounding, 700, 500, LapseType, 100);
+  let LMR = LapseRatePres(Sounding, 850, 500, LapseType, 100);
   let MaxLR = 0;
 
   for (let i = 2000; i < 5000; i+=250){
-    MaxLR = Math.max(MaxLR, LapseRateHght(Sounding, i+ sh, i + 1000 + sh, LapseType)) 
+    MaxLR = Math.max(MaxLR, LapseRateHght(Sounding, i+ sh, i + 1000 + sh, LapseType, 100)) 
   }
-  MaxLR = Math.round(10 * MaxLR)/10;
   let CL = CustomLapseLayer.Lapse;
 
   let Scale = .75;
@@ -2960,7 +2957,7 @@ function GetLapseBox(Sounding) {
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
   } else if (Presets['WindLapse'] == "Severe" || Presets['WindLapse'] == "Elevated") {
-    let LFCELLR = LapseRateHght(Sounding, ((DP.Start != undefined && DP.Start.H || 0) + DP.LFC+ sh) || 0, ((DP.Start != undefined && DP.Start.H || 0) + DP.EL+ sh) || 3000, LapseType);
+    let LFCELLR = LapseRateHght(Sounding, ((DP.Start != undefined && DP.Start.H || 0) + DP.LFC+ sh) || 0, ((DP.Start != undefined && DP.Start.H || 0) + DP.EL+ sh) || 3000, LapseType, 100);
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 210, 210)", `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 165, 165)", `LFC-EL ${lapseType}`, Scale, LFCELLR, lapseUnit, 1)
@@ -2969,7 +2966,7 @@ function GetLapseBox(Sounding) {
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
   } else if (Presets['WindLapse'] == "Fire") {
-    let SLLLR = LapseRateHght(Sounding, "SFC", 1000+ sh, LapseType);
+    let SLLLR = LapseRateHght(Sounding, "SFC", 1000+ sh, LapseType, 100);
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Sfc-1km ${lapseType}`, Scale, SLLLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 210, 210)", `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 165, 165)", `Sfc-LFC ${lapseType}`, Scale, LFCLR == LFCLR ? LFCLR : LSLR, lapseUnit, 1)
@@ -2978,8 +2975,8 @@ function GetLapseBox(Sounding) {
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
   } else if (Presets['WindLapse'] == "Winter") {
-    let DGZLR = LapseRatePres(Sounding, GetLayerByTemp(Sounding, -12).P, GetLayerByTemp(Sounding, -18).P, LapseType);
-    let FRZLR = LapseRateHght(Sounding, "SFC", Math.max(GetLayerByTemp(Sounding, 0).H, 250)+ sh, LapseType);
+    let DGZLR = LapseRatePres(Sounding, GetLayerByTemp(Sounding, -12).P, GetLayerByTemp(Sounding, -18).P, LapseType, 100);
+    let FRZLR = LapseRateHght(Sounding, "SFC", Math.max(GetLayerByTemp(Sounding, 0).H, 250)+ sh, LapseType, 100);
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 210, 210)", `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
     Scale = LapseBoxStep(ctx, Canv, "rgb(255, 165, 165)", `DGZ ${lapseType}`, Scale, DGZLR, lapseUnit, 1)
@@ -3088,14 +3085,15 @@ function DrawWindParams(Sounding, WindParams) {
   const Canv = $("Values5");
   const ctx = Canv.getContext("2d");
 
-  Canv.width = 700;
+  Canv.width = 800;
   Canv.height = 400;
   
-
-  let Scale = 1.2;
+  let Scale = 1;
 
   let Scaler = 0.5;
-  let TS = 17.4;
+  let TS = 23.7;
+
+  if (!DisplayEHI) TS -= 2.8;
 
   ctx.fillStyle = "rgba(255,255,255,1)";
 
@@ -3125,97 +3123,139 @@ function DrawWindParams(Sounding, WindParams) {
   ctx.textAlign = "center";
   ctx.fillText(`SRWind`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
-  Scaler += 2.65;
+  if (DisplayEHI){
+    Scaler += 2.8;
+    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+    ctx.textAlign = "center";
+    ctx.fillText(`EHI`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
+  }
+  
+
+  Scaler += 2.8;
   
   ctx.fillStyle = "rgba(255,255,255,1)";
   ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
   ctx.textAlign = "center";
-  ctx.fillText(`EHI`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
+  ctx.fillText(`SW%`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
-  let Ps = [];
+  Scaler += 2.5;
+  
+  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+  ctx.textAlign = "center";
+  ctx.fillText(`SWV`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
+
+  let Ps = [
+
+  ];
+
+  let Index = {
+    "Sfc-500m": ["Sfc-500m", WindParams.BWD005, WindParams.SRH005, WindParams.MeanWind.M005, WindParams.EHI005, WindParams.SWV.SWV005, WindParams.SWV.SWPercent005, "rgba(255,255,255,1)"],
+    "Sfc-1km": ["Sfc-1km", WindParams.BWD01, WindParams.SRH01, WindParams.MeanWind.M01, WindParams.EHI01, WindParams.SWV.SWV01, WindParams.SWV.SWPercent01, "rgba(225,225,255,1)"],
+    "Eff Inflow": ["Eff Inflow", WindParams.BWDE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, WindParams.SWV.ESWV, WindParams.SWV.ESWVPercent, "rgba(0,255,255,1)"], 
+    "Sfc-3km": ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, WindParams.SWV.SWV03, WindParams.SWV.SWPercent03, "rgba(200,200,255,1)"],
+    "1km-3km": ["1km-3km", WindParams.BWD13, WindParams.SRH13, WindParams.MeanWind.M13, WindParams.EHI13, WindParams.SWV.SWV13, WindParams.SWV.SWPercent13, "rgba(175,175,255,1)"],
+    "3km-6km": ["3km-6km", WindParams.BWD36, WindParams.SRH36, WindParams.MeanWind.M36, WindParams.EHI36, WindParams.SWV.SWV36, WindParams.SWV.SWPercent36, "rgba(150,150,255,1)"],
+    "Sfc-6km": ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, WindParams.SWV.SWV06, WindParams.SWV.SWPercent06, "rgba(125,125,255,1)"],
+    "Cstm": [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, CustomWindLayer.SWV, CustomWindLayer.SWVPercent, "rgba(255,255,255,1)", true],
+    "Sfc-MLLFC": ["Sfc-MLLFC", WindParams.BWD0MLLFC, WindParams.SRH0MLLFC, WindParams.MeanWind.M0MLLFC, WindParams.EHI0MLLFC, WindParams.SWV.SWV0MLLFC, WindParams.SWV.SWPercent0MLLFC, "rgba(175,175,255,1)"],
+    "Sfc-SBLCL": ["Sfc-SBLCL", WindParams.BWD0SBLCL, WindParams.SRH0SBLCL, WindParams.MeanWind.M0SBLCL, WindParams.EHI0SBLCL, WindParams.SWV.SWV0SBLCL, WindParams.SWV.SWPercent0SBLCL, "rgba(150,150,255,1)"],
+    "Eff Bot-1km": ["Eff Bot-1km", WindParams.BWDEb01, WindParams.SRHEb01, WindParams.MeanWind.MEb01, WindParams.EHIEb01, WindParams.SWV.SWVb01, WindParams.SWV.SWPercentb01, "rgba(255, 225, 225, 1)"],
+    "Eff Bot-3km": ["Eff Bot-3km", WindParams.BWDEb03, WindParams.SRHEb03, WindParams.MeanWind.MEb03, WindParams.EHIEb03, WindParams.SWV.SWVb03, WindParams.SWV.SWPercentb03, "rgba(210, 195, 195, 1)"],
+    "Eff Bot-6km": ["Eff Bot-6km", WindParams.BWDEb06, WindParams.SRHEb06, WindParams.MeanWind.MEb06, WindParams.EHIEb06, WindParams.SWV.SWVb06, WindParams.SWV.SWPercentb06, "rgba(175, 150, 150, 1)"],
+    "HGZ": ["HGZ", WindParams.BWDHGZ, WindParams.SRHHGZ, WindParams.MeanWind.MHGZ, WindParams.EHIHGZ, WindParams.SWV.SWVHGZ, WindParams.SWV.SWPercentHGZ, "rgb(255, 197, 150)"],  
+    "Sfc-9km": ["Sfc-9km", WindParams.BWD09, WindParams.SRH09, WindParams.MeanWind.M09, WindParams.EHI09, WindParams.SWV.SWV09, WindParams.SWV.SWPercent09, "rgba(200,200,255,1)"],
+    "Sfc-12km": ["Sfc-12km", WindParams.BWD012, WindParams.SRH012, WindParams.MeanWind.M012, WindParams.EHI012, WindParams.SWV.SWV012, WindParams.SWV.SWPercent012, "rgba(175,175,255,1)"],
+    "9-12km": ["9-12km", WindParams.BWD912, WindParams.SRH912, WindParams.MeanWind.M912, WindParams.EHI912, WindParams.SWV.SWV912, WindParams.SWV.SWPercent912, "rgba(125,125,255,1)"],
+    "Sfc-700mb": ["Sfc-700mb", WindParams.BWD0mb700, WindParams.SRH0mb700, WindParams.MeanWind.M0mb700, WindParams.EHI0mb700, WindParams.SWV.SWV0mb700, WindParams.SWV.SWPercent0mb700, "rgba(150,150,255,1)"],
+    "Sfc-500mb": ["Sfc-500mb", WindParams.BWD0mb500, WindParams.SRH0mb500, WindParams.MeanWind.M0mb500, WindParams.EHI0mb500, WindParams.SWV.SWV0mb500, WindParams.SWV.SWPercent0mb500, "rgba(125,125,255,1)"],
+    "DGZ": ["DGZ", WindParams.BWDDGZ, WindParams.SRHDGZ, WindParams.MeanWind.MDGZ, WindParams.EHIDGZ, WindParams.SWV.SWVDGZ, WindParams.SWV.SWPercentDGZ, "rgb(255, 197, 150)"],
+    "Sfc-DGZ": ["SFC-DGZ", WindParams.BWD0T18, WindParams.SRH0T18, WindParams.MeanWind.M0T18, WindParams.EHI0T18, WindParams.SWV.SWV0T18, WindParams.SWV.SWPercent0T18, "rgba(175, 200,255,1)"],
+  }
 
   if (Presets['WindLapse'] == "Default") {
     Ps = [
-      ["Sfc-500m", WindParams.BWD005, WindParams.SRH005, WindParams.MeanWind.M005, WindParams.EHI005, "rgba(255,255,255,1)"],
-      ["Sfc-1km", WindParams.BWD01, WindParams.SRH01, WindParams.MeanWind.M01, WindParams.EHI01, "rgba(225,225,255,1)"],
-      ["Eff Inflow", WindParams.BWDE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, "rgba(0,255,255,1)"],
-      ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, "rgba(200,200,255,1)"],
-      ["1km-3km", WindParams.BWD13, WindParams.SRH13, WindParams.MeanWind.M13, WindParams.EHI13, "rgba(175,175,255,1)"],
-      ["3km-6km", WindParams.BWD36, WindParams.SRH36, WindParams.MeanWind.M36, WindParams.EHI36, "rgba(150,150,255,1)"],
-      ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, "rgba(125,125,255,1)"],
-      [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, "rgba(255,255,255,1)", true],
+      Index["Sfc-500m"],
+      Index["Sfc-1km"],
+      Index["Eff Inflow"],
+      Index["Sfc-3km"],
+      Index["1km-3km"],
+      Index["3km-6km"],
+      Index["Sfc-6km"],
+      Index["Cstm"],
     ];
   } else if (Presets['WindLapse'] == "Dryline"){
     Ps = [
-      ["Sfc-500m", WindParams.BWD005, WindParams.SRH005, WindParams.MeanWind.M005, WindParams.EHI005, "rgba(255,255,255,1)"],
-      ["Sfc-1km", WindParams.BWD01, WindParams.SRH01, WindParams.MeanWind.M01, WindParams.EHI01, "rgba(225,225,255,1)"],
-      ["Eff Inflow", WindParams.BWDE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, "rgba(0,255,255,1)"],
-      ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, "rgba(200,200,255,1)"],
-      ["Sfc-MLLFC", WindParams.BWD0MLLFC, WindParams.SRH0MLLFC, WindParams.MeanWind.M0MLLFC, WindParams.EHI0MLLFC, "rgba(175,175,255,1)"],
-      ["Sfc-SBLCL", WindParams.BWD0SBLCL, WindParams.SRH0SBLCL, WindParams.MeanWind.M0SBLCL, WindParams.EHI0SBLCL, "rgba(150,150,255,1)"],
-      ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, "rgba(125,125,255,1)"],
-      [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, "rgba(255,255,255,1)", true],
+      Index["Sfc-500m"],
+      Index["Sfc-1km"],
+      Index["Eff Inflow"],
+      Index["Sfc-3km"],
+      Index["Sfc-MLLFC"],
+      Index["Sfc-SBLCL"],
+      Index["Sfc-6km"],
+      Index["Cstm"],
     ];
   } else if (Presets['WindLapse'] == "Elevated"){
     Ps = [
-      ["Eff Inflow", WindParams.BWDE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, "rgba(0,255,255,1)"],
-      ["Sfc-1km", WindParams.BWD01, WindParams.SRH01, WindParams.MeanWind.M01, WindParams.EHI01, "rgba(255,255,255,1)"],
-      ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, "rgba(210,210,210,1)"],
-      ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, "rgba(175,175,175,1)"],
-      ["Eff Bot-1km", WindParams.BWDEb01, WindParams.SRHEb01, WindParams.MeanWind.MEb01, WindParams.EHIEb01, "rgba(255, 225, 225, 1)"],
-      ["Eff Bot-3km", WindParams.BWDEb03, WindParams.SRHEb03, WindParams.MeanWind.MEb03, WindParams.EHIEb03, "rgba(210, 195, 195, 1)"],
-      ["Eff Bot-6km", WindParams.BWDEb06, WindParams.SRHEb06, WindParams.MeanWind.MEb06, WindParams.EHIEb06, "rgba(175, 150, 150, 1)"],
-      [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, "rgba(255,255,255,1)", true],
+      Index["Eff Inflow"],
+      Index["Sfc-1km"],
+      Index["Sfc-3km"],
+      Index["Sfc-6km"],
+      Index["Eff Bot-1km"],
+      Index["Eff Bot-3km"],
+      Index["Eff Bot-6km"],
+      Index["Cstm"],
     ];
   } else if (Presets['WindLapse'] == "Severe") {
     Ps = [
-      ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, "rgba(255,255,255,1)"],
-      ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, "rgba(225,225,255,1)"],
-      ["Eff Inflow", WindParams.BWDE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, "rgba(0,255,255,1)"],
-      ["HGZ", WindParams.BWDHGZ, WindParams.SRHHGZ, WindParams.MeanWind.MHGZ, WindParams.EHIHGZ, "rgb(255, 197, 150)"],
-      ["Sfc-9km", WindParams.BWD09, WindParams.SRH09, WindParams.MeanWind.M09, WindParams.EHI09, "rgba(200,200,255,1)"],
-      ["Sfc-12km", WindParams.BWD012, WindParams.SRH012, WindParams.MeanWind.M012, WindParams.EHI012, "rgba(175,175,255,1)"],
-      ["9-12km", WindParams.BWD912, WindParams.SRH912, WindParams.MeanWind.M912, WindParams.EHI912, "rgba(125,125,255,1)"],
-      [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, "rgba(255,255,255,1)", true],
+      Index["Sfc-3km"],
+      Index["Sfc-6km"],
+      Index["Eff Inflow"],
+      Index["HGZ"],
+      Index["Sfc-9km"],
+      Index["Sfc-12km"],
+      Index["9-12km"],
+      Index["Cstm"],
     ];
   } else if (Presets['WindLapse'] == "Fire") {
     Ps = [
-      ["Sfc-500m", WindParams.BWD005, WindParams.SRH005, WindParams.MeanWind.M005, WindParams.EHI005, "rgba(255,255,255,1)"],
-      ["Sfc-1km", WindParams.BWD01, WindParams.SRH01, WindParams.MeanWind.M01, WindParams.EHI01, "rgba(225,225,255,1)"],
-      ["Eff Inflow", WindParams.BWDE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, "rgba(0,255,255,1)"],
-      ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, "rgba(200,200,255,1)"],
-      ["1km-3km", WindParams.BWD13, WindParams.SRH13, WindParams.MeanWind.M13, WindParams.EHI13, "rgba(175,175,255,1)"],
-      ["Sfc-700mb", WindParams.BWD0mb700, WindParams.SRH0mb700, WindParams.MeanWind.M0mb700, WindParams.EHI0mb700, "rgba(150,150,255,1)"],
-      ["Sfc-500mb", WindParams.BWD0mb500, WindParams.SRH0mb500, WindParams.MeanWind.M0mb500, WindParams.EHI0mb500, "rgba(125,125,255,1)"],
-      [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, "rgba(255,255,255,1)", true],
+      Index["Sfc-500m"],
+      Index["Sfc-1km"],
+      Index["Eff Inflow"],
+      Index["Sfc-3km"],
+      Index["1km-3km"],
+      Index["Sfc-700mb"],
+      Index["Sfc-500mb"],
+      Index["Cstm"],
     ];
   } else if (Presets['WindLapse'] == "Winter") {
     Ps = [
-      ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, "rgba(255,255,255,1)"],
-      ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, "rgba(225,225,255,1)"],
-      ["Sfc-9km", WindParams.BWD09, WindParams.SRH09, WindParams.MeanWind.M09, WindParams.EHI09, "rgba(200, 200, 255,1)"],
-      ["DGZ", WindParams.BWDDGZ, WindParams.SRHDGZ, WindParams.MeanWind.MDGZ, WindParams.EHIDGZ, "rgb(255, 197, 150)"],
-      ["SFC-DGZ", WindParams.BWD0T18, WindParams.SRH0T18, WindParams.MeanWind.M0T18, WindParams.EHI0T18, "rgba(175, 200,255,1)"],
-      ["SFC-500mb", WindParams.BWD0mb500, WindParams.SRH0mb500, WindParams.MeanWind.M0mb500, WindParams.EHI0mb500, "rgba(150,175,255,1)"],
-      ["9-12km", WindParams.BWD912, WindParams.SRH912, WindParams.MeanWind.M912, WindParams.EHI912, "rgba(125,125,255,1)"],
-      [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, "rgba(255,255,255,1)", true],
+      Index["Sfc-3km"],
+      Index["Sfc-6km"],
+      Index["Sfc-9km"],
+      Index["DGZ"],
+      Index["Sfc-DGZ"],
+      Index["Sfc-500mb"],
+      Index["Cstm"],
     ];
   }
 
-  const FntSize = Canv.width / 33;
+  const FntSize = Canv.width / 42.5;
+  const FntSize2 = Canv.width / 33;
 
   Ps.forEach((obj) => {
     Scaler = 0.5;
-    ctx.fillStyle = obj[5];
+    ctx.fillStyle = obj[7];
 
     if (obj[6] == true) {
-      ctx.font = `700 ${Canv.width / 27.5}px ${globalFont}`;
+      ctx.font = `700 ${FntSize2}px ${globalFont}`;
     } else {
-      ctx.font = `700 ${Canv.width / 27.5}px ${globalFont}`;
+      ctx.font = `700 ${FntSize2}px ${globalFont}`;
     }
 
     ctx.textAlign = "left";
-    ctx.fillText(`${obj[0]}:`, Canv.width * (0.01 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
+    ctx.fillText(`${obj[0]}:`, Canv.width * (0.01 + Scaler / TS), Canv.height * (0.11 + Scale / Ps.length * 0.8));
 
     Scaler += 3;
 
@@ -3225,7 +3265,7 @@ function DrawWindParams(Sounding, WindParams) {
     let bwdSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(BWDS.WS)) : Math.round(BWDS.WS);
     bwdSpeed = isNaN(bwdSpeed) ? "--" : bwdSpeed
     BWDAng = isNaN(BWDAng) ? "--" : Math.round(BWDAng)
-    ctx.font = `600 ${FntSize}px ${globalFont}`;
+    ctx.font = `500 ${FntSize}px ${globalFont}`;
     ctx.textAlign = "left";
     ctx.fillText(`${BWDAng} / ${bwdSpeed} ${speedUnit}`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
 
@@ -3233,12 +3273,12 @@ function DrawWindParams(Sounding, WindParams) {
 
 
     if (obj[0] == "Eff Inflow") {
-      ctx.font = `600 ${FntSize}px ${globalFont}`;
+      ctx.font = `500 ${FntSize}px ${globalFont}`;
       ctx.textAlign = "left";
       ctx.fillText(`${isNaN(obj[2]) ? "--" : Math.round(obj[2])} m²/s²`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
     } else {
 
-      ctx.font = `600 ${FntSize}px ${globalFont}`;
+      ctx.font = `500 ${FntSize}px ${globalFont}`;
       ctx.textAlign = "left";
       ctx.fillText(`${isNaN(obj[2].SRHM) ? "--" : Math.round(obj[2].SRHP + obj[2].SRHM)} m²/s²`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
     }
@@ -3257,16 +3297,30 @@ function DrawWindParams(Sounding, WindParams) {
     let srwAng = Math.round(srws.WD)
     srwSpeed = isNaN(srwSpeed) ? "--" : srwSpeed
     srwAng = isNaN(srwAng) ? "--" : srwAng
-    ctx.font = `600 ${FntSize}px ${globalFont}`;
+    ctx.font = `500 ${FntSize}px ${globalFont}`;
     ctx.textAlign = "left";
     ctx.fillText(`${srwAng} / ${srwSpeed} ${speedUnit}`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
 
     Scaler += 3.5;
 
-    ctx.font = `600 ${FntSize}px ${globalFont}`;
+    if (DisplayEHI){
+      ctx.font = `500 ${FntSize}px ${globalFont}`;
+      ctx.textAlign = "left";
+
+      ctx.fillText(`${isNaN(obj[4]) ? "--" : obj[4]}`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
+      Scaler += 2.5;
+    }
+    ctx.font = `500 ${FntSize}px ${globalFont}`;
     ctx.textAlign = "left";
 
-    ctx.fillText(`${isNaN(obj[4]) ? "--" : obj[4]}`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
+    ctx.fillText(`${isNaN(obj[6]) ? "--" : Math.round(obj[6])}%`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
+    Scaler += 2.5;
+
+    ctx.font = `500 ${FntSize}px ${globalFont}`;
+    ctx.textAlign = "left";
+
+    ctx.fillText(`${isNaN(obj[5]) ? "--" : Math.round(obj[5] * 1000)/1000}`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
+    
     Scale += 0.925;
   })
 
@@ -3278,8 +3332,8 @@ function DrawWindParams(Sounding, WindParams) {
   ctx.fillStyle = "rgba(255,255,255,1)";
 
   ctx.font = `600 ${FntSize}px ${globalFont}`;
-  ctx.textAlign = "left";
-  ctx.fillText(`EBWD: `, Canv.width * (0.1 + 0.25 / TS), Canv.height * (0.1 + Scale / Ps.length * 0.787));
+  ctx.textAlign = "right";
+  ctx.fillText(`EBWD: `, Canv.width * 0.125, Canv.height * (0.1 + Scale / Ps.length * 0.787));
 
   const spdUnit = useImperialUnits === 2 ? "mph" : "kt";
 
@@ -3290,14 +3344,14 @@ function DrawWindParams(Sounding, WindParams) {
   ebwdang = isNaN(ebwdang) ? "--" : Math.round(ebwdang)
 
   ctx.font = `600 ${FntSize}px ${globalFont}`;
-  ctx.textAlign = "right";
-  ctx.fillText(`${ebwdang} / ${ebwdspeed} ${spdUnit}`, Canv.width * (0.1 + 4.75 / TS), Canv.height * (0.1 + Scale / Ps.length * 0.787));
+  ctx.textAlign = "left";
+  ctx.fillText(`${ebwdang} / ${ebwdspeed} ${spdUnit}`, Canv.width * 0.15, Canv.height * (0.1 + Scale / Ps.length * 0.787));
 
   ctx.fillStyle = "rgba(255,255,255,1)";
 
   ctx.font = `600 ${FntSize}px ${globalFont}`;
-  ctx.textAlign = "left";
-  ctx.fillText(`LCL - EL Shear: `, Canv.width * (0.9 - 7 / TS), Canv.height * (0.1 + Scale / Ps.length * 0.787));
+  ctx.textAlign = "right";
+  ctx.fillText(`LCL - EL Shear: `, Canv.width * 0.775, Canv.height * (0.1 + Scale / Ps.length * 0.787));
 
   let lclel = ConvertCartToPolarRealRnd(WindParams['LCLELSHR']);
   let lclelang = lclel.WD;
@@ -3306,8 +3360,8 @@ function DrawWindParams(Sounding, WindParams) {
   lclelang = isNaN(lclelang) ? "--" : Math.round(lclelang)
 
   ctx.font = `600 ${FntSize}px ${globalFont}`;
-  ctx.textAlign = "right";
-  ctx.fillText(`${lclelang} / ${lclelspeed} ${spdUnit}`, Canv.width * (0.9 - 0.25 / TS), Canv.height * (0.1 + Scale / Ps.length * 0.787));
+  ctx.textAlign = "left";
+  ctx.fillText(`${lclelang} / ${lclelspeed} ${spdUnit}`, Canv.width * 0.8, Canv.height * (0.1 + Scale / Ps.length * 0.787));
 
 
   const V8 = $("Values8");
@@ -4921,67 +4975,26 @@ function DrawBoxes(Sounding, Info, wind) {
     ctx.beginPath();
     ctx.lineWidth = 5;
     ctx.strokeStyle = "rgba(255,0,0,0.7)";
+    BoundsX = [400, 600];
     //ctx.moveTo(400,800);
     let LPos = 0;
     let Switch = false;
-    for (let i = 0; i < Sound.W.length-1; i++) {
-      let P = ConvertPolartoCart(Sound.W[i]);
-      P.H = Sound.W[i].H - SSlice.H;
-      let N = ConvertPolartoCart(Sound.W[i + 1]);
-      N.H = Sound.W[i + 1].H - SSlice.H;
-
-      if (Math.abs(P.H - N.H) < 100) {
-        N = ConvertPolartoCart(GetLayerByHght(Sound, P.H + SSlice.H + 100));
-      }
-
-      if (P.H > 3000) {
-        Switch = true;
-      }
-
-      let R = {
-        x: P.x - N.x,
-        y: P.y - N.y,
-      };
-
-      let B = {
-        x: P.x - CSMot.x,
-        y: -(P.y + CSMot.y),
-      }
-
-      let TrueR = {
-        x: -R.y,
-        y: -R.x,
-      }
-
-      let BPol = ConvertCartToPolar_Regular(B);
-      let RPol = ConvertCartToPolar_Regular(TrueR);
-      BPol.WD = BPol.WD%360;
-      RPol.WD = RPol.WD%360;
-
-      if (RPol.WD - BPol.WD > 180) {
-        BPol.WD += 360;
-      }
-
-      if (BPol.WD - RPol.WD > 180) {
-        RPol.WD += 360;
-      }
-
-      let dot = (TrueR.x * B.x + TrueR.y * B.y) / (RPol.WS * BPol.WS);
-      let Lerped = clamp(Math.abs(dot), 0, 1);
-
-      let Pos = GetBoxPos(BoundsX, BoundsY, 100 * Lerped, clamp(100 * (1 - P.H / 3000), 0, 100));
+    for (let i = 0; i < 3000; i += 100) {
+      const layerVorticity = GetSWV(
+        Sound,
+        i, i + 100,
+        "Hght",
+        { x: CSMot.x, y: -CSMot.y },
+      );
+      const Lerped = clamp((layerVorticity.SWPercent - 50) / 50, 0, 1);
+      let Pos = GetBoxPos(BoundsX, BoundsY, 100 * Lerped, clamp(100 * (1 - i / 3000), 0, 100));
 
       if (i == 0) {
-        ctx.lineTo(400, Pos.y);
+        ctx.lineTo(Pos.x, BoundsY[1]);
       }
 
       ctx.lineTo(Pos.x, Pos.y);
       LPos = Pos;
-
-      if (Switch){
-        break;
-      }
-      //ctx.moveTo(Pos.x,Pos.y);
     }
 
     ctx.lineTo(LPos.x, LPos.y);
@@ -4989,11 +5002,45 @@ function DrawBoxes(Sounding, Info, wind) {
     ctx.lineTo(400, 800);
     ctx.stroke();
     ctx.fill();
+
+    BoundsX = [600, 800];
+
+    ctx.beginPath();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
+    //ctx.moveTo(400,800);
+    LPos = 0;
+    Switch = false;
+    for (let i = 0; i < 3000; i += 100) {
+      const layerVorticity = GetSWV(
+        Sound,
+        i, i + 100,
+        "Hght",
+        { x: CSMot.x, y: -CSMot.y },
+      );
+      const Lerped = clamp((layerVorticity.SWV/layerVorticity.LevelHght) * 1/0.05, 0, 1);
+      let Pos = GetBoxPos(BoundsX, BoundsY, 100 * Lerped, clamp(100 * (1 - i / 3000), 0, 100));
+
+      if (i == 0) {
+        ctx.lineTo(Pos.x, BoundsY[1]);
+      }
+
+      ctx.lineTo(Pos.x, Pos.y);
+      LPos = Pos;
+    }
+
+    ctx.lineTo(LPos.x, LPos.y);
+    ctx.lineTo(600, LPos.y);
+    ctx.lineTo(600, 800);
+    ctx.stroke();
+
     ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(255,255,255,1)";
-    ctx.strokeRect(400, 400, 400, 400);
+    ctx.strokeRect(400, 400, 200, 400);
 
     ctx.fillStyle = "rgba(255, 255, 255 ,1)";
+
+    BoundsX = [400, 800];
 
     for (let i = 0.5; i < 3; i += 0.5) {
       let Pos = GetBoxPos(BoundsX, BoundsY, 0, 100 * (1 - (i / 3)));
@@ -5005,24 +5052,39 @@ function DrawBoxes(Sounding, Info, wind) {
       ctx.fillText(`${i}`, Pos.x + 30, Pos.y + 5);
     }
 
-    for (let i = 20; i < 100; i += 20) {
-      let Pos = GetBoxPos(BoundsX, BoundsY, 100 * ((i / 100)), 0);
-      let Pos2 = GetBoxPos(BoundsX, BoundsY, 100 * ((i / 100)), 100);
+    BoundsX = [400, 600];
+    for (let i = 60; i < 100; i += 15) {
+      let Pos = GetBoxPos(BoundsX, BoundsY, 100 * ((i-50) / 50), 0);
+      let Pos2 = GetBoxPos(BoundsX, BoundsY, 100 * ((i-50) / 50), 100);
 
       ctx.fillRect(Pos.x, Pos.y, 4, 15);
       ctx.fillRect(Pos.x, Pos2.y - 20, 4, 15);
 
       //ctx.textAlign = "left";
-      ctx.font = `${400 * 0.075}px ${globalFont}`;
+      ctx.font = `${400 * 0.06}px ${globalFont}`;
       ctx.fillText(`${Math.round(i)}%`, Pos.x, Pos2.y - 25);
     }
 
-    ctx.font = `bold ${400 * 0.1}px ${globalFont}`;
+    BoundsX = [600, 800];
+    for (let i = 1; i < 6; i += 2) {
+      let Pos = GetBoxPos(BoundsX, BoundsY, 100 * (i / 6), 0);
+      let Pos2 = GetBoxPos(BoundsX, BoundsY, 100 * (i / 6), 100);
+
+      ctx.fillRect(Pos.x, Pos.y, 4, 15);
+      ctx.fillRect(Pos.x, Pos2.y - 20, 4, 15);
+
+      //ctx.textAlign = "left";
+      ctx.font = `${400 * 0.06}px ${globalFont}`;
+      ctx.fillText(`${(i/100)}`, Pos.x, Pos2.y - 25);
+    }
+
+    ctx.font = `bold ${400 * 0.08}px ${globalFont}`;
     ctx.fillStyle = "rgba(255,255,255,1)";
     ctx.textAlign = "center";
-    Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
-
-    ctx.fillText(`SW% ωₛ`, Pos.x, Pos.y);
+    Pos = GetBoxPos([400, 600], BoundsY, 50, 20);
+    ctx.fillText(`SW%`, Pos.x, Pos.y);
+    Pos = GetBoxPos([600, 800], BoundsY, 50, 20);
+    ctx.fillText(`ωₛ`, Pos.x, Pos.y);
   } else if (Presets['Vertical'] == "Fire") {
     ctx.beginPath();
     ctx.lineWidth = 5;
@@ -5987,30 +6049,30 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
 
   ctx.font = `bold ${Canv.width / 60}px ${globalFont}`;
 
-  if (Presets['Vertical'] == 'Winter'){
-    ctx.fillStyle = `rgba(200,200,200,1)`;
-    ddy = pres_to_pix(T12.P);
-    ctx.fillText(`<- ${Math.round(DisplayParcel.PreDGZCape)}`, 0.75 * Canv.width, ddy + 0.005 * Canv.height);
-    ddy = (pres_to_pix(T18.P) + pres_to_pix(T12.P)) / 2;
-    ctx.font = `bold ${Canv.width / 50}px ${globalFont}`;
-    ctx.fillText(`<- ${Math.round(DisplayParcel.DGZCape)} DGZCape`, 0.725 * Canv.width, ddy);
-    ctx.font = `bold ${Canv.width / 60}px ${globalFont}`;
+  if (DisplayOnMapCape){
+    if (Presets['Vertical'] == 'Winter'){
+      ctx.fillStyle = `rgba(200,200,200,1)`;
+      ddy = pres_to_pix(T12.P);
+      ctx.fillText(`<- ${Math.round(DisplayParcel.PreDGZCape)}`, 0.75 * Canv.width, ddy + 0.005 * Canv.height);
+      ddy = (pres_to_pix(T18.P) + pres_to_pix(T12.P)) / 2;
+      ctx.font = `bold ${Canv.width / 50}px ${globalFont}`;
+      ctx.fillText(`<- ${Math.round(DisplayParcel.DGZCape)} DGZCape`, 0.725 * Canv.width, ddy);
+      ctx.font = `bold ${Canv.width / 60}px ${globalFont}`;
 
-    ddy = pres_to_pix(T18.P);
-    ctx.fillText(`<- ${Math.round(DisplayParcel.DGZCape + DisplayParcel.PreDGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
-  } else {
-    ctx.fillStyle = `rgba(200,200,200,1)`;
-    ddy = pres_to_pix(T10.P);
-    ctx.fillText(`<- ${Math.round(DisplayParcel.PreHGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
-    ddy = (pres_to_pix(T30.P) + pres_to_pix(T10.P)) / 2;
-    ctx.font = `bold ${Canv.width / 50}px ${globalFont}`;
-    ctx.fillText(`<- ${Math.round(DisplayParcel.HGZCape)} HGZCape`, 0.725 * Canv.width, ddy - 0.005 * Canv.height);
-    ctx.font = `bold ${Canv.width / 60}px ${globalFont}`;
+      ddy = pres_to_pix(T18.P);
+      ctx.fillText(`<- ${Math.round(DisplayParcel.DGZCape + DisplayParcel.PreDGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
+    } else {
+      ctx.fillStyle = `rgba(200,200,200,1)`;
+      ddy = pres_to_pix(T10.P);
+      ctx.fillText(`<- ${Math.round(DisplayParcel.PreHGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
+      ddy = (pres_to_pix(T30.P) + pres_to_pix(T10.P)) / 2;
+      ctx.font = `bold ${Canv.width / 50}px ${globalFont}`;
+      ctx.fillText(`<- ${Math.round(DisplayParcel.HGZCape)} HGZCape`, 0.725 * Canv.width, ddy - 0.005 * Canv.height);
+      ctx.font = `bold ${Canv.width / 60}px ${globalFont}`;
 
-    ddy = pres_to_pix(T30.P);
-    ctx.fillText(`<- ${Math.round(DisplayParcel.HGZCape + DisplayParcel.PreHGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
-
-
+      ddy = pres_to_pix(T30.P);
+      ctx.fillText(`<- ${Math.round(DisplayParcel.HGZCape + DisplayParcel.PreHGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
+    }
   }
   
   const InitPosTemps = 0.83;
@@ -6172,6 +6234,7 @@ let CUMot = {};
 let rStart = {};
 let WindParams = {
   ['MeanWind']: {},
+  ['SW']: {},
 };
 let CustomWindLayer = {};
 let CustomLapseLayer = {};
@@ -7120,7 +7183,7 @@ function CursorReadout(e, just = false, n = false) {
       let RH = (Lyr.T === "--" || Lyr.D === "--") ? "--" : Math.round(RelHum(Lyr.T, Lyr.D));
       let Omg = (Lyr.OM === "--" || isNaN(Lyr.OM)) ? "--" : Math.round(Lyr.OM * 10000)/100;
       Omg = Omg == null ? "--" : Omg;
-      let LR = Math.round(100 * LapseRatePres(Snding.Sounding, Prs, Prs - 1, false)) / 100;
+      let LR = Math.round(100 * LapseRatePres(Snding.Sounding, Prs, Prs - 1, false, 100)) / 100;
       LR = LR == null ? "--" : LR;
 
       ctx.fillStyle = "rgba(255,255,255,1)";
@@ -8169,6 +8232,7 @@ function DrawSkewTGhost(Sounding, Soundings) {
 
 var DSnding = false;
 var isBoxSounding = true;
+var GlobalEffInflow = [];
 
 /** Draws skew t content.
  * @param {*} Sounding Parameter for DrawSkewT.
@@ -8198,10 +8262,21 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
 
   SetTitle(Sounding);
 
+  let EndSlice = GetLayerByPres(Sounding.Sounding, "Last");
+  let SBParcel = LiftParcel(Sounding.Sounding, "SB");
+  let EffInflow = false;
+  let StartSlice = GetLayerByPres(Sounding.Sounding, "SFC");
+  if (SBParcel.Path == false) {
+    let EffInflow = false;
+  } else {
+    EffInflow = EffInflowCalc(Sounding.Sounding, StartSlice);
+  }
+  GlobalEffInflow = EffInflow;
+
   if (resetStart) {
       userSelectedParcel = defaultParcel;
       userSelectedMotion = defaultMotion;
-      let SMS = GetBM(Sounding.Sounding);
+      let SMS = GetBM(Sounding.Sounding, EffInflow);
       Motions = SMS;
       Motions.RM.y *= -1;
       Motions.LM.y *= -1;
@@ -8258,7 +8333,7 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
     if (setmot !== false){
       CSMot = setmot;
     } else {
-      let SMS = GetBM(Sounding.Sounding);
+      let SMS = GetBM(Sounding.Sounding, EffInflow);
       Motions = SMS;
       Motions.RM.y *= -1;
       Motions.LM.y *= -1;
@@ -8297,7 +8372,7 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
   // ECAPE inside LiftParcel reads the storm motion from the calc module; give it the one in use.
   if (!VWPActive && CSMot && CSMot.x !== undefined) UpdateCSMotStorm(CSMot);
 
-  let SBParcel = LiftParcel(Sounding.Sounding, "SB");
+  SBParcel = LiftParcel(Sounding.Sounding, "SB");
   let MLParcel = LiftParcel(Sounding.Sounding, "ML");
   let MUParcel = LiftParcel(Sounding.Sounding, "MU", 767);
   let CUParcel = LiftParcel(Sounding.Sounding, "CU", 900);
@@ -8312,20 +8387,20 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
           Title: 'C: 950-850mb',
           T: 950,
           B: 850,
-          Lapse: LapseRatePres(Sound, 950, 850, LapseType),
+          Lapse: LapseRatePres(Sound, 950, 850, LapseType, 100),
       }
   } else {
       // Recalculate lapse rate with same bounds but new sounding data (heights or pressures)
       CustomLapseLayer.Lapse = CustomLapseLayer.Mode === "Hght"
-        ? LapseRateHght(Sound, CustomLapseLayer.T, CustomLapseLayer.B, LapseType)
-        : LapseRatePres(Sound, CustomLapseLayer.T, CustomLapseLayer.B, LapseType);
+        ? LapseRateHght(Sound, CustomLapseLayer.T, CustomLapseLayer.B, LapseType, 100)
+        : LapseRatePres(Sound, CustomLapseLayer.T, CustomLapseLayer.B, LapseType, 100);
   }
 
   let DCapeProf = GetDCape(Sounding.Sounding);
 
   GetLapseBox(Sounding.Sounding);
 
-  let StartSlice = GetLayerByPres(Sound, "SFC");
+  StartSlice = GetLayerByPres(Sound, "SFC");
 
   rStart = StartSlice;
 
@@ -8334,13 +8409,7 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
     relStart = JSON.parse(JSON.stringify(StartSlice));
   }
 
-  let EndSlice = GetLayerByPres(Sound, "Last");
-  let EffInflow = false;
-  if (SBParcel.Path == false) {
-    let EffInflow = false;
-  } else {
-    EffInflow = EffInflowCalc(Sounding.Sounding, StartSlice);
-  }
+  
 
   let ESRH = 0;
   // console.log(EffInflow);
@@ -8362,6 +8431,7 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
   let hght2km = GetLayerByHght(Sound, 2000);
 
   if (!userSetCustomWind) {
+      let swv = GetSWV(Sound, hght0km.P, hght2km.P, "Pres", { x: CSMot.x, y: -CSMot.y });
       CustomWindLayer = {
           Title: 'C: 0km-2km',
           T: 0,
@@ -8370,6 +8440,9 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
           SHR: WindShearFind(Sound, "SFC", 2000),
           MW: WindShearFind(Sound, "SFC", 2000, true),
           EHI: 0,
+          SWV: -swv.SWV/swv.LevelHght,
+          CWV: -swv.CWV/swv.LevelHght,
+          SWVPercent: swv.SWPercent
       }
       CustomWindLayer.EHI = GetParams({ DP, SRHAmn: (CustomWindLayer.SRH.SRHP + CustomWindLayer.SRH.SRHM) }, "EHI")
   } else {
@@ -8957,6 +9030,7 @@ function LoadNewShearLyr(Nnn, values = {}) {
       // Find 6km AGL
       let TargetHeight = Sfc.H + 6000;
       let TopL = GetLayerByHght(Snding.Sounding, TargetHeight);
+      let swv = GetSWV(Snding.Sounding, Sfc.P, TopL.P, "Pres", { x: CSMot.x, y: -CSMot.y });
 
       CustomWindLayer = {
         Title: `C: 0km-6km`,
@@ -8965,7 +9039,10 @@ function LoadNewShearLyr(Nnn, values = {}) {
         SRH: GetSRH(Snding.Sounding, Sfc.P, TopL.P, "Pres"),
         SHR: WindShearFind(Snding.Sounding, Sfc.H, TopL.H),
         MW: WindShearFind(Snding.Sounding, Sfc.H, TopL.H, true),
-        EHI: 0
+        EHI: 0,
+        SWV: swv.SWV/swv.LevelHght,
+        CWV: swv.CWV/swv.LevelHght,
+        SWVPercent: swv.SWPercent,
       }
 
       if (DP && CustomWindLayer.SRH) {
@@ -8992,19 +9069,21 @@ function LoadNewShearLyr(Nnn, values = {}) {
       // 2. Get Surface Height in Meters
       let SfcH = GetLayerByPres(Snding.Sounding, "SFC").H;
 
-      // 3. Convert KM input to Meters AGL, then add Surface Height to get MSL
-      // Example: Input "3" -> 3000m + SurfaceHeight
+      // Convert KM input to meters AGL, then add Surface Height to get MSL.
       let StartMetersMSL = SfcH + (StartKM * 1000);
       let EndMetersMSL = SfcH + (EndKM * 1000);
 
-      // 4. Find the closest actual data layers
+      // Find the closest actual data layers
       let LayerStart = GetLayerByHght(Snding.Sounding, StartMetersMSL);
       let LayerEnd = GetLayerByHght(Snding.Sounding, EndMetersMSL);
+
 
       if (!LayerStart || !LayerEnd) {
         emit("error", "Could not find data layers for these heights.");
         return;
       }
+
+      let swv = GetSWV(Snding.Sounding, LayerStart.H, LayerEnd.H, "Hght", { x: CSMot.x, y: -CSMot.y });
 
       // 5. Create Layer Object with KM Title
       CustomWindLayer = {
@@ -9014,7 +9093,10 @@ function LoadNewShearLyr(Nnn, values = {}) {
         SRH: GetSRH(Snding.Sounding, LayerStart.P, LayerEnd.P, "Pres"),
         SHR: WindShearFind(Snding.Sounding, LayerStart.H, LayerEnd.H),
         MW: WindShearFind(Snding.Sounding, LayerStart.H, LayerEnd.H, true),
-        EHI: 0
+        EHI: 0,
+        SWV: swv.SWV/swv.LevelHght,
+        CWV: swv.CWV/swv.LevelHght,
+        SWVPercent: swv.SWPercent,
       }
 
       if (DP && CustomWindLayer.SRH) {
@@ -9047,6 +9129,8 @@ function LoadNewShearLyr(Nnn, values = {}) {
       let LayerBot = GetLayerByPres(Snding.Sounding, P_Bottom);
       let LayerTop = GetLayerByPres(Snding.Sounding, P_Top);
 
+      let swv = GetSWV(Snding.Sounding, LayerBot.H, LayerTop.H, "Hght", { x: CSMot.x, y: -CSMot.y });
+
       CustomWindLayer = {
         Title: `C: ${Math.round(LayerBot.P)}mb-${Math.round(LayerTop.P)}mb`,
         T: LayerBot.P,
@@ -9054,7 +9138,10 @@ function LoadNewShearLyr(Nnn, values = {}) {
         SRH: GetSRH(Snding.Sounding, LayerBot.P, LayerTop.P, "Pres"),
         SHR: WindShearFind(Snding.Sounding, LayerBot.H, LayerTop.H),
         MW: WindShearFind(Snding.Sounding, LayerBot.H, LayerTop.H, true),
-        EHI: 0
+        EHI: 0,
+        SWV: swv.SWV/swv.LevelHght,
+        CWV: swv.CWV/swv.LevelHght,
+        SWVPercent: swv.SWPercent
       }
 
       if (DP && CustomWindLayer.SRH) {
@@ -9073,6 +9160,8 @@ function LoadNewShearLyr(Nnn, values = {}) {
 let userSetCustomLapse = false;
 let userSetCustomWind = false;
 let DisplayStormMotions = false;
+let DisplayEHI = false;
+let DisplayOnMapCape = true;
 
 /** Show every storm motion estimate in the lapse-rate box. Toggles when omitted.
  * @param {*} show Parameter for LoadStormMotions.
@@ -9082,6 +9171,26 @@ function LoadStormMotions(show){
   DisplayStormMotions = typeof show === 'boolean' ? show : !DisplayStormMotions;
   if (Snding && Snding.Sounding) GetLapseBox(Snding.Sounding);
   return DisplayStormMotions;
+}
+
+/** Show EHI in wind box
+ * @param {*} show Parameter for LoadEHIWindBox.
+ * @returns {*} Result of the function.
+ */
+function LoadEHIWindBox(show){
+  DisplayEHI = typeof show === 'boolean' ? show : !DisplayEHI;
+  if (Snding && Snding.Sounding) LoadWithWind(Snding, Info, ghost, currentComparisonSoundings);
+  return DisplayEHI;
+}
+
+/** Show EHI in wind box
+ * @param {*} show Parameter for LoadEHIWindBox.
+ * @returns {*} Result of the function.
+ */
+function LoadOnMapCape(show){
+  DisplayOnMapCape = typeof show === 'boolean' ? show : !DisplayOnMapCape;
+  if (Snding && Snding.Sounding) DrawSkewT(Snding, false, false, currentComparisonSoundings);
+  return DisplayOnMapCape;
 }
 
 /**
@@ -9181,7 +9290,7 @@ function LoadNewLapseLyr(Nnn, values = {}) {
         Mode: "Pres",
         T: LayerBot.P,
         B: LayerTop.P,
-        Lapse: LapseRatePres(Snding.Sounding, LayerBot.P, LayerTop.P, LapseType),
+        Lapse: LapseRatePres(Snding.Sounding, LayerBot.P, LayerTop.P, LapseType, 100),
       }
 
       GetLapseBox(Snding.Sounding);
@@ -9586,12 +9695,15 @@ function DownloadSounding() {
   document.body.removeChild(element);
 }
 
+
 /** Averages multiple soundings.
  * @param {*} Files Parameter for AverageAll.
  * @returns {void} No value.
  */
 function AverageAll(Files) {
   let TF = [];
+
+  
 
   Files.forEach((N) => {
     TF.push(Process(N[1]))//[N[0], Process(N[1])]);
@@ -10050,6 +10162,8 @@ function getState() {
     readOut: ReadOutOn,
     verticalBarsWindSpeed: !noWSBox,
     showStormMotions: DisplayStormMotions,
+    showEhiInWindBox: DisplayEHI,
+    showCapeOnMap: DisplayOnMapCape,
     presets: { WindLapse: Presets.WindLapse, Inset: Presets.Inset, Vertical: Presets.Vertical, SidePanel: SidePanelMode },
     presetOverrides: Object.fromEntries(Object.entries(presetOverrides).map(([k, v]) => [k, v || 'auto'])),
     autoPresets: { ...autoPresets },
@@ -10105,6 +10219,8 @@ function applyState(next = {}, { redraw: doRedraw = true } = {}) {
   if (next.hodographMode === 'Relative' || next.hodographMode === 'Storm') HodoMode = next.hodographMode === 'Relative';
   if (typeof next.verticalBarsWindSpeed === 'boolean') noWSBox = !next.verticalBarsWindSpeed;
   if (typeof next.showStormMotions === 'boolean') DisplayStormMotions = next.showStormMotions;
+  if (typeof next.showEhiInWindBox === 'boolean') DisplayEHI = next.showEhiInWindBox;
+  if (typeof next.showCapeOnMap === 'boolean') DisplayOnMapCape= next.showCapeOnMap;
   if (next.efScale === 'EF2+' || next.efScale === 'EF0+') currentEFScale = next.efScale;
   if (['Default', 'SharpJS', 'CM1'].includes(next.exportFormat)) SoundingExport = next.exportFormat;
   if (PARCELS.includes(next.defaultParcel)) defaultParcel = next.defaultParcel;
@@ -10200,6 +10316,8 @@ const api = {
   setHodographTrimWindProfile,
   ChangeWBox,
   LoadStormMotions,
+  LoadEHIWindBox,
+  LoadOnMapCape,
   // analysis controls
   LoadNewParcel,
   LoadNewWind,

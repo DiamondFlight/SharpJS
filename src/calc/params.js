@@ -5,7 +5,7 @@
  */
 import {
   LiftParcel, GetDCape, EffInflowCalc, GetLayerByPres, GetLayerByHght, GetLayerByTemp,
-  GetSRH, GetParams, WindShearFindP, ConvertPolartoCart,
+  GetSRH, GetParams, WindShearFindP, ConvertPolartoCart, GetSWV,
 } from './skewtCalcs.js';
 
 /**
@@ -41,10 +41,18 @@ export function computeThermo(Sound) {
 export function computeWindParams(Sounding, Info, DP, CSMot, WindParams = { MeanWind: {} }) {
   let Sound = Sounding.Sounding;
   if (!WindParams.MeanWind) WindParams.MeanWind = {};
+  if (!WindParams.SWV) WindParams.SWV = {};
 
   let ESRH = 0;
+  let E_SWP = 0;
+  let E_SWV = 0;
+  let E_CWV = 0;
   let EffInfBot =GetLayerByPres(Sound, 'SFC');
   if (Info.EffInflow != false) {
+    let swvdat = GetSWV(Sound, Info.EffInflow.Bot, Info.EffInflow.Top, "Pres", { x: CSMot.x, y: -CSMot.y });
+    E_SWP = swvdat.SWPercent;
+    E_SWV = swvdat.SWV/swvdat.LevelHght;
+    E_CWV = swvdat.CWV/swvdat.LevelHght;
     ESRH = GetSRH(Sound, Info.EffInflow.Bot, Info.EffInflow.Top, "Pres");
     ESRH = ESRH.SRHP + ESRH.SRHM;
     EffInfBot = GetLayerByPres(Sound, Info.EffInflow.Bot);
@@ -75,8 +83,10 @@ export function computeWindParams(Sounding, Info, DP, CSMot, WindParams = { Mean
     'T-10': GetLayerByTemp(Sound, -10),
     'T-30': GetLayerByTemp(Sound, -30),
   }
-
   WindParams['ESRH'] = ESRH;
+  WindParams['SWV']['ECWV'] = -E_CWV;
+  WindParams['SWV']['ESWV'] = -E_SWV;
+  WindParams['SWV']['ESWVPercent'] = E_SWP;
 
   if (Info.EffInflow != false) {
     WindParams['EHIE'] = GetParams({ DP: DP !== null ? DP : Info.SBParcel, SRHAmn: (ESRH) }, "EHI");
@@ -149,15 +159,23 @@ export function computeWindParams(Sounding, Info, DP, CSMot, WindParams = { Mean
     ['HGZ', 'T-10', 'T-30'],
   ]) {
     if (Surfaces[x[1]].isAbove == true || Surfaces[x[2]].isAbove == true){
-      WindParams[`SRH${x[0]}`] = GetSRH(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P-1, "Pres", CSMot);
-      WindParams[`BWD${x[0]}`] = WindShearFindP(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P-1);
+      WindParams[`SRH${x[0]}`] = GetSRH(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P, "Pres", CSMot);
+      WindParams[`BWD${x[0]}`] = WindShearFindP(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P);
       WindParams[`EHI${x[0]}`] = GetParams({ DP: DP !== null ? DP : Info.SBParcel, SRHAmn: (WindParams[`SRH${x[0]}`].SRHP + WindParams[`SRH${x[0]}`].SRHM) }, "EHI")
-      WindParams['MeanWind'][`M${x[0]}`] = WindShearFindP(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P-1, true);
+      WindParams['MeanWind'][`M${x[0]}`] = WindShearFindP(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P, true);
+      let dataswv = GetSWV(Sound, Surfaces[x[1]].H, Surfaces[x[2]].H, "Hght", { x: CSMot.x, y: -CSMot.y });
+      WindParams['SWV'][`SWV${x[0]}`] = dataswv.SWV/dataswv.LevelHght;
+      WindParams['SWV'][`CWV${x[0]}`] = dataswv.CWV/dataswv.LevelHght;
+      WindParams['SWV'][`SWPercent${x[0]}`] = dataswv.SWPercent; // Need to change to acculumation
     } else {
       WindParams[`SRH${x[0]}`] = GetSRH(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P, "Pres", CSMot);
       WindParams[`BWD${x[0]}`] = WindShearFindP(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P);
       WindParams[`EHI${x[0]}`] = GetParams({ DP: DP !== null ? DP : Info.SBParcel, SRHAmn: (WindParams[`SRH${x[0]}`].SRHP + WindParams[`SRH${x[0]}`].SRHM) }, "EHI")
       WindParams['MeanWind'][`M${x[0]}`] = WindShearFindP(Sound, Surfaces[x[1]].P, Surfaces[x[2]].P, true);
+      let dataswv = GetSWV(Sound, Surfaces[x[1]].H, Surfaces[x[2]].H, "Hght", { x: CSMot.x, y: -CSMot.y });
+      WindParams['SWV'][`SWV${x[0]}`] = dataswv.SWV/dataswv.LevelHght;
+      WindParams['SWV'][`CWV${x[0]}`] = dataswv.CWV/dataswv.LevelHght;
+      WindParams['SWV'][`SWPercent${x[0]}`] = dataswv.SWPercent; // Need to change to acculumation
     }
   }
 
