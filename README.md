@@ -3,7 +3,7 @@
 Interactive Skew-T / hodograph sounding analysis that runs in the browser, plus a headless
 calculation core for Node and workers.
 
-![SharpJS showing the 18z launch for BNA from the 1974 Super Outbreak](app/public/SharpJS_Sounding_kbna_19740403_1800.png)
+![SharpJS showing a BUFKIT sounding from RAP during the 4/26/2024 outbreak, with a 3D Hodograph](app/public/SharpJS_Sounding_rap_04_26_2024_18z_f003_valid_04_26_2024_21z_location_41_30n_95_90w.png)
 
 **Try it:** <https://diamondflight.github.io/sharpjs/>. Open a sounding file or drop it on the chart, pick a sample, or pull archived data.
 
