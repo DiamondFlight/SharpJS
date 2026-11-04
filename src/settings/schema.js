@@ -32,6 +32,8 @@ export const SETTINGS_SCHEMA = {
   verticalBarsWindSpeed: isBool,
   showStormMotions: isBool,
   showEhiInWindBox: isBool,
+  show3DHodograph: isBool,
+  show3DHodoArrows: isBool,
   showCapeOnMap: isBool,
   presetOverrides: (v) =>
     v !== null && typeof v === 'object' &&
@@ -59,6 +61,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   verticalBarsWindSpeed: true,
   showStormMotions: false,
   showEhiInWindBox: false,
+  show3DHodograph: false,
+  show3DHodoArrows: false,
   showCapeOnMap: true,
   presetOverrides: Object.freeze({ WindLapse: 'auto', Inset: 'auto', Vertical: 'auto', SidePanel: 'auto' }),
   efScale: 'EF2+',

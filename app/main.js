@@ -14,8 +14,13 @@ const storage = {
   },
 };
 
+const controls = "https://acarsproxy.sharpjsteam.workers.dev/soundings/acars/"
+  ? { acarsBaseUrl:"https://acarsproxy.sharpjsteam.workers.dev/soundings/acars/" }
+  : undefined;
+
 const chart = SharpJS('#chart', {
   sources,
+  controls,
   persist: 'auto',
   onLoad(sounding) {
     // Remember the last sounding so a reload brings it back (best effort; the text is small).

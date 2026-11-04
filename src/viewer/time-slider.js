@@ -84,7 +84,7 @@ export function createTimeSlider(element, stage, controls, doc, onSelect) {
     }
     selected = next;
     range.value = String(selected);
-    label.value = formatTime(items[selected].time);
+    label.value = `${formatTime(items[selected].time)}${items[selected].station ? ` · ${items[selected].station}` : ''}`;
     label.textContent = label.value;
     onSelect(selected, items[selected], reset);
   }
@@ -215,4 +215,20 @@ export function expandBufkitTimeSeries(soundings) {
       disabled: !sounding,
     };
   });
+}
+
+/**
+ * Convert ACARS soundings into report-time timeline items.
+ * @param {object[]} soundings ACARS soundings with archiveTime and station metadata.
+ * @returns {object[]} Items ordered by report time and station code.
+ */
+export function expandAcarsTimeSeries(soundings) {
+  return soundings.map((sounding) => {
+    const time = Date.parse(sounding.meta?.archiveTime);
+    const station = String(sounding.meta?.station || '');
+    if (!Number.isFinite(time) || !station) {
+      throw new Error('SharpJS: ACARS timeline requires a valid archive time and station');
+    }
+    return { kind: 'acars', time, station, sounding };
+  }).sort((a, b) => a.time - b.time || a.station.localeCompare(b.station));
 }

@@ -3,8 +3,8 @@
  * { controls: false } to SharpJS() and call the handle / engine methods instead.
  */
 import { PRESET_VALUES } from '../settings/schema.js';
-import { createBufkitMapButton } from '../io/bufkit_map.js';
-import { expandBufkitTimeSeries } from './time-slider.js';
+import { createBufkitMapButton, createStationMapButton, mapAviationStationCodes } from '../io/bufkit_map.js';
+import { expandAcarsTimeSeries, expandBufkitTimeSeries } from './time-slider.js';
 
 const PARCELS = [
   ['SB', 'Surface-Based'],
@@ -75,6 +75,20 @@ function h(doc, tag, attrs = {}, ...children) {
 
 const utcDate = (d) => d.toISOString().slice(0, 10);
 
+function selectedArchiveHour(dateValue, hourValue, name) {
+  const hour = Number(hourValue);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue) || String(hourValue).trim() === '' ||
+    !Number.isInteger(hour) || hour < 0 || hour > 23) {
+    throw new Error(`Choose a valid ${name} archive date and hour`);
+  }
+  const end = new Date(`${dateValue}T${String(hour).padStart(2, '0')}:00:00Z`);
+  if (Number.isNaN(end.getTime()) || utcDate(end) !== dateValue) {
+    throw new Error(`Choose a valid ${name} archive date and hour`);
+  }
+  if (end.getTime() > Date.now()) throw new Error(`${name} archive time must not be in the future`);
+  return end;
+}
+
 /** Most recent 00/12 Z launch at least 2 h old. */
 function lastSynoptic(now = new Date()) {
   const d = new Date(now.getTime() - 2 * 3600 * 1000);
@@ -100,6 +114,8 @@ export function createControls(host, {
   const opts = options && typeof options === 'object' ? options : {};
   let currentSources = sources;
   let bufkitMap = null;
+  let acarsMap = null;
+  let vwpMap = null;
   const bufkitCache = new Map();
   const refs = {};
   const sections = {};
@@ -308,10 +324,100 @@ export function createControls(host, {
       );
       refs.bufkitModel.value = 'rap';
     }
+    if (currentSources.fetchAcarsArchive) {
+      if (currentSources.listAcarsArchive) {
+        acarsMap ??= createStationMapButton({
+          document: doc,
+          host,
+          title: 'ACARS reports in the selected window',
+          buttonLabel: 'Show ACARS coverage map…',
+          mapLabel: 'ACARS locations',
+          footerText: 'Markers show airports with reports in the selected six-hour window. Click a marker to filter by station.',
+          metadataLabel: 'Aviation Weather Center',
+          metadataUrl: 'https://aviationweather.gov/',
+          async getStations() {
+            const time = selectedArchiveHour(refs.acarsDate.value, refs.acarsHour.value, 'ACARS');
+            const reports = await currentSources.listAcarsArchive({
+              time,
+              ...(opts.acarsBaseUrl ? { baseUrl: opts.acarsBaseUrl } : {}),
+            });
+            const codes = [...new Set(reports.map((report) => report.station))];
+            const stations = await mapAviationStationCodes(codes);
+            const missing = codes.length - stations.length;
+            const message = stations.length
+              ? `${stations.length} airport${stations.length === 1 ? '' : 's'} have ACARS reports${missing ? `; ${missing} station code${missing === 1 ? '' : 's'} lack map metadata` : ''}.`
+              : 'No ACARS reports are available for this window.';
+            return { stations, message };
+          },
+          onSelect: (station) => { refs.acarsStation.value = station; },
+        });
+      }
+      const archiveEnd = new Date();
+      archiveEnd.setUTCMinutes(0, 0, 0);
+      children.push(
+        H('div', { class: 'sjs-sub' }, 'Aircraft Soundings (ACARS)'),
+        fieldRow(2,
+          field('ACARS date (UTC)', input('acarsDate', {
+            type: 'date',
+            max: utcDate(new Date()),
+            value: utcDate(archiveEnd),
+          })),
+          field('ACARS hour (UTC)', input('acarsHour', {
+            type: 'number',
+            min: 0,
+            max: 23,
+            value: archiveEnd.getUTCHours(),
+          }))),
+        field('Station filter (optional)', input('acarsStation', {
+          placeholder: 'All stations',
+          value: opts.acarsStation || '',
+          autocomplete: 'off',
+        })),
+        ...(acarsMap ? [row(1, acarsMap.button)] : []),
+        row(1, button('Load 6-hour ACARS archive', () => run('Loading ACARS archive…', async () => {
+          const time = selectedArchiveHour(refs.acarsDate.value, refs.acarsHour.value, 'ACARS');
+          setTimeSeries([]);
+          setTimeSeriesLoading(true);
+          try {
+            const soundings = await currentSources.fetchAcarsArchive({
+              time,
+              ...(opts.acarsBaseUrl ? { baseUrl: opts.acarsBaseUrl } : {}),
+              ...(refs.acarsStation.value.trim() ? { station: refs.acarsStation.value.trim() } : {}),
+              onSounding(_sounding, progress) {
+                status(`Loaded ACARS report ${progress.index} of ${progress.total}`);
+              },
+            });
+            const timeline = expandAcarsTimeSeries(soundings);
+            setTimeSeries(timeline, timeline.length - 1);
+          } finally {
+            setTimeSeriesLoading(false);
+          }
+        }))),
+        H('p', { class: 'sjs-hint' }, 'Loads reports from the inclusive six hours ending at the selected UTC hour. Use the slider to browse reports by time and station. For cross-origin hosting, configure controls.acarsBaseUrl to a CORS-enabled archive proxy.'),
+      );
+    }
     if (currentSources.fetchNexradVwp) {
+      if (currentSources.fetchNexradVwpRadarStations) {
+        vwpMap ??= createStationMapButton({
+          document: doc,
+          host,
+          title: 'Choose a NEXRAD radar',
+          buttonLabel: 'Choose radar from map…',
+          mapLabel: 'NEXRAD VWP radar sites',
+          footerText: 'The map shows WSR-88D radar locations. Select a radar, then load its archived volumes for the chosen time window.',
+          metadataLabel: 'National Weather Service',
+          metadataUrl: 'https://api.weather.gov/radar/stations',
+          async getStations() {
+            const stations = await currentSources.fetchNexradVwpRadarStations();
+            return { stations, message: `${stations.length} WSR-88D radar sites in the NWS network.` };
+          },
+          onSelect: (radar) => { refs.vwpRadar.value = radar; },
+        });
+      }
       children.push(
         H('div', { class: 'sjs-sub' }, 'NEXRAD VAD Wind Profile'),
         field('Radar', input('vwpRadar', { placeholder: 'OAX', value: opts.vwpRadar || 'OAX', autocomplete: 'off' })),
+        ...(vwpMap ? [row(1, vwpMap.button)] : []),
         ...(currentSources.fetchNexradVwpArchive ? [field('Archive date (UTC)', input('vwpDate', {
           type: 'date',
           min: '2020-01-01',
@@ -330,15 +436,10 @@ export function createControls(host, {
             handle.setVwp(snd);
           })),
           (refs.vwpExit = button('Back to sounding', () => handle.setVwp(null)))),
-        ...(currentSources.fetchNexradVwpArchive ? [row(1, button('Load 3-hour VWP archive', () => run('Loading VWP archive…', async () => {
-          const hour = Number(refs.vwpHour.value);
-          if (!refs.vwpDate.value || !Number.isInteger(hour) || hour < 0 || hour > 23) {
-            throw new Error('Choose a valid VWP archive date and hour');
-          }
-          const end = new Date(`${refs.vwpDate.value}T${String(hour).padStart(2, '0')}:00:00Z`);
-          if (end.getTime() > Date.now()) throw new Error('VWP archive time must not be in the future');
+        ...(currentSources.fetchNexradVwpArchive ? [row(1, button('Load 6-hour VWP archive', () => run('Loading VWP archive…', async () => {
+          const end = selectedArchiveHour(refs.vwpDate.value, refs.vwpHour.value, 'VWP');
           const archiveStart = Date.UTC(2020, 0, 1);
-          const start = new Date(Math.max(end.getTime() - 3 * 60 * 60 * 1000, archiveStart));
+          const start = new Date(Math.max(end.getTime() - 6 * 60 * 60 * 1000, archiveStart));
           const items = [];
           setTimeSeries([]);
           setTimeSeriesLoading(true);
@@ -358,7 +459,7 @@ export function createControls(host, {
             setTimeSeriesLoading(false);
           }
         })))] : []),
-        H('p', { class: 'sjs-hint' }, 'Uses the loaded sounding for temperature/moisture, or a standard atmosphere.'),
+        H('p', { class: 'sjs-hint' }, 'Loads radar volumes from the inclusive six hours ending at the selected UTC hour. Uses the loaded sounding for temperature/moisture, or a standard atmosphere.'),
       );
     }
     archive.append(...children);
@@ -379,14 +480,19 @@ export function createControls(host, {
   const displaySection = section('display', 'Display',
     H('div', { class: 'sjs-stack' },
       toggle('verticalBars', 'Vertical bars', () => engine.ChangeWBox()),
+      toggle('ehiInWindBox', 'EHI within Wind Box', () => engine.LoadEHIWindBox()),
+      toggle('onMapCape', 'HGZ/DGZ Cape on Skew-T', () => engine.LoadOnMapCape()),
+      toggle('skew', 'Skew-T skew', () => engine.ChangeStateSkewTSkew()),
+      toggle('stormMotions', 'Storm motions', () => engine.LoadStormMotions()),
+    ),
+    H('div', { class: 'sjs-sub' }, 'Hodograph'),
+    H('div', { class: 'sjs-stack' },
+      toggle('hodograph3d', '3D Hodograph', () => engine.Load3DHodograph()),
+      toggle('hodograph3DArrows', '3D Hodograph Arrows', () => engine.Load3DHodoArrows()),
       toggle('hodoNumbers', 'Hodograph heights', () => engine.ChangeStateHodographNumbers()),
       toggle('colorTable', 'Hodograph colors', () => engine.ChangeStateHodographColorTable()),
       toggle('hodoScale', 'Hodograph scale', () => engine.ChangeStateDynamicHodo()),
       toggle('trimWind', 'Hodograph wind', () => engine.setHodographTrimWindProfile(!engine.getState().hodographTrimWindProfile)),
-      toggle('stormMotions', 'Storm motions', () => engine.LoadStormMotions()),
-      toggle('ehiInWindBox', 'EHI within Wind Box', () => engine.LoadEHIWindBox()),
-      toggle('onMapCape', 'HGZ/DGZ Cape on Skew-T', () => engine.LoadOnMapCape()),
-      toggle('skew', 'Skew-T skew', () => engine.ChangeStateSkewTSkew()),
     ),
     field('Hodograph mode', select('hodoMode', { Relative: 'Hodo-relative (centered)', Storm: 'Storm-relative (fixed)' }, { onchange: (e) => engine.SetHodoMode(e.target.value) })),
     field('Units', select('units', UNITS, { onchange: (e) => engine.applyState({ units: e.target.value }) })),
@@ -537,6 +643,8 @@ export function createControls(host, {
     setToggle('trimWind', state.hodographTrimWindProfile ? 'Trimmed' : 'Full resolution', !state.hodographTrimWindProfile);
     setToggle('stormMotions', state.showStormMotions ? 'Shown' : 'Hidden', state.showStormMotions);
     setToggle('ehiInWindBox', state.showEhiInWindBox ? 'Shown' : 'Hidden', state.showEhiInWindBox);
+    setToggle('hodograph3d', state.show3DHodograph ? 'Shown' : 'Hidden', state.show3DHodograph);
+    setToggle('hodograph3DArrows', state.show3DHodoArrows ? 'Shown' : 'Hidden', state.show3DHodoArrows);
     setToggle('onMapCape', state.showCapeOnMap ? 'Shown' : 'Hidden', state.showCapeOnMap);
     setToggle('skew', SKEWS[state.skewTSkew] || 'Default', state.skewTSkew !== 0.75);
     setToggle('readout', state.readOut ? 'On' : 'Off', state.readOut);
@@ -600,6 +708,8 @@ export function createControls(host, {
       removeLoadListener?.();
       clearTimeout(statusTimer);
       bufkitMap?.destroy();
+      acarsMap?.destroy();
+      vwpMap?.destroy();
       host.innerHTML = '';
     },
   };

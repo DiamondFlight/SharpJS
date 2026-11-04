@@ -10,10 +10,10 @@ const globalFont = '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
  * @param {*} Sounding 
  * @param {*} lowerBound 
  * @param {*} upperBound 
- * @param {*} unit 
+ * @param {"Pres" | "Hght"} unit 
  * @returns 
  */
-function getLayersWithinBounds(Sounding, lowerBound, upperBound, unit) {
+export function getLayersWithinBounds(Sounding, lowerBound, upperBound, unit) {
   let Lower;
   let Upper;
   if (unit == "Pres"){
@@ -463,7 +463,7 @@ export function WindShear(L1, L2) {
  * motions, and deviant tornado motions.
  * @param {object} Sounding Sounding profile (pressure in hPa, height in m, wind in kt).
  * @param {object} EffInflows Effective Inflow Layer to save a ton of computational time
- * @returns {object} Named storm-motion vectors RM, LM, MM, US, DS, DTMR, and DTML;
+ * @returns {{ RM: any, LM: any, MM: any, US: any, DS: any, DTMR: any, DTML: any }} Named storm-motion vectors RM, LM, MM, US, DS, DTMR, and DTML;
  * each x/y component is in kt.
  * @see Bunkers et al. (2000), Predicting supercell motion using a new hodograph technique,
  * https://doi.org/10.1175/1520-0434(2000)015%3C0061:PSMUAN%3E2.0.CO;2
@@ -2268,7 +2268,7 @@ export function GetParams(Info, Type, STPF = false) {
     let esrhT = Info.Wnd.ESRH / 50;
     let ebwdT = EBWD / 20;
 
-    return Math.round(10 * mucapeT * esrhT * ebwdT) / 10;
+    return Math.round(100 * mucapeT * esrhT * ebwdT) / 100;
   } else if (Type == "STPF") {
     let sblcl = Info.Parcels.SB.LCL;
 
@@ -2293,7 +2293,7 @@ export function GetParams(Info, Type, STPF = false) {
     let cape = Info.Parcels.SB.Cape / 1500;
     let srh = (Info.Wnd.SRH01.SRHP + Info.Wnd.SRH01.SRHM) / 150;
 
-    return Math.round(10 * (cape * srh * bwd * sblcl)) / 10;
+    return Math.round(100 * (cape * srh * bwd * sblcl)) / 100;
   } else if (Type == "STPC") {
     let cape = Info.Parcels.ML.Cape / 1500;
     let srh = Info.Wnd.ESRH / 150;
@@ -2328,7 +2328,7 @@ export function GetParams(Info, Type, STPF = false) {
       mlcin = (mlcin + 200) / 150;
     }
 
-    return Math.round(10 * (cape * srh * ebwd * mllcl * mlcin)) / 10;
+    return Math.round(100 * (cape * srh * ebwd * mllcl * mlcin)) / 100;
   } else if (Type == "VTPC") {
     let cape = Info.Parcels.ML.Cape / 1700;
     let srh = Info.Wnd.ESRH / 250;
@@ -2382,7 +2382,7 @@ export function GetParams(Info, Type, STPF = false) {
       MLLR = clamp((MLLR-4.5)/2, 0, 2);
     }
 
-    return Math.round(10 * (cape * srh * ebwd * mllcl * mlcin * cape3 * MLLR)) / 10;
+    return Math.round(100 * (cape * srh * ebwd * mllcl * mlcin * cape3 * MLLR)) / 100;
   } else if (Type == "SHIP") {
     let Mucape = Info.Parcels.MU.Cape;
     let PrclStart = Info.Parcels.MU.Start;
@@ -2410,7 +2410,7 @@ export function GetParams(Info, Type, STPF = false) {
       Ship *= (FZL.H / 2400)
     }
 
-    return Math.round(10 * Ship) / 10;
+    return Math.round(100 * Ship) / 100;
   } else if (Type == "WNDG") {
     let lr03 = LapseRateHght(Info.Sounding.Sounding, "SFC", 3000, false);
 
@@ -2432,7 +2432,7 @@ export function GetParams(Info, Type, STPF = false) {
 
     meanW = Math.sqrt(Math.pow(meanW.x, 2) + Math.pow(meanW.y, 2));
 
-    return Math.round(10 * (lr03 / 9) * (50 + mlcin) / 40 * cape / 2000 * meanW / 15) / 10;
+    return Math.round(100 * (lr03 / 9) * (50 + mlcin) / 40 * cape / 2000 * meanW / 15) / 100;
   } else if (Type == "PWAT") {
     let snd = Info.Sounding.Sounding;
     return calculatePWAT(snd.P, snd.D);
@@ -2443,7 +2443,7 @@ export function GetParams(Info, Type, STPF = false) {
     let MeanW = MeanWind(Info.Sounding.Sounding, PB, PT);
     let meanW = Math.sqrt(Math.pow(MeanW.x, 2) + Math.pow(MeanW.y, 2));
 
-    return Math.round(10 * (Info.TProf.DCapeProf.DCape / 980) * (Info.Parcels.MU.Cape / 2000) * (Shear06 / 20) * (meanW / 16)) / 10;
+    return Math.round(100 * (Info.TProf.DCapeProf.DCape / 980) * (Info.Parcels.MU.Cape / 2000) * (Shear06 / 20) * (meanW / 16)) / 100;
   } else if (Type == "EHI") {
     let cape = Info.DP.Cape;
 
@@ -2990,13 +2990,15 @@ export function GetCapeColor(N) {
  * @param {boolean} retrn Return the computed subset as an object instead of drawing (in 1).
  * @param {object|false} f Optional preset configuration to activate before rendering (in 1).
  * @param {HTMLCanvasElement|null} canvas Destination canvas; uses the default values canvas when null (in px).
+ * @param {'default'|'metric'} units Display units for drawn parameter values (in 1).
  * @returns {object|void} When retrn is true, an object of named analysis values with their
  * field-specific units (including CAPE/DCAPE in J/kg, heights in m, temperatures in F or C,
  * PWAT in in, mixing ratio in g/kg, and relative humidity in %); otherwise draws to the canvas
  * and returns no value (in 1).
  */
-export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false, f = false, canvas = null) {
+export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false, f = false, canvas = null, units = 'default') {
   let Parcels = { SB, ML, MU };
+  const metric = units === 'metric';
   let Scalex = 0;
   let Scaley = 0.8;
   let MScaleY = 6;
@@ -3046,8 +3048,15 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   let LowRH = Math.round(RelHum(Low.T, Low.D));
   let DerechoComp = GetParams({ Wnd, Sounding, Parcels, TProf }, "DerechoComp");
   let LCLTemp = Math.round(CToF(D[1]));
+  const lclTempDisplay = metric ? Math.round(D[1]) : LCLTemp;
   let ConvT = GetParams({ Sounding, Parcels }, "ConvT");
   let MaxT = GetParams({ Sounding, Parcels }, "MaxT");
+  const displayTemp = (value) => value === "--" ? value : metric ? Math.round(FtoC(Number(value))) : value;
+  const convTDisplay = displayTemp(ConvT === "--" ? ConvT : Math.round(ConvT));
+  const maxTDisplay = displayTemp(MaxT);
+  const displayPwat = (value) => value == null || !Number.isFinite(Number(value))
+    ? '--'
+    : metric ? `${(Number(value) * 25.4).toFixed(1)} mm` : `${value} in`;
   let TEHI = Math.round(GetParams({ Sounding, Parcels, Wnd }, "TEHI") * 100) / 100;
   let TTS = Math.round(GetParams({ Sounding, Parcels, Wnd }, "TTS") * 100) / 100;
   let MMR = Math.round(100 * mean_mixratio(Sounding.Sounding, Sfc.P, Low.P)) / 100;
@@ -3126,7 +3135,7 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     ctx.fillRect((0.25 * i) * Canv.width, 0.05 * Canv.height, 1, 0.9 * Canv.height);
   }
 
-  Scaley = CreateInsetParams(`PWAT: `, `${PWAT} in`, MixRatioColor(PWAT * 7.5), 1, Coloumns, Scaley, MScaleY, Canv, ctx);
+  Scaley = CreateInsetParams(`PWAT: `, displayPwat(PWAT), MixRatioColor(PWAT * 7.5), 1, Coloumns, Scaley, MScaleY, Canv, ctx);
   Scaley = CreateInsetParams(`Mean Mix Rat:`, `${MMR} g/kg`, MixRatioColor(MMR), 1, Coloumns, Scaley, MScaleY, Canv, ctx);
   Scaley = CreateInsetParams(`Sfc RelH:`, `${SfcRH}%`, WhiteColorBase, 1, Coloumns, Scaley, MScaleY, Canv, ctx);
   Scaley = CreateInsetParams(`Low RelH:`, `${LowRH}%`, WhiteColorBase, 1, Coloumns, Scaley, MScaleY, Canv, ctx);
@@ -3140,18 +3149,18 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${Math.round(ConvT)} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
     Scaley = CreateInsetParams(`TEHI:`, `${TEHI}`, GetSTPColor(TEHI * 1.5), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`TTS:`, `${TTS}`, GetSTPColor(TTS * 1.5), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(SCP), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`STP (cin):`, `${STPC}`, GetSTPColor(STPC), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(STPF), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`VTP (mod):`, `${VTPC}`, GetSTPColor(VTPC), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(Math.abs(SCP)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`STP (cin):`, `${STPC}`, GetSTPColor(Math.abs(STPC)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(Math.abs(STPF)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`VTP (mod):`, `${VTPC}`, GetSTPColor(Math.abs(VTPC)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
@@ -3164,17 +3173,17 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${Math.round(ConvT)} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
     Scaley = CreateInsetParams(`K Index:`, `${KIndex}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`TT Index:`, `${TTIndex}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(SCP), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(Math.abs(SCP)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Bulk Rich. Num.:`, `${BRN}`, GetSTPColor(BRN * 3), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(STPF), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(Math.abs(STPF)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`SigSvr:`, `${SigSvr} m³/s³`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
@@ -3187,9 +3196,9 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${ConvT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
@@ -3214,16 +3223,16 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${Math.round(ConvT)} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
     Scaley = CreateInsetParams(`400mb Max WB:  `, `${MaxWB}C`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DGZ Depth: `, `${Math.round(LayerDepth)}m`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DGZ Omega:`, `${Math.round(100 * DGOmega) / 100}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`DGZ Pwat:`, `${Math.round(100 * DGPWAT) / 100}in`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`DGZ Pwat:`, displayPwat(metric ? DGPWAT : Math.round(100 * DGPWAT) / 100), WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DGZ Mix. Rat.:`, `${Math.round(100 * DGMX) / 100}g/kg`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Avg DGZ RH:`, `${avgDGZ_RH}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
 
@@ -3231,22 +3240,22 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   }
 
   if (Presets['Inset'] == "Fire" || Presets['Inset'] == "Winter"){
-    Scaley = CreateInsetParams(`Feels Like:`, `${Math.round(FeelsLike)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Feels Like:`, `${displayTemp(Math.round(FeelsLike))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`1k-500mb Dpth:`, `${Math.round(thick1000500)} m`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${Math.round(WBGT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${displayTemp(Math.round(WBGT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DCape:`, `${Math.round(DCape)} J/kg`, GetCapeColor(DCape * 2), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DParcel Pres:`, `${Math.round(TProf.DCapeProf.StartPres.P)}mb`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`DownT:`, `${Math.round(DownT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`DownT:`, `${displayTemp(Math.round(DownT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
   } else if (Presets['Inset'] == "Severe" || Presets['Inset'] == "Default"){
     Scaley = CreateInsetParams(`SHIP:`, `${SHIP}`, GetSTPColor(SHIP * 2), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`LHP`, `${Math.round(LHP)}`, GetSTPColor(LHP / 3), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`WNDG:`, `${WNDG}`, GetSTPColor(WNDG * 1.1), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Derecho Comp:`, `${DerechoComp}`, GetSTPColor(DerechoComp / 1.75), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DCape:`, `${Math.round(DCape)} J/kg`, GetCapeColor(DCape * 2), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`DownT:`, `${Math.round(DownT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`DownT:`, `${displayTemp(Math.round(DownT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
   } else if (Presets['Inset'] == 'Ambient'){
-    Scaley = CreateInsetParams(`Feels Like:`, `${Math.round(FeelsLike)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${Math.round(WBGT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Feels Like:`, `${displayTemp(Math.round(FeelsLike))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${displayTemp(Math.round(WBGT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Rad. Fog Pt.:`, `${Math.round(RFP)} C`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Fog Threat Val.:`, `${Math.round(100 * FTV)/100} C`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Fog Stab. Idx:`, `${Math.round(FSI * 100)/100}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);

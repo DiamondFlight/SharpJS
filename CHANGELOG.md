@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.2 - 2026-11-4
+
+### Added
+- ACARS archive loading for the preceding six hours, with airport coverage mapping and a report time slider.
+- A NEXRAD radar-site map for choosing the radar before loading its six-hour VWP archive.
+- 3D Hodographs with an option to switch between Storm-relative arrows and clean.
+- Sounding titles show the nearest mapped town, rounded distance in miles, compass direction, and state/province when available.
+
+### Changed
+- The archive controls now surface the ACARS and VWP lookup workflow more directly through coverage maps and
+  radar/airport selection rather than basic file picking alone.
+
+
+### Fixed
+- STP, SCP, VTP, and other SRH-based controls use value magnitude for color thresholds, including negative left-motion values.
+- Metric units apply to inset parameter temperatures (°C) and precipitable water (mm); heights remain in meters.
+
 ## 1.7.1 — 2026-10-27
 
 ### Added

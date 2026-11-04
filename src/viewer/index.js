@@ -25,7 +25,7 @@ import { createTimeSlider, expandBufkitTimeSeries } from './time-slider.js';
 const ENGINE_SETTINGS = [
   'units', 'skewTSkew', 'hodographNumbers', 'hodographColorTable', 'hodographScaleMode',
   'hodographTrimWindProfile', 'hodographMode', 'readOut', 'verticalBarsWindSpeed', 'showStormMotions', 
-  'showEhiInWindBox', 'showCapeOnMap',
+  'showEhiInWindBox', 'show3DHodograph', 'show3DHodoArrows', 'showCapeOnMap',
   'presetOverrides', 'efScale', 'defaultParcel', 'defaultMotion', 'exportFormat',
 ];
 

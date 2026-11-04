@@ -34,6 +34,30 @@ async function mockNetwork(context) {
     }
     return r.fulfill({ body: fixture('OAX_NVW_2024_05_26_12_01_43') });
   });
+  const acarsText = sampleText('koun-1999-05-04-00z.txt').replace('KOUN 19990504/0000', 'SAN 260320/1600');
+  await context.route('https://sharp.weather.ou.edu/soundings/acars/**', (r) => {
+    const url = new URL(r.request().url());
+    if (url.pathname.endsWith('/2026/03/20/16/')) {
+      return r.fulfill({ body: '<a href="SAN_1600.txt">SAN_1600.txt</a>', contentType: 'text/html' });
+    }
+    if (url.pathname.endsWith('/SAN_1600.txt')) {
+      return r.fulfill({ body: acarsText, contentType: 'text/plain' });
+    }
+    return r.fulfill({ status: 404 });
+  });
+  await context.route('https://api.weather.gov/radar/stations', (r) => r.fulfill({
+    contentType: 'application/geo+json',
+    body: JSON.stringify({
+      features: [{
+        properties: { id: 'KOAX', name: 'Omaha', stationType: 'WSR-88D' },
+        geometry: { coordinates: [-96.367, 41.32] },
+      }],
+    }),
+  }));
+  await context.route('https://tile.openstreetmap.org/**', (r) => r.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+  }));
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ body: '', contentType: 'text/css' }));
 }
 
@@ -273,12 +297,27 @@ try {
     });
     assert(sliderGeometry.height <= 50, `slider exceeds 5% of 1000px viewport: ${sliderGeometry.height}px`);
     assert(sliderGeometry.left >= sliderGeometry.stageLeft - 1 && sliderGeometry.right <= sliderGeometry.stageRight + 1, 'slider extends beyond chart display width');
+    await app.locator('#chart .sjs-section-nav').getByRole('button', { name: 'Archive' }).click();
+    await app.getByLabel('ACARS date (UTC)').fill('2026-03-20');
+    await app.getByLabel('ACARS hour (UTC)').fill('16');
+    await app.getByRole('button', { name: 'Show ACARS coverage map…' }).click();
+    await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').waitFor();
+    assert(await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').count() === 1, 'ACARS map did not show the available airport');
+    await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').click();
+    assert(await app.getByLabel('Station filter (optional)').inputValue() === 'SAN', 'ACARS map did not select its station');
+    await app.getByRole('button', { name: 'Load 6-hour ACARS archive' }).click();
+    await app.waitForFunction(() => window.sharpjs.getSounding()?.meta?.station === 'SAN');
+    assert((await app.locator('#chart .sjs-timeslider output').textContent()).includes('· SAN'), 'ACARS slider did not identify the station');
     await app.getByRole('button', { name: 'Latest VWP' }).click();
     await app.waitForFunction(() => window.sharpjs.getState().vwpActive);
     await app.getByRole('button', { name: 'Back to sounding' }).click();
+    await app.getByRole('button', { name: 'Choose radar from map…' }).click();
+    await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').waitFor();
+    await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').click();
+    assert(await app.getByLabel('Radar', { exact: true }).inputValue() === 'OAX', 'VWP map did not select the radar');
     await app.getByLabel('Archive date (UTC)').fill('2024-05-26');
     await app.getByLabel('Archive hour (UTC)').fill('13');
-    await app.getByRole('button', { name: 'Load 3-hour VWP archive' }).click();
+    await app.getByRole('button', { name: 'Load 6-hour VWP archive' }).click();
     await app.waitForFunction(() => window.sharpjs.getState().vwpActive && document.querySelector('#chart .sjs-timeslider output')?.textContent.includes('2024-05-26'));
     assert(await app.locator('#chart .sjs-timeslider').isVisible(), 'VWP archive time slider is hidden');
     assert(await app.locator('#chart .sjs-time-play').isHidden(), 'VWP playback should be disabled by default');
@@ -288,7 +327,7 @@ try {
     await app.waitForFunction(() => window.sharpjs?.getState().hasSounding);
     st = await app.evaluate(() => window.sharpjs.getState());
     assert(st.units === 'metric', `units after reload ${st.units}`);
-    assert(/RAP 05-26-2024/.test(st.title), `last sounding not restored: ${st.title}`);
+    assert(/ACARS OBSERVED: SAN - VALID 03 20 2026 - 1600Z/.test(st.title), `last sounding not restored: ${st.title}`);
     await app.context().close();
   });
 

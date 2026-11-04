@@ -7,18 +7,23 @@
  *   - Iowa Environmental Mesonet RAOB archive   https://mesonet.agron.iastate.edu/json/raob.py
  *   - Iowa Environmental Mesonet BUFKIT archive https://mtarchive.geol.iastate.edu/
  *   - Unidata NEXRAD Level III on AWS           https://unidata-nexrad-level3.s3.amazonaws.com
+ *   - ACARS archive                             https://sharp.weather.ou.edu/soundings/acars/
  *
  * Please be kind to these free services: fetch on user action, not on a timer.
  */
 import { parseIemRaob } from '../io/iem.js';
+import { parseSounding } from '../io/parse.js';
 import { parseBufkit, listBufkitForecastHours } from '../io/bufkit.js';
 import { buildVwpSounding } from '../io/vwp.js';
 import { withLocation } from '../io/location.js';
+import { getAviationStationCatalog, indexAviationStations } from '../io/station_catalog.js';
 import { pad } from '../io/general.js';
 
 const IEM_RAOB = 'https://mesonet.agron.iastate.edu/json/raob.py';
 const IEM_BUFKIT = 'https://mtarchive.geol.iastate.edu';
 const NEXRAD_L3 = 'https://unidata-nexrad-level3.s3.amazonaws.com';
+const NEXRAD_RADAR_STATIONS = 'https://api.weather.gov/radar/stations';
+const ACARS_ARCHIVE = 'https://sharp.weather.ou.edu/soundings/acars';
 const IEM_RAOB_STATIONS = 'https://mesonet.agron.iastate.edu/geojson/network/RAOB.geojson';
 
 /**
@@ -131,6 +136,102 @@ export async function fetchIemBufkitForecasts({ model = 'hrrr', station, run, fe
   return hours.map((forecastHour) => parseBufkit(text, { forecastHour, model, station: id }));
 }
 
+/**
+ * List ACARS reports in the inclusive lookback ending at `time`.
+ * @param {object} q ACARS archive selection.
+ * @param {Date|string|number} q.time Inclusive UTC window end.
+ * @param {number} [q.hours=6] Lookback window in hours; must be between 0 and 24.
+ * @param {string} [q.station] Optional three-character ACARS station code.
+ * @param {string} [q.baseUrl] Archive base URL or CORS-enabled proxy preserving the archive path structure.
+ * @param {Function} [q.fetch] Fetch-compatible function.
+ * @returns {Promise<Array<{station:string, time:number, url:string}>>} Reports in chronological order.
+ */
+export async function listAcarsArchive({ time, hours = 6, station, baseUrl = ACARS_ARCHIVE, fetch: fetchImpl }) {
+  const end = toDate(time);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 24) {
+    throw new Error('SharpJS: ACARS lookback hours must be greater than 0 and no more than 24');
+  }
+  const stationId = station == null || String(station).trim() === ''
+    ? null
+    : String(station).trim().toUpperCase();
+  if (stationId && !/^[A-Z0-9]{3}$/.test(stationId)) {
+    throw new Error('SharpJS: ACARS station must be a three-character code');
+  }
+  const root = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!root) throw new Error('SharpJS: ACARS archive base URL is required');
+  const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
+  const firstHour = new Date(start);
+  firstHour.setUTCMinutes(0, 0, 0);
+  const lastHour = new Date(end);
+  lastHour.setUTCMinutes(0, 0, 0);
+  const directories = [];
+  for (const hour = new Date(firstHour); hour <= lastHour; hour.setUTCHours(hour.getUTCHours() + 1)) {
+    directories.push(new Date(hour));
+  }
+  const listings = await Promise.all(directories.map((hour) => listAcarsDirectory(hour, root, fetchImpl)));
+  const reports = listings.flat().filter((report) =>
+    report.time >= start.getTime() &&
+    report.time <= end.getTime() &&
+    (!stationId || report.station === stationId));
+  reports.sort((a, b) => a.time - b.time || a.station.localeCompare(b.station) || a.url.localeCompare(b.url));
+  return reports;
+}
+
+/**
+ * Fetch and parse all ACARS soundings in the inclusive six-hour lookback by default.
+ * Files are already SHARPpy text; station coordinates are attached from the bundled catalog.
+ * @param {object} q ACARS archive selection and progress callback.
+ * @param {Date|string|number} q.time Inclusive UTC window end.
+ * @param {number} [q.hours=6] Lookback window in hours.
+ * @param {string} [q.station] Optional three-character ACARS station code.
+ * @param {string} [q.baseUrl] Archive base URL or CORS-enabled proxy preserving the archive path structure.
+ * @param {Function} [q.fetch] Fetch-compatible function.
+ * @param {(sounding: object, progress: {index:number,total:number,station:string}) => void} [q.onSounding] Called as each report is ready.
+ * @returns {Promise<object[]>} Soundings ordered by report time.
+ */
+export async function fetchAcarsArchive({ time, hours = 6, station, baseUrl = ACARS_ARCHIVE, fetch: fetchImpl, onSounding }) {
+  const reports = await listAcarsArchive({ time, hours, station, baseUrl, fetch: fetchImpl });
+  if (!reports.length) throw new Error('No ACARS reports found in the selected time window');
+  const catalog = await getAviationStationCatalog(fetchImpl || fetch);
+  const stationIndex = indexAviationStations(catalog);
+  const soundings = new Array(reports.length);
+  let nextIndex = 0;
+  let completed = 0;
+  const workers = Array.from({ length: Math.min(6, reports.length) }, async () => {
+    while (nextIndex < reports.length) {
+      const index = nextIndex++;
+      const report = reports[index];
+      const response = await getAcarsOk(report.url, fetchImpl);
+      const sounding = parseSounding(await response.text(), { fileName: `${report.station}.txt` });
+      const sourceTitle = sounding.Title;
+      const validTime = acarsTitleTime(sourceTitle, report.time);
+      const record = stationIndex.get(report.station);
+      const lat = Number(record?.lat);
+      const lon = Number(record?.lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) withLocation(sounding, { lat, lon });
+      sounding.meta = {
+        ...(sounding.meta || {}),
+        source: 'acars',
+        station: report.station,
+        sourceTitle,
+        fileTime: new Date(report.time).toISOString(),
+        archiveTime: validTime.toISOString(),
+      };
+      const month = pad(validTime.getUTCMonth() + 1);
+      const day = pad(validTime.getUTCDate());
+      const hour = pad(validTime.getUTCHours());
+      const minute = pad(validTime.getUTCMinutes());
+      sounding.Title = `ACARS OBSERVED: ${report.station} - VALID ${month} ${day} ${validTime.getUTCFullYear()} - ${hour}${minute}Z`;
+      sounding.STitle = sounding.Title;
+      soundings[index] = sounding;
+      completed += 1;
+      onSounding?.(sounding, { index: completed, total: reports.length, station: report.station });
+    }
+  });
+  await Promise.all(workers);
+  return soundings;
+}
+
 async function fetchIemBufkitText({ model, station, run, fetch: fetchImpl }) {
   const id = String(station || '').trim();
   if (!id) throw new Error('SharpJS: station is required');
@@ -146,6 +247,67 @@ async function fetchIemBufkitText({ model, station, run, fetch: fetchImpl }) {
     throw err;
   }
   return { id, text: await res.text() };
+}
+
+async function listAcarsDirectory(hour, baseUrl, fetchImpl) {
+  const directory = `${baseUrl}/${hour.getUTCFullYear()}/${pad(hour.getUTCMonth() + 1)}/${pad(hour.getUTCDate())}/${pad(hour.getUTCHours())}/`;
+  let response;
+  try {
+    response = await getAcarsOk(directory, fetchImpl);
+  } catch (error) {
+    if (error.status === 404) return [];
+    throw error;
+  }
+  const html = await response.text();
+  const reports = [];
+  for (const [, href] of html.matchAll(/href=["']([^"'?#]+)["']/gi)) {
+    const fileName = decodeURIComponent(href.split('/').at(-1));
+    const match = /^([A-Z0-9]{3})_(\d{2})(\d{2})\.txt$/i.exec(fileName);
+    if (!match) continue;
+    const reportHour = Number(match[2]);
+    const reportMinute = Number(match[3]);
+    if (reportHour !== hour.getUTCHours() || reportHour > 23 || reportMinute > 59) continue;
+    const reportTime = new Date(hour);
+    reportTime.setUTCHours(reportHour, reportMinute, 0, 0);
+    reports.push({
+      station: match[1].toUpperCase(),
+      time: reportTime.getTime(),
+      url: `${directory}${encodeURIComponent(fileName)}`,
+    });
+  }
+  return reports;
+}
+
+function acarsTitleTime(title, fallback) {
+  const match = /\b(\d{2})(\d{2})(\d{2})\/(\d{2})(\d{2})\b/.exec(String(title || ''));
+  if (!match) return new Date(fallback);
+  const baseYear = new Date(fallback).getUTCFullYear();
+  const yy = Number(match[1]);
+  let year = Math.floor(baseYear / 100) * 100 + yy;
+  if (year - baseYear > 50) year -= 100;
+  if (baseYear - year > 50) year += 100;
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const validTime = new Date(Date.UTC(year, month, day, hour, minute));
+  if (validTime.getUTCFullYear() !== year || validTime.getUTCMonth() !== month ||
+    validTime.getUTCDate() !== day || hour > 23 || minute > 59) return new Date(fallback);
+  return validTime;
+}
+
+async function getAcarsOk(url, fetchImpl) {
+  try {
+    return await getOk(url, fetchImpl);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        'ACARS archive request was blocked or unreachable; use a same-origin deployment or configure a CORS-enabled ACARS proxy.',
+        { cause: error },
+      );
+    }
+    throw error;
+  }
 }
 
 /**
@@ -244,4 +406,34 @@ export async function fetchNexradVwpArchive({ radar, start, end, background, fet
     onVolume?.(sounding, { index: index + 1, total: orderedKeys.length });
   }
   return soundings;
+}
+
+/**
+ * Load the NWS WSR-88D radar site catalog used by the VWP map.
+ * This lists network locations, not historical product availability.
+ * @param {object} [q]
+ * @param {Function} [q.fetch] Fetch-compatible function.
+ * @returns {Promise<Array<{code:string, city:string, state:string, country:string, lat:number, lon:number}>>}
+ */
+export async function fetchNexradVwpRadarStations({ fetch: fetchImpl } = {}) {
+  const response = await getOk(NEXRAD_RADAR_STATIONS, fetchImpl);
+  const catalog = await response.json();
+  if (!Array.isArray(catalog?.features)) {
+    throw new Error('SharpJS: NWS radar station response has an invalid format');
+  }
+  return catalog.features.flatMap((feature) => {
+    const props = feature.properties || {};
+    const code = String(props.id || '').trim().toUpperCase().replace(/^K/, '');
+    const [lon, lat] = feature.geometry?.coordinates || [];
+    if (props.stationType !== 'WSR-88D' || !/^[A-Z0-9]{3}$/.test(code) ||
+      !Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    return [{
+      code,
+      city: String(props.name || code),
+      state: '',
+      country: 'United States',
+      lat,
+      lon,
+    }];
+  }).sort((a, b) => a.code.localeCompare(b.code));
 }

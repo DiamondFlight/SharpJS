@@ -15,9 +15,10 @@ import {
   GetLayerByTemp, RelHum, mixratio, MeanWind, MeanWindNW, ConvertToInfo, virtemp,
   CtoK, clamp, Mag, VirtTemp, degtoRad, Lerp, RMISSD, ROCP, temp_at_mixrat, qc, DewFromTRh,
   mean_rh_in_layer, GetCapeColor, CToF, UpdateCSMotStorm, UpdatePresets, VaporPressure, FtoC,
-  GetAngleFromVector, theta
+  GetAngleFromVector, theta, getLayersWithinBounds
 } from "../calc/skewtCalcs.js";
 import { ConvertToRaw, ln, lerp, noop, arrayIndex, absoluteValue } from '../io/general.js';
+import { directionTo, distanceMiles, findNearbyTown } from '../io/nearby_town.js';
 
 import { computeWindParams } from '../calc/params.js';
 import { Process } from '../io/sharppy.js';
@@ -26,6 +27,8 @@ import { DISPLAY_VERSION } from '../version.js';
 
 import numbs from '../data/climo/Cases.js';
 import numbs2 from '../data/climo/CasesEF2.js';
+
+import Plotly from 'plotly.js-dist-min/plotly.min.js';
 
 // Tornado side-panel percentile tables (~2 MB) load on first use in Tornado mode, not with
 // the page. Cases*.js above stay static: the bounds check needs them synchronously.
@@ -294,6 +297,9 @@ function $(id) {
   return el;
 }
 const emit = typeof options.emit === 'function' ? options.emit : noop;
+const titleLocationLookups = new Map();
+let activeTitleLocationKey = null;
+let activeTitleSounding = null;
 
 const globalFont = options.font || '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
 const verString = DISPLAY_VERSION;
@@ -1090,6 +1096,485 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
   ctx.restore();
 }
 
+
+function addStormMotionLine(distxt, motion, color, width, z, min){
+  return [{
+      type: 'scatter3d',
+      mode: 'text',
+      name: distxt,
+      x: [motion.x, motion.x],
+      y: [-motion.y, -motion.y],
+      z: [(z[0] + z[1])/2],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [min],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: globalFont,//'Arial, sans-serif',
+        size: 10,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      },
+  },{
+    type: 'scatter3d',
+    mode: 'lines+markers',
+    name: distxt,
+    x: [motion.x, motion.x],
+    y: [-motion.y, -motion.y],
+    z: z,
+    line: {
+      color: color,
+      width: width
+    },
+    markers: {
+      color: color,
+      size: width,
+    },
+    hoverinfo: 'text',
+    text: [distxt]
+  }]
+}
+
+/** Draws hodograph content.
+ * @param {*} Json Parameter for DrawHodograph.
+ * @param {*} ghst Parameter for DrawHodograph.
+ * @param {*} comparisonSoundings Parameter for DrawHodograph.
+ * @returns {void} No value.
+ */
+function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
+  const element = $("hodograph3d");
+  const dataTraces = [];
+
+  let Sounding = Json.Sounding;
+  let BRM = GetBM(Sounding, GlobalEffInflow);
+  let mMod = getHodographStormOffsetMod();
+
+  if (HodographScaleMode != 0) { // None (Fixed Center)
+    mMod.x += CSMot.x;
+    mMod.y += CSMot.y;
+  }
+
+  const ringRadii = Array.from({ length: 6 }, (_, i) => i * 20);; // Define sizes of your circular grid lines
+  const floorHeight = 0;             // The baseline Z level for the bottom floor
+
+  ringRadii.forEach(radius => {
+    const xRing = [];
+    const yRing = [];
+    const zRing = [];
+
+    // Loop 360 degrees to generate a clean, closed coordinate circle
+    for (let deg = 0; deg <= 360; deg += 5) {
+      const rad = (deg * Math.PI) / 180;
+      xRing.push(radius * Math.cos(rad));
+      yRing.push(radius * Math.sin(rad));
+      zRing.push(floorHeight);
+    }
+
+    // Add each ring as an individual flat track layer
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'lines',
+      x: xRing,
+      y: yRing,
+      z: zRing,
+      name: `Grid R=${radius}`,
+      showlegend: false,
+      line: {
+        color: 'rgba(255, 255, 255, 0.4)', // White color with partial transparency
+        width: 1,
+        dash: '5px,10px'                      // Dashed lines look excellent for grids
+      },
+      hoverinfo: 'skip'                   // Stops rings from interfering with cursor data hovers
+    });
+
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      // Place the text point right at the starting edge of the circle (X = radius, Y = 0)
+      x: [radius],
+      y: [0],
+      z: [floorHeight],
+      showlegend: false,
+      
+      // Define the text array matching your coordinate array length
+      text: [`${radius}`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      },
+      hoverinfo: 'skip'
+    });
+  });
+
+  let layers = getLayersWithinBounds(Json.Sounding, 0, 12000, "Hght")
+  let startSlice = GetLayerByPres(Json.Sounding, "SFC");
+
+  const xMain = [];
+  const yMain = [];
+  const zMain = [];
+  const colorscale = [];
+  
+
+  layers.forEach(p => {
+    let Pos = ConvertPolartoCart(p);
+    xMain.push(Pos.x);
+    yMain.push(-Pos.y);
+    zMain.push(p.H - startSlice.H);
+    colorscale.push([(p.H - startSlice.H)/12000, GetHodographColor(p.H - startSlice.H, undefined)]);
+  });
+
+  dataTraces.push({
+    type: 'scatter3d',
+    mode: 'lines',
+    name: 'Hodograph Path',
+    x: xMain,
+    y: yMain,
+    z: zMain,
+    line: {
+      width: 6,
+      color: zMain,
+      // Pass your custom array variable here!
+      colorscale: colorscale, 
+      autocolorscale: false
+    },
+    hoverinfo: "x+y+z",
+  });
+
+  dataTraces.push({
+    type: 'scatter3d',
+    mode: 'lines',
+    name: 'Hodograph Path',
+    x: [-200, 200],
+    y: [0, 0],
+    z: [0, 0],
+    line: {
+      color: '#ffffff',
+      width: 1
+    }
+  });
+
+  dataTraces.push({
+    type: 'scatter3d',
+    mode: 'lines',
+    name: 'Hodograph Path',
+    x: [0, 0],
+    y: [-200, 200],
+    z: [0, 0],
+    line: {
+      color: '#ffffff',
+      width: 1
+    }
+  });
+
+  for (let i = 0 ; i < 13; i++){
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [-200],
+      y: [0],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [0],
+      y: [-200],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [0],
+      y: [200],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [200],
+      y: [0],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'lines+markers',
+      name: 'Hodograph Path',
+      x: [0,0],
+      y: [0,0],
+      z: [1000 * i, 1000 * (i+1)],
+      line: {
+        color: 'rgba(255,255,255,0.1)',
+        width: 3,
+        dash: "dot",
+      },
+      marker:{
+        size: 3,
+      },
+      hoverinfo: 'skip',
+    });
+
+    let CurLay = GetLayerByHght(Json.Sounding, i*1000);
+    let Pos = ConvertPolartoCart(CurLay);
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'lines+markers',
+      name: 'Hodograph Path',
+      x: [Pos.x, Pos.x],
+      y: [-Pos.y, -Pos.y],
+      z: [0, 1000 * (i)],
+      line: {
+        color: GetHodographColor(CurLay.H - startSlice.H, undefined),
+        width: 3,
+        dash: "dot"
+      },
+      marker:{
+        size: 5,
+      },
+      hoverinfo: 'skip',
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [Pos.x, Pos.x],
+      y: [-Pos.y, -Pos.y],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: globalFont,//'Arial, sans-serif',
+        size: 12,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    
+  }
+  
+
+  CSMot.y *= -1;
+
+  dataTraces.push(...addStormMotionLine("Bunkers Right Motion", BRM.RM, "#ff0000", 4, CSMot === Motions.RM ? [0, 12000] : [0,0], "RM"));
+  dataTraces.push(...addStormMotionLine("Bunkers Left Motion", BRM.LM, "#ff000", 4, CSMot === Motions.LM ? [0, 12000] : [0,0], "LM"));
+  dataTraces.push(...addStormMotionLine("Mean Motion", BRM.MM, "#743705", 3, CSMot === Motions.MM ? [0, 12000] : [0,0], "MM"));
+
+  dataTraces.push(...addStormMotionLine("Corfidi Upshear Vector", BRM.US, "#00ffff", 3, CSMot === Motions.US ? [0, 12000] : [0,0], "UP"));
+  dataTraces.push(...addStormMotionLine("Corfidi Downshear Vector", BRM.DS, "#00ffff", 3, CSMot === Motions.DS ? [0, 12000] : [0,0], "DN"));
+
+  dataTraces.push(...addStormMotionLine("Nixon Right Deviant Tornado", BRM.DTMR, "#3a8100", 2, CSMot === Motions.DTMR ? [0, 12000] : [0,0], "DTMR"));
+  dataTraces.push(...addStormMotionLine("Nixon Left Deviant Tornado", BRM.DTML, "#3a8100", 2, CSMot === Motions.DTML ? [0, 12000] : [0,0], "DTML"));
+
+  dataTraces.push(...addStormMotionLine("Custom Motion", CUMot, "#ff0000", 3, CSMot === CUMot ? [0, 12000] : [0,0], "CM"));
+
+  CSMot.y *= -1;
+
+  if (Display3DArrows){
+    const xMainr = [];
+    const yMainr = [];
+    const zMainr = [];
+    for (let i = 0; i < 12000; i += 500){
+      let p2 = GetLayerByHght(Json.Sounding, i);
+      let Pos = ConvertPolartoCart(p2);
+      xMainr.push(Pos.x);
+      yMainr.push(-Pos.y);
+      zMainr.push(p2.H - startSlice.H);
+    };
+
+    for (let i = 0; i < xMain.length; i++){
+      dataTraces.push({
+        type: 'cone',
+        // 1. Starting coordinate of the arrow base
+        x:[xMainr[i]],
+        y:[yMainr[i]],
+        z:[zMainr[i]],
+
+        u:[xMainr[i] - CSMot.x],//[100*(HodoData.x - mMod.x)],  // Velocity/Length along X
+        v:[yMainr[i] - CSMot.y],//[100*(HodoData.y - mMod.y)],
+        w:[0],//[0],  // Velocity/Length along Z
+        
+        sizemode: 'absolute',    // Keeps the arrow size fixed regardless of zoom scale
+        sizeref: 5,             // Physical scale size of the cone head
+        showscale: false,       // Hides the standard colorbar legend for this trace
+        
+        colorscale: [[0, '#00ffff'], [1, '#00ffff']], // Force a single custom solid color (Neon Cyan)
+        anchor: 'tip',         // 'tail' means the base locks to (x,y,z). Options: 'center', 'tip'
+      });
+
+      dataTraces.push({
+        type: 'scatter3d',
+        mode: 'lines',
+        name: 'lin',
+        x: [CSMot.x, xMainr[i]],
+        y: [CSMot.y, yMainr[i]],
+        z: [zMainr[i], zMainr[i]],
+        line: {
+          color: '#00ffff',
+          width: 1.2
+        },
+        hoverinfo: 'skip',
+      });
+    }
+  }
+  
+
+  
+
+  // ==========================================
+  // 3. BLACK BACKGROUND CONFIGURATION (LAYOUT)
+  // ==========================================
+  const layout = {
+    title: {
+      text: `${brandLine(' - powered by ')}`,
+      font: {
+        family: globalFont,//#'Arial, sans-serif',
+        size: 12,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      } // White title text
+    },
+    //autosize: true,
+    margin: { l: 0, r: 0, b: 0, t: 20 },
+
+    modebar: {
+      orientation: 'v',        // 'v' makes it stack vertically along the edge
+      bgcolor: 'rgba(0,0,0,0)', // Optional transparent background for a dark look
+      color: '#ffffff'          // Icon line color
+    },
+
+    
+
+    showlegend: false,
+    // Core workspace styling
+    paper_bgcolor: '#000000', // Outer canvas container black background
+    plot_bgcolor: '#000000',  // Graph layout black background
+    
+    scene: {
+      aspectmode: 'manual',
+      aspectratio: {
+        x: 4, // Equal sizing across all directions
+        y: 4, 
+        z: 1  
+      },
+
+      dragmode: 'turntable',
+
+      camera: {
+        // center is where the camera targets (0,0,0 means look at the true origin)
+        center: { x: mMod.x/100, y: mMod.y/100, z: 0 },
+        
+        // eye represents the camera's location vector in 3D coordinate space.
+        // Putting x: 0, y: 0 puts it perfectly dead-center.
+        // Setting z: 2.0 (or higher) positions it straight above the floor.
+        eye: {x: mMod.x/100, y: mMod.y/100, z: 1 },
+        
+        // up establishes the screen's "upward vertical vector orientation"
+        // Since we are looking straight down, y: 1 points the top of your Y-axis up.
+        up: { x: 1, y: 0, z: 0 }
+      },
+
+      xaxis: { 
+        visible: false,       // Disables text titles, ticks, and labels
+        showgrid: false,      // Removes square background gridlines
+        showline: false,      // Removes bounding box outline borders
+        zeroline: false       // Removes the primary zero coordinate lines
+      },
+
+      yaxis: { 
+        visible: false,
+        showgrid: false,
+        showline: false,
+        zeroline: false
+      },
+      
+      // Style the inner 3D box frame surfaces dark
+      bgcolor: '#0f0f0f',
+      
+      zaxis: { 
+        visible: false,
+        showgrid: false,
+        showline: false,
+        zeroline: false
+      }
+    }
+  };
+
+  var config = {
+    displayModeBar: false, // Hides the entire top/side control bar completely
+    responsive: true,       // Forces chart to scale automatically on window resize
+    logging: 0,
+    // Ensures the WebGL canvas context isn't cleared automatically
+    preserveDrawingBuffer: true 
+  };
+
+  Plotly.purge(element);
+  
+  setTimeout(() => {
+    Plotly.newPlot(element, dataTraces, layout, config);
+  }, 50);
+  return;
+}
+
 /** Draws hodograph content.
  * @param {*} Json Parameter for DrawHodograph.
  * @param {*} ghst Parameter for DrawHodograph.
@@ -1099,10 +1584,19 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
 function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   const drawVersion = ++hodographDrawVersion;
   const Canv = $("hodograph");
+  const element = $("hodograph3d");
   const ctx = Canv.getContext("2d");
 
   Canv.width = 800;
   Canv.height = 800;
+
+  if (Display3DHodograph){
+    element.style.visibility = "visible";
+    drawHodograph3D(Json, ghst, comparisonSoundings)
+    return;
+  } else {
+    element.style.visibility = "hidden";
+  }
 
   // --- START AUTO-SCALE LOGIC ---
   let maxWindSpeed = 0;
@@ -6205,7 +6699,7 @@ function LoadWithWind(Sounding, Info, ghost = false, comparisonSoundings = []) {
     DCapeProf: Info.DCapeProf,
   };
 
-  DrawInsetParams(Sounding, WindParams, TPerms, Info.SBParcel, Info.MLParcel, Info.MUParcel, false, Presets, $("Values3"));
+  DrawInsetParams(Sounding, WindParams, TPerms, Info.SBParcel, Info.MLParcel, Info.MUParcel, false, Presets, $("Values3"), useImperialUnits === 1 ? 'metric' : 'default');
 
   //let SRH03 = GetSRH(Sound, 0, 3000, "Hght");
   //// console.log(SRH);
@@ -9162,6 +9656,8 @@ let userSetCustomWind = false;
 let DisplayStormMotions = false;
 let DisplayEHI = false;
 let DisplayOnMapCape = true;
+let Display3DHodograph = false;
+let Display3DArrows = false;
 
 /** Show every storm motion estimate in the lapse-rate box. Toggles when omitted.
  * @param {*} show Parameter for LoadStormMotions.
@@ -9171,6 +9667,26 @@ function LoadStormMotions(show){
   DisplayStormMotions = typeof show === 'boolean' ? show : !DisplayStormMotions;
   if (Snding && Snding.Sounding) GetLapseBox(Snding.Sounding);
   return DisplayStormMotions;
+}
+
+/** Show 3D Hodograph
+ * @param {*} show Parameter for Load3DHodograph.
+ * @returns {*} Result of the function.
+ */
+function Load3DHodograph(show){
+  Display3DHodograph = typeof show === 'boolean' ? show : !Display3DHodograph;
+  if (Snding && Snding.Sounding) DrawHodograph(Snding, ghost, currentComparisonSoundings);
+  return Display3DHodograph;
+}
+
+/** Show 3D Hodograph
+ * @param {*} show Parameter for Load3DHodograph.
+ * @returns {*} Result of the function.
+ */
+function Load3DHodoArrows(show){
+  Display3DArrows = typeof show === 'boolean' ? show : !Display3DArrows;
+  if (Snding && Snding.Sounding) DrawHodograph(Snding, ghost, currentComparisonSoundings);
+  return Display3DArrows;
 }
 
 /** Show EHI in wind box
@@ -9585,18 +10101,51 @@ function SetTitle(K) {
   Canv.width = 800;
   Canv.height = dropsondeMode ? 54 : 30;
 
+  activeTitleSounding = K;
+  const location = {
+    lat: Number(K?.Coords?.lat ?? K?.Location?.[0]),
+    lon: Number(K?.Coords?.lon ?? K?.Location?.[1]),
+  };
+  const locationKey = Number.isFinite(location.lat) && Math.abs(location.lat) <= 90
+    && Number.isFinite(location.lon) && Math.abs(location.lon) <= 180
+    ? `${location.lat.toFixed(5)},${location.lon.toFixed(5)}`
+    : null;
+  activeTitleLocationKey = locationKey;
+
+  if (locationKey && !titleLocationLookups.has(locationKey)) {
+    const lookup = { text: 'Looking up nearby town…' };
+    titleLocationLookups.set(locationKey, lookup);
+    findNearbyTown(location).then((town) => {
+      if (town) {
+        const distance = Math.round(distanceMiles(location, town));
+        const direction = directionTo(location, town);
+        const state = town.state ? `, ${town.state}` : '';
+        lookup.text = `${distance} mi${direction ? ` ${direction} of` : ' from'} ${town.name}${state}`;
+      } else {
+        lookup.text = 'No nearby town found';
+      }
+      if (activeTitleLocationKey === locationKey) SetTitle(activeTitleSounding);
+    }).catch((error) => {
+      lookup.text = 'Nearby-town lookup unavailable';
+      console.error('SharpJS: nearby-town lookup failed.', error);
+      if (activeTitleLocationKey === locationKey) SetTitle(activeTitleSounding);
+    });
+  }
+  const locationText = locationKey ? titleLocationLookups.get(locationKey)?.text : '';
+
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, Canv.width, Canv.height);
 
-  const title = `${K.Title || ""}`;
+  const title = `${K.Title || ""}${locationText ? ` · ${locationText}` : ''}`;
   const padX = 0.02 * Canv.width;
 
   if (!dropsondeMode) {
-    ctx.font = `bold ${title.length > 35 ? Canv.width / 50 : Canv.width / 40}px ${globalFont}`;
+    const fontSize = title.length > 55 ? Canv.width / 60 : title.length > 35 ? Canv.width / 50 : Canv.width / 40;
+    ctx.font = `bold ${fontSize}px ${globalFont}`;
     ctx.fillStyle = fg;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(title, 0.025 * Canv.width, 22);
+    ctx.fillText(title, 0.025 * Canv.width, 22, Canv.width - 0.05 * Canv.width);
     ctx.fillRect(25, 28, 795, 2);
     return;
   }
@@ -9703,7 +10252,7 @@ function DownloadSounding() {
 function AverageAll(Files) {
   let TF = [];
 
-  
+
 
   Files.forEach((N) => {
     TF.push(Process(N[1]))//[N[0], Process(N[1])]);
@@ -9887,6 +10436,9 @@ function Screenshot(del = true, scale = 1) {
       ModifiedPanel = $("Values4");
     }
 
+    let hodoobj = $("hodograph");// Display3DHodograph ? document.querySelector('#hodograph3d .gl-canvas-context') : $("hodograph");
+
+    
     const shift = 150;
 
     let ToLoad = [
@@ -9894,7 +10446,7 @@ function Screenshot(del = true, scale = 1) {
       [$("skewT"), 0, 40 * scale, (960 - shift) * scale, 720 * scale, true],
       [$("verticalBar"), (985 - 100) * scale, 39 * scale, 214 * scale, 721 * scale],
       [$("skewTNumbers"), 0, 760 * scale, (1050 - shift) * scale, 40 * scale],
-      [$("hodograph"), 1100 * scale, 0, 900 * scale, 800 * scale],
+      [hodoobj, 1100 * scale, 0, 900 * scale, 800 * scale],
       [$("Values1"), 0, 800 * scale, 825 * scale, 200 * scale],
       [$("Values2"), 825 * scale, 800 * scale, 275 * scale, 200 * scale],
       [$("Values3"), 0, 1000 * scale, 1100 * scale, 200 * scale],
@@ -9909,7 +10461,7 @@ function Screenshot(del = true, scale = 1) {
     if (VWPActive){
       ToLoad = [
         [$("skewTTitle"), 0, 2 * scale, 38 * 800/30 * scale, 38 * scale],
-        [$("hodograph"), 0, 40 * scale, 2000 * 0.60 * scale, 1200  * scale, true],
+        [hodoobj, 0, 40 * scale, 2000 * 0.60 * scale, 1200  * scale, true],
         [$("Values5"), 2000 * 0.60 * scale, 0,  2000 * 0.4 * scale, 1200 * 0.36666 * scale],
         [$("Values7"), 2000 * 0.60 * scale, 1200 * 0.36666 * scale,  2000 * 0.4 * scale, 1200 * 0.18333 * scale],
         [$("Values8"), 2000 * 0.60 * scale, 1200 * 0.55 * scale,  2000 * 0.4 * scale, 1200 * 0.45 * scale],
@@ -9933,6 +10485,38 @@ function Screenshot(del = true, scale = 1) {
     const drawEntry = (img) => new Promise((res) => {
       if (!img[0]) { res(); return; }
 
+      if (["hodograph"].includes(img[0].dataset.sjs) && Display3DHodograph){
+        Plotly.toImage("hodograph3d", {
+          format: 'png',        // Options: 'png', 'jpeg', 'webp', 'svg'
+          width: 800,          // Optional: Force a high-res output width
+          height: 800,          // Optional: Force a high-res output height
+          imageDataOnly: false  // Returns full data URI string (set true for raw base64)
+        })
+        .then(function(dataUrl) {
+          // 1. Convert the Data URL to a native Blob object
+          fetch(dataUrl)
+              .then(res => res.blob())
+              .then(blob => {
+                const newImg = document.createElement("img");
+                const url = URL.createObjectURL(blob);
+                newImg.src = url;
+                newImg.onload = () => {
+                  let ctx = hodoobj.getContext("2d");
+                  ctx.drawImage(newImg, 0, 0, 800, 800);
+
+                  continues();
+                }
+            });
+        })
+        .catch(function(err) {
+            console.error('Export failed:', err);
+        });
+      } else {
+        continues();
+      }
+
+
+      function continues(){
       img[0].toBlob((blob) => {
         if (!blob) { res(); return; }
 
@@ -9961,7 +10545,7 @@ function Screenshot(del = true, scale = 1) {
           URL.revokeObjectURL(url);
           res(); // don't reject — just skip
         };
-      });
+      })};
     });
 
     Promise.all(ToLoad.map(drawEntry))
@@ -10163,6 +10747,8 @@ function getState() {
     verticalBarsWindSpeed: !noWSBox,
     showStormMotions: DisplayStormMotions,
     showEhiInWindBox: DisplayEHI,
+    show3DHodograph: Display3DHodograph,
+    show3DHodoArrows: Display3DArrows,
     showCapeOnMap: DisplayOnMapCape,
     presets: { WindLapse: Presets.WindLapse, Inset: Presets.Inset, Vertical: Presets.Vertical, SidePanel: SidePanelMode },
     presetOverrides: Object.fromEntries(Object.entries(presetOverrides).map(([k, v]) => [k, v || 'auto'])),
@@ -10220,6 +10806,8 @@ function applyState(next = {}, { redraw: doRedraw = true } = {}) {
   if (typeof next.verticalBarsWindSpeed === 'boolean') noWSBox = !next.verticalBarsWindSpeed;
   if (typeof next.showStormMotions === 'boolean') DisplayStormMotions = next.showStormMotions;
   if (typeof next.showEhiInWindBox === 'boolean') DisplayEHI = next.showEhiInWindBox;
+  if (typeof next.show3DHodograph === 'boolean') Display3DHodograph = next.show3DHodograph;
+  if (typeof next.show3DHodoArrows === 'boolean') Display3DArrows = next.show3DHodoArrows;
   if (typeof next.showCapeOnMap === 'boolean') DisplayOnMapCape= next.showCapeOnMap;
   if (next.efScale === 'EF2+' || next.efScale === 'EF0+') currentEFScale = next.efScale;
   if (['Default', 'SharpJS', 'CM1'].includes(next.exportFormat)) SoundingExport = next.exportFormat;
@@ -10317,6 +10905,8 @@ const api = {
   ChangeWBox,
   LoadStormMotions,
   LoadEHIWindBox,
+  Load3DHodograph,
+  Load3DHodoArrows,
   LoadOnMapCape,
   // analysis controls
   LoadNewParcel,

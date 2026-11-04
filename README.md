@@ -18,6 +18,7 @@ This repository is the standalone, open-source SharpJS sounding viewer: no accou
 - Presets for tornado, severe/MCS, dryline, elevated, winter, fire and fog/ambient. They are picked automatically per sounding, and any of them can be pinned
 - Edit the sounding: drag points on the Skew-T or hodograph, edit the level table, change the surface temperature, dewpoint or wind
 - Comparison overlays, averaging several soundings, NEXRAD VAD wind profiles (VWP)
+- 3D hodographs with a storm-relative / clean toggle for the viewing angle and motion reference
 - Units: default (kt / °C), metric or imperial
 - Export SHARPpy text, SharpJS text (with omega) or CM1 `input_sounding`, plus a 2000 × 1200 PNG
 - **Settings are remembered** in the browser (localStorage, with a cookie fallback, or your own storage). They're versioned, so updates never reset them
@@ -49,9 +50,14 @@ npm run build      # static site in dist/ (deployable anywhere, e.g. GitHub Page
 The **Archive Data** section loads observed soundings from the
 [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/archive/raob/) RAOB archive. It also loads model
 BUFKIT files from the [IEM BUFKIT archive](https://mtarchive.geol.iastate.edu/) and the latest NEXRAD VAD wind
-profile from [Unidata's NEXRAD Level III bucket](https://registry.opendata.aws/noaa-nexrad/). All three are free
-public services that allow browser requests, so the site needs no backend. Please fetch on demand, not on a
-timer.
+profiles from [Unidata's NEXRAD Level III bucket](https://registry.opendata.aws/noaa-nexrad/), plus archived
+ACARS reports from [OU's sounding archive](https://sharp.weather.ou.edu/soundings/acars/). Recent additions include
+six-hour ACARS archive browsing with an airport coverage map, a radar-site picker for VWP loads, and a 3D
+hodograph mode with a storm-relative / clean toggle. ACARS and VWP archives can be browsed with a UTC time
+slider. The ACARS map marks airports with reports in the selected six-hour window; the VWP map shows
+WSR-88D radar locations and loading verifies archive availability for the selected radar. IEM and Unidata
+provide browser-accessible public endpoints; OU's ACARS endpoint requires same-origin hosting or a
+CORS-enabled proxy. Fetch on demand, not on a timer.
 
 ### 2. In your own page: one function call
 
@@ -90,7 +96,7 @@ SharpJS('#chart', {
 | --- | --- | --- |
 | `sounding` | – | Text, parsed sounding or arrays. `null` clears the chart. |
 | `soundingKey` | – | Same key as the previous sounding keeps parcel / storm-motion choices (time scrubbing). |
-| `title`, `location` | – | Override the title; attach `{ lat, lon }` (enables the tornado climatology panel). |
+| `title`, `location` | – | Override the title; attach `{ lat, lon }` (enables the tornado climatology panel and adds the nearest mapped town with whole-mile distance to the title via OpenStreetMap). |
 | `comparisons` | `[]` | `[{ sounding, color?, label?, visible? }]` overlays. |
 | `vwp` | – | A VWP sounding (`buildVwpSounding`, `fetchNexradVwp`) or raw NVW bytes. `null` returns to the sounding. |
 | `mapImage` | – | Any `CanvasImageSource`, drawn in the hodograph corner (e.g. a map around the site). |
@@ -109,10 +115,19 @@ SharpJS('#chart', {
 
 When the built-in Archive controls are given `import * as sources from 'sharpjs/sources'`, loading a
 BUFKIT run adds a UTC time slider for that file's hourly forecasts; forecast-hour gaps are disabled.
-The VWP archive controls accept a UTC date and hour from 2020 onward and load every available radar
-volume in the inclusive three-hour lookback. The slider stays within the chart display width, uses
+The ACARS controls list and load all reports in the inclusive six-hour window ending at the selected UTC
+hour, with an optional station filter and a coverage map. The VWP map selects a WSR-88D radar; the VWP
+archive controls load every available volume for that radar in the inclusive six-hour lookback (archive data
+from 2020 onward). The slider stays within the chart display width, uses
 UTC labels, and docks above the controls on narrow screens; it hides while the controls fill the
 viewport rather than covering them.
+
+The OU ACARS archive does not currently return CORS headers. Its default direct URL therefore requires
+the app to be served from the archive's origin. For a different origin, configure `controls.acarsBaseUrl`
+to a CORS-enabled proxy/mirror that preserves the archive's year/month/day/hour directory listings and
+text files, or provide custom `listAcarsArchive` / `fetchAcarsArchive` callbacks through `sources`. For the
+standalone Vite app, set `VITE_ACARS_BASE_URL` at build time; embedded charts can pass
+`controls: { acarsBaseUrl: 'https://your-proxy.example/acars' }`.
 
 <details>
 <summary><strong>The returned handle</strong></summary>
@@ -163,6 +178,7 @@ Everything a reader changes persists: units, skew, hodograph options, pinned pre
 motion, export format, which control sections are collapsed, and so on. Only values that differ from the defaults are
 stored, inside a versioned payload (`{ v, settings }`), and every value is validated on load. So:
 
+- Metric units display parameter-box temperatures in °C and precipitable water in mm.
 - a new SharpJS version adds options without touching anyone's saved settings,
 - improving a default reaches everyone who never changed it,
 - a renamed option gets a migration step in `src/settings/schema.js` instead of a reset.

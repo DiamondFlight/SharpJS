@@ -65,6 +65,7 @@ const CHART_HTML = `
   <div class="mobile-chart-row">
     <div data-sjs="hodoinsetcheck" class="hodographInset">
       <canvas data-sjs="hodograph"></canvas>
+      <div data-sjs="hodograph3d" id="hodograph3d"></div>
       <canvas data-sjs="hodographOverHang"></canvas>
       <canvas data-sjs="hodographOverHang2"></canvas>
       <canvas data-sjs="hodographOverHang3"></canvas>

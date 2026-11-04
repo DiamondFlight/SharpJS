@@ -140,6 +140,8 @@ ${v('hodographOverHang')}, ${v('hodographOverHang2')}, ${v('hodographOverHang3')
 }
 
 .sharpjs .hodographValues { position: absolute; top: 66.66666%; left: 55%; width: 45%; height: 28%; display: block; z-index: 10; }
+.sharpjs #hodograph3d {   display: 'block'; position: absolute; width: 100%; height: 100%; z-index: 15; background: #fff; min-height: 100%; }
+
 ${v('Values5')} { top: 0; left: 0; width: 60%; height: 100%; z-index: 11; }
 ${v('Values4')}, ${v('Values6')} { bottom: 0; left: 60%; width: 40%; height: 100%; z-index: 11; }
 

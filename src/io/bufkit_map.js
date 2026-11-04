@@ -1,9 +1,9 @@
+import { getAviationStationCatalog } from './station_catalog.js';
+
 const IEM_BUFKIT = 'https://mtarchive.geol.iastate.edu';
-const AVIATION_STATIONS = new URL('../data/stations.json', import.meta.url);
 const TILE_SERVER = 'https://tile.openstreetmap.org';
 const TILE_SIZE = 256;
 const stationCatalogByModelRun = new Map();
-let aviationStationCatalog = null;
 let nextDialogId = 0;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const US_STATE_NAMES = {
@@ -21,20 +21,36 @@ const US_STATE_NAMES = {
 };
 
 /**
- * Creates a plain-JavaScript BUFKIT location picker button and its map dialog.
- * @param {object} options Picker configuration.
+ * Creates a reusable location map button and its dialog.
+ * @param {object} options Map configuration.
  * @param {Document} options.document Document used to create the picker UI.
  * @param {HTMLElement} options.host SharpJS host used for theming and dialog placement.
- * @param {() => string} options.getModel Returns the selected BUFKIT model.
- * @param {() => Date} options.getRun Returns the selected BUFKIT run date and hour.
+ * @param {() => Promise<object[]|{stations:object[],message?:string}>} options.getStations Loads map-ready stations.
  * @param {(station: string) => void} options.onSelect Receives the selected station code.
+ * @param {string} [options.title] Dialog heading.
+ * @param {string} [options.buttonLabel] Map button text.
+ * @param {string} [options.mapLabel] Name used in map status text.
+ * @param {string} [options.footerText] Map interaction guidance.
+ * @param {string} [options.metadataLabel] Attribution for station metadata.
+ * @param {string} [options.metadataUrl] Attribution URL.
  * @returns {{button: HTMLButtonElement, destroy: () => void}} Picker button and cleanup function.
  */
-export function createBufkitMapButton({ document: doc, host, getModel, getRun, onSelect }) {
+export function createStationMapButton({
+  document: doc,
+  host,
+  getStations,
+  onSelect,
+  title = 'Choose a station',
+  buttonLabel = 'Choose station from map…',
+  mapLabel = 'stations',
+  footerText = 'Hover or focus a marker for its location and code. Click to select it.',
+  metadataLabel = 'Aviation Weather Center',
+  metadataUrl = 'https://aviationweather.gov/',
+}) {
   const button = doc.createElement('button');
   button.type = 'button';
   button.className = 'sjs-button';
-  button.textContent = 'Choose station from map…';
+  button.textContent = buttonLabel;
   button.setAttribute('aria-haspopup', 'dialog');
 
   const dialog = doc.createElement('dialog');
@@ -103,25 +119,25 @@ export function createBufkitMapButton({ document: doc, host, getModel, getRun, o
     </style>
     <div class="sjs-bufkit-map-shell">
       <div class="sjs-bufkit-map-header">
-        <h2 id="${titleId}">Choose a BUFKIT station</h2>
+        <h2 id="${titleId}"></h2>
         <button class="sjs-bufkit-map-close" type="button" aria-label="Close station map">Close</button>
       </div>
       <div class="sjs-bufkit-map-tools">
-        <input class="sjs-bufkit-map-search" type="search" autocomplete="off" placeholder="Find by station, city, state, or country" aria-label="Search BUFKIT stations">
+        <input class="sjs-bufkit-map-search" type="search" autocomplete="off" placeholder="Find by station, city, state, or country">
         <div class="sjs-bufkit-map-zoom">
           <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
           <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
         </div>
       </div>
       <p class="sjs-bufkit-map-status" role="status" aria-live="polite"></p>
-      <div class="sjs-bufkit-map-viewport" aria-label="BUFKIT station map">
+      <div class="sjs-bufkit-map-viewport">
         <svg class="sjs-bufkit-map-svg" role="group" aria-label="Station locations"></svg>
         <div class="sjs-bufkit-map-tooltip" role="tooltip"></div>
         <div class="sjs-bufkit-map-attribution">Map tiles © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a></div>
       </div>
       <div class="sjs-bufkit-map-footer">
-        <span>Hover or focus a marker for its city, state, country, and station code. Click to fill Station.</span>
-        <span>Station metadata: <a href="https://aviationweather.gov/" target="_blank" rel="noopener noreferrer">Aviation Weather Center</a></span>
+        <span></span>
+        <span>Station metadata: <a target="_blank" rel="noopener noreferrer"></a></span>
       </div>
     </div>
   `;
@@ -132,6 +148,17 @@ export function createBufkitMapButton({ document: doc, host, getModel, getRun, o
   const tooltip = dialog.querySelector('.sjs-bufkit-map-tooltip');
   const status = dialog.querySelector('.sjs-bufkit-map-status');
   const search = dialog.querySelector('.sjs-bufkit-map-search');
+  const mapTitle = dialog.querySelector('h2');
+  const svgLabel = dialog.querySelector('.sjs-bufkit-map-svg');
+  const footer = dialog.querySelector('.sjs-bufkit-map-footer');
+  mapTitle.textContent = title;
+  search.setAttribute('aria-label', `Search ${mapLabel}`);
+  viewport.setAttribute('aria-label', `${mapLabel} map`);
+  svgLabel.setAttribute('aria-label', `${mapLabel} locations`);
+  footer.firstElementChild.textContent = footerText;
+  const attribution = footer.querySelector('a');
+  attribution.href = metadataUrl;
+  attribution.textContent = metadataLabel;
   let stations = [];
   let visibleStations = [];
   let stationsByCode = new Map();
@@ -143,31 +170,23 @@ export function createBufkitMapButton({ document: doc, host, getModel, getRun, o
   let resizeObserver = null;
 
   /**
-   * Opens the station map, loads the selected model's available sites, and focuses search.
+   * Opens the station map, loads available sites, and focuses search.
    * @returns {Promise<void>} Resolves when the request and initial drawing finish.
    */
   async function openMap() {
     if (!dialog.open) dialog.showModal();
     search.value = '';
-    status.textContent = 'Loading BUFKIT stations…';
+    status.textContent = `Loading ${mapLabel}…`;
     svg.replaceChildren();
     try {
-      const model = String(getModel() || 'hrrr').toLowerCase();
-      const run = getRun();
-      const [stationCodes, catalog] = await Promise.all([
-        listBufkitStationCodes(model, run),
-        getAviationStationCatalog(),
-      ]);
-      stations = matchStationMetadata(stationCodes, catalog);
+      const result = await getStations();
+      stations = Array.isArray(result) ? result : result.stations;
       visibleStations = stations;
       stationsByCode = new Map();
       for (const station of stations) stationsByCode.set(station.code, station);
-      if (!stations.length) {
-        status.textContent = `The ${model.toUpperCase()} archive listing had no stations that could be matched to location metadata.`;
-      } else {
-        const missing = stationCodes.length - stations.length;
-        status.textContent = `${stations.length} ${model.toUpperCase()} locations available${missing ? `; ${missing} station code${missing === 1 ? '' : 's'} lack map metadata` : ''}. Drag to pan or use the wheel to zoom.`;
-      }
+      status.textContent = (!stations.length
+        ? result.message || `No ${mapLabel} are available.`
+        : `${result.message || `${stations.length} ${mapLabel} available.`} Drag to pan or use the wheel to zoom.`);
       requestAnimationFrame(drawMap);
       search.focus();
     } catch (error) {
@@ -336,7 +355,8 @@ export function createBufkitMapButton({ document: doc, host, getModel, getRun, o
    * @returns {string} Accessible station description.
    */
   function stationAriaLabel(station) {
-    return `${station.city}, ${station.state}, ${station.country}; station ${station.code}`;
+    const place = [station.city, station.state, station.country].filter(Boolean).join(', ');
+    return `${place}; station ${station.code}`;
   }
 
   /**
@@ -349,8 +369,10 @@ export function createBufkitMapButton({ document: doc, host, getModel, getRun, o
     tooltip.replaceChildren();
     const city = doc.createElement('strong');
     city.textContent = station.city;
-    tooltip.append(city, doc.createElement('br'));
-    tooltip.append(doc.createTextNode(`State: ${station.state} · Country: ${station.country}`), doc.createElement('br'));
+    tooltip.append(city);
+    const region = [station.state, station.country].filter(Boolean).join(' · ');
+    if (region) tooltip.append(doc.createElement('br'), doc.createTextNode(region));
+    tooltip.append(doc.createElement('br'));
     tooltip.append(doc.createTextNode(`Station code: ${station.code}`));
     tooltip.style.display = 'block';
     moveTooltip(event);
@@ -397,7 +419,7 @@ export function createBufkitMapButton({ document: doc, host, getModel, getRun, o
     const query = search.value.trim().toLocaleLowerCase();
     if (!query) {
       visibleStations = stations;
-      status.textContent = `${stations.length} BUFKIT locations shown. Drag to pan or use the wheel to zoom.`;
+      status.textContent = `${stations.length} ${mapLabel} shown. Drag to pan or use the wheel to zoom.`;
       drawMap();
       return;
     }
@@ -540,6 +562,52 @@ export function createBufkitMapButton({ document: doc, host, getModel, getRun, o
 }
 
 /**
+ * Creates the existing BUFKIT station picker on top of the shared location map.
+ * @param {object} options Picker configuration.
+ * @param {Document} options.document Document used to create the picker UI.
+ * @param {HTMLElement} options.host SharpJS host used for theming and dialog placement.
+ * @param {() => string} options.getModel Returns the selected BUFKIT model.
+ * @param {() => Date} options.getRun Returns the selected BUFKIT run date and hour.
+ * @param {(station: string) => void} options.onSelect Receives the selected station code.
+ * @returns {{button: HTMLButtonElement, destroy: () => void}} Picker button and cleanup function.
+ */
+export function createBufkitMapButton({ document: doc, host, getModel, getRun, onSelect }) {
+  return createStationMapButton({
+    document: doc,
+    host,
+    onSelect,
+    title: 'Choose a BUFKIT station',
+    mapLabel: 'BUFKIT locations',
+    footerText: 'Hover or focus a marker for its city, state, country, and station code. Click to fill Station.',
+    metadataLabel: 'Aviation Weather Center',
+    metadataUrl: 'https://aviationweather.gov/',
+    async getStations() {
+      const model = String(getModel() || 'hrrr').toLowerCase();
+      const run = getRun();
+      const [stationCodes, catalog] = await Promise.all([
+        listBufkitStationCodes(model, run),
+        getAviationStationCatalog(),
+      ]);
+      const stations = matchStationMetadata(stationCodes, catalog);
+      const missing = stationCodes.length - stations.length;
+      const message = stations.length
+        ? `${stations.length} ${model.toUpperCase()} locations available${missing ? `; ${missing} station code${missing === 1 ? '' : 's'} lack map metadata` : ''}.`
+        : `The ${model.toUpperCase()} archive listing had no stations that could be matched to location metadata.`;
+      return { stations, message };
+    },
+  });
+}
+
+/**
+ * Resolves airport station codes to map-ready Aviation Weather Center locations.
+ * @param {string[]} codes Station identifiers from an archive listing.
+ * @returns {Promise<Array<{code:string, city:string, state:string, country:string, lat:number, lon:number}>>}
+ */
+export async function mapAviationStationCodes(codes) {
+  return matchStationMetadata(codes, await getAviationStationCatalog());
+}
+
+/**
  * Finds recent BUFKIT archive listings for all cycles on the selected run date.
  * @param {string} model BUFKIT model directory.
  * @param {Date} run Selected run date.
@@ -607,48 +675,6 @@ async function fetchBufkitDirectory(model, run, hour) {
     }
   }
   return ids;
-}
-
-/**
- * Retrieves and caches the public Aviation Weather Center station metadata.
- * @returns {Promise<object[]>} Station records with identifiers and geographic metadata.
- */
-async function getAviationStationCatalog() {
-  aviationStationCatalog ??= fetch(AVIATION_STATIONS)
-    .then(parseAviationStationResponse)
-    .then(validateAviationStationRecords)
-    .catch(resetAviationStationCatalog);
-  return aviationStationCatalog;
-}
-
-/**
- * Parses the HTTP response from the aviation station catalog.
- * @param {Response} response Station catalog response.
- * @returns {Promise<unknown>} Parsed station JSON.
- */
-function parseAviationStationResponse(response) {
-  if (!response.ok) throw new Error(`Could not load station location metadata (HTTP ${response.status}).`);
-  return response.json();
-}
-
-/**
- * Ensures the aviation station catalog has the expected array shape.
- * @param {unknown} records Parsed station data.
- * @returns {object[]} Valid station records.
- */
-function validateAviationStationRecords(records) {
-  if (!Array.isArray(records)) throw new Error('The station location service returned an invalid catalog.');
-  return records;
-}
-
-/**
- * Clears a rejected catalog request so that a later map opening can retry.
- * @param {Error} error Catalog loading error.
- * @returns {never} Rethrows the loading error.
- */
-function resetAviationStationCatalog(error) {
-  aviationStationCatalog = null;
-  throw error;
 }
 
 /**

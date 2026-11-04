@@ -178,6 +178,8 @@ export interface Settings {
   readOut: boolean;
   verticalBarsWindSpeed: boolean;
   showStormMotions: boolean;
+  show3DHodograph: boolean;
+  show3DHodoArrows: boolean;
   showEhiInWindBox: boolean;
   presetOverrides: {
     WindLapse: PresetValue<'Default' | 'Severe' | 'Dryline' | 'Elevated' | 'Winter' | 'Fire'>;
@@ -235,7 +237,7 @@ export function resolveAdapter(persist: PersistOption, key?: string): StorageAda
 
 export interface ChartState extends Pick<Settings,
   'units' | 'skewTSkew' | 'hodographNumbers' | 'hodographColorTable' | 'hodographScaleMode' | 'hodographTrimWindProfile'
-  | 'hodographMode' | 'readOut' | 'verticalBarsWindSpeed' | 'showStormMotions' | 'showEhiInWindBox' | 'presetOverrides' | 'efScale'
+  | 'hodographMode' | 'readOut' | 'verticalBarsWindSpeed' | 'showStormMotions' | 'show3DHodograph' | 'show3DHodoArrows' | 'showEhiInWindBox' | 'presetOverrides' | 'efScale'
   | 'defaultParcel' | 'defaultMotion' | 'exportFormat'> {
   presets: { WindLapse: string; Inset: string; Vertical: string; SidePanel: string };
   autoPresets: { WindLapse: string; Inset: string; Vertical: string; SidePanel: string };
@@ -261,7 +263,24 @@ export interface Comparison {
 export interface Sources {
   fetchIemRaob?(query: { station: string; time: Date | string | number }): Promise<Sounding>;
   fetchIemBufkit?(query: { model?: string; station: string; run: Date | string | number; forecastHour?: number }): Promise<Sounding>;
+  fetchIemBufkitForecasts?(query: { model?: string; station: string; run: Date | string | number }): Promise<Sounding[]>;
+  listAcarsArchive?(query: { time: Date | string | number; hours?: number; station?: string; baseUrl?: string }): Promise<Array<{ station: string; time: number; url: string }>>;
+  fetchAcarsArchive?(query: {
+    time: Date | string | number;
+    hours?: number;
+    station?: string;
+    baseUrl?: string;
+    onSounding?: (sounding: Sounding, progress: { index: number; total: number; station: string }) => void;
+  }): Promise<Sounding[]>;
   fetchNexradVwp?(query: { radar: string; time?: Date | string | number; background?: Sounding }): Promise<Sounding>;
+  fetchNexradVwpArchive?(query: {
+    radar: string;
+    start: Date | string | number;
+    end: Date | string | number;
+    background?: Sounding;
+    onVolume?: (sounding: Sounding, progress: { index: number; total: number }) => void;
+  }): Promise<Sounding[]>;
+  fetchNexradVwpRadarStations?(): Promise<Array<{ code: string; city: string; state: string; country: string; lat: number; lon: number }>>;
 }
 
 export interface SharpJSProps {
@@ -284,7 +303,14 @@ export interface SharpJSProps {
   persist?: PersistOption;
   storageKey?: string;
   /** Built-in controls panel (default true). */
-  controls?: boolean | { raobStation?: string; bufkitStation?: string; vwpRadar?: string };
+  controls?: boolean | {
+    raobStation?: string;
+    bufkitStation?: string;
+    vwpRadar?: string;
+    acarsStation?: string;
+    /** CORS-enabled proxy root for the ACARS archive, preserving its year/month/day/hour paths. */
+    acarsBaseUrl?: string;
+  };
   /** Public data loaders for the controls' Archive section, e.g. `import * as sources from 'sharpjs/sources'`. */
   sources?: Sources | null;
   /** Your label in the chart credit: "<label> - powered by SharpJS v1.7". */

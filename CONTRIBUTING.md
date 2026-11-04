@@ -12,6 +12,11 @@ npm run dev                       # standalone site at http://localhost:5173 (ho
 npm test && npm run test:e2e && npm run lint
 ```
 
+Recent additions to the standalone app include six-hour ACARS archive browsing with a coverage map,
+NEXRAD radar-site selection for VWP archives, and a 3D hodograph view with a storm-relative / clean toggle.
+When adding new viewing or archive features, keep them state-driven and persisted like the rest of the chart
+settings so they remain compatible with embedded charts and saved user preferences.
+
 ## How the pieces fit
 
 ```
