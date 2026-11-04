@@ -43,9 +43,10 @@ import {
   GetLayerByTemp, RelHum, mixratio, MeanWind, MeanWindNW, ConvertToInfo, virtemp,
   CtoK, clamp, Mag, VirtTemp, degtoRad, Lerp, RMISSD, ROCP, temp_at_mixrat, qc, DewFromTRh,
   mean_rh_in_layer, GetCapeColor, CToF, UpdateCSMotStorm, UpdatePresets, VaporPressure, FtoC,
-  GetAngleFromVector, theta
+  GetAngleFromVector, theta, getLayersWithinBounds
 } from "../calc/skewtCalcs.js";
 import { ConvertToRaw, ln, lerp, noop, arrayIndex, absoluteValue } from '../io/general.js';
+import { directionTo, distanceMiles, findNearbyTown } from '../io/nearby_town.js';
 
 import { computeWindParams } from '../calc/params.js';
 import { Process } from '../io/sharppy.js';
@@ -54,6 +55,8 @@ import { DISPLAY_VERSION } from '../version.js';
 
 import numbs from '../data/climo/Cases.js';
 import numbs2 from '../data/climo/CasesEF2.js';
+
+import Plotly from 'plotly.js-dist-min/plotly.min.js';
 
 // Tornado side-panel percentile tables (~2 MB) load on first use in Tornado mode, not with
 // the page. Cases*.js above stay static: the bounds check needs them synchronously.
@@ -322,6 +325,9 @@ function $(id) {
   return el;
 }
 const emit = typeof options.emit === 'function' ? options.emit : noop;
+const titleLocationLookups = new Map();
+let activeTitleLocationKey = null;
+let activeTitleSounding = null;
 
 const globalFont = options.font || '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
 const verString = DISPLAY_VERSION;
@@ -1118,6 +1124,485 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
   ctx.restore();
 }
 
+
+function addStormMotionLine(distxt, motion, color, width, z, min){
+  return [{
+      type: 'scatter3d',
+      mode: 'text',
+      name: distxt,
+      x: [motion.x, motion.x],
+      y: [-motion.y, -motion.y],
+      z: [(z[0] + z[1])/2],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [min],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: globalFont,//'Arial, sans-serif',
+        size: 10,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      },
+  },{
+    type: 'scatter3d',
+    mode: 'lines+markers',
+    name: distxt,
+    x: [motion.x, motion.x],
+    y: [-motion.y, -motion.y],
+    z: z,
+    line: {
+      color: color,
+      width: width
+    },
+    markers: {
+      color: color,
+      size: width,
+    },
+    hoverinfo: 'text',
+    text: [distxt]
+  }]
+}
+
+/** Draws hodograph content.
+ * @param {*} Json Parameter for DrawHodograph.
+ * @param {*} ghst Parameter for DrawHodograph.
+ * @param {*} comparisonSoundings Parameter for DrawHodograph.
+ * @returns {void} No value.
+ */
+function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
+  const element = $("hodograph3d");
+  const dataTraces = [];
+
+  let Sounding = Json.Sounding;
+  let BRM = GetBM(Sounding, GlobalEffInflow);
+  let mMod = getHodographStormOffsetMod();
+
+  if (HodographScaleMode != 0) { // None (Fixed Center)
+    mMod.x += CSMot.x;
+    mMod.y += CSMot.y;
+  }
+
+  const ringRadii = Array.from({ length: 6 }, (_, i) => i * 20);; // Define sizes of your circular grid lines
+  const floorHeight = 0;             // The baseline Z level for the bottom floor
+
+  ringRadii.forEach(radius => {
+    const xRing = [];
+    const yRing = [];
+    const zRing = [];
+
+    // Loop 360 degrees to generate a clean, closed coordinate circle
+    for (let deg = 0; deg &lt;= 360; deg += 5) {
+      const rad = (deg * Math.PI) / 180;
+      xRing.push(radius * Math.cos(rad));
+      yRing.push(radius * Math.sin(rad));
+      zRing.push(floorHeight);
+    }
+
+    // Add each ring as an individual flat track layer
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'lines',
+      x: xRing,
+      y: yRing,
+      z: zRing,
+      name: `Grid R=${radius}`,
+      showlegend: false,
+      line: {
+        color: 'rgba(255, 255, 255, 0.4)', // White color with partial transparency
+        width: 1,
+        dash: '5px,10px'                      // Dashed lines look excellent for grids
+      },
+      hoverinfo: 'skip'                   // Stops rings from interfering with cursor data hovers
+    });
+
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      // Place the text point right at the starting edge of the circle (X = radius, Y = 0)
+      x: [radius],
+      y: [0],
+      z: [floorHeight],
+      showlegend: false,
+      
+      // Define the text array matching your coordinate array length
+      text: [`${radius}`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      },
+      hoverinfo: 'skip'
+    });
+  });
+
+  let layers = getLayersWithinBounds(Json.Sounding, 0, 12000, "Hght")
+  let startSlice = GetLayerByPres(Json.Sounding, "SFC");
+
+  const xMain = [];
+  const yMain = [];
+  const zMain = [];
+  const colorscale = [];
+  
+
+  layers.forEach(p => {
+    let Pos = ConvertPolartoCart(p);
+    xMain.push(Pos.x);
+    yMain.push(-Pos.y);
+    zMain.push(p.H - startSlice.H);
+    colorscale.push([(p.H - startSlice.H)/12000, GetHodographColor(p.H - startSlice.H, undefined)]);
+  });
+
+  dataTraces.push({
+    type: 'scatter3d',
+    mode: 'lines',
+    name: 'Hodograph Path',
+    x: xMain,
+    y: yMain,
+    z: zMain,
+    line: {
+      width: 6,
+      color: zMain,
+      // Pass your custom array variable here!
+      colorscale: colorscale, 
+      autocolorscale: false
+    },
+    hoverinfo: "x+y+z",
+  });
+
+  dataTraces.push({
+    type: 'scatter3d',
+    mode: 'lines',
+    name: 'Hodograph Path',
+    x: [-200, 200],
+    y: [0, 0],
+    z: [0, 0],
+    line: {
+      color: '#ffffff',
+      width: 1
+    }
+  });
+
+  dataTraces.push({
+    type: 'scatter3d',
+    mode: 'lines',
+    name: 'Hodograph Path',
+    x: [0, 0],
+    y: [-200, 200],
+    z: [0, 0],
+    line: {
+      color: '#ffffff',
+      width: 1
+    }
+  });
+
+  for (let i = 0 ; i &lt; 13; i++){
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [-200],
+      y: [0],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [0],
+      y: [-200],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [0],
+      y: [200],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [200],
+      y: [0],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: 'Arial, sans-serif',
+        size: 12,
+        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'lines+markers',
+      name: 'Hodograph Path',
+      x: [0,0],
+      y: [0,0],
+      z: [1000 * i, 1000 * (i+1)],
+      line: {
+        color: 'rgba(255,255,255,0.1)',
+        width: 3,
+        dash: "dot",
+      },
+      marker:{
+        size: 3,
+      },
+      hoverinfo: 'skip',
+    });
+
+    let CurLay = GetLayerByHght(Json.Sounding, i*1000);
+    let Pos = ConvertPolartoCart(CurLay);
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'lines+markers',
+      name: 'Hodograph Path',
+      x: [Pos.x, Pos.x],
+      y: [-Pos.y, -Pos.y],
+      z: [0, 1000 * (i)],
+      line: {
+        color: GetHodographColor(CurLay.H - startSlice.H, undefined),
+        width: 3,
+        dash: "dot"
+      },
+      marker:{
+        size: 5,
+      },
+      hoverinfo: 'skip',
+    });
+    dataTraces.push({
+      type: 'scatter3d',
+      mode: 'text',
+      name: 'Hodograph Path',
+      x: [Pos.x, Pos.x],
+      y: [-Pos.y, -Pos.y],
+      z: [1000*i],
+      line: {
+        color: '#ffffff',
+        width: 3
+      },
+      hoverinfo: 'skip',
+      text: [`${i} km`],
+      textposition: 'top center', // Adjust placement relative to the coordinate anchor point
+      textfont: {
+        family: globalFont,//'Arial, sans-serif',
+        size: 12,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      },
+    });
+    
+  }
+  
+
+  CSMot.y *= -1;
+
+  dataTraces.push(...addStormMotionLine("Bunkers Right Motion", BRM.RM, "#ff0000", 4, CSMot === Motions.RM ? [0, 12000] : [0,0], "RM"));
+  dataTraces.push(...addStormMotionLine("Bunkers Left Motion", BRM.LM, "#ff000", 4, CSMot === Motions.LM ? [0, 12000] : [0,0], "LM"));
+  dataTraces.push(...addStormMotionLine("Mean Motion", BRM.MM, "#743705", 3, CSMot === Motions.MM ? [0, 12000] : [0,0], "MM"));
+
+  dataTraces.push(...addStormMotionLine("Corfidi Upshear Vector", BRM.US, "#00ffff", 3, CSMot === Motions.US ? [0, 12000] : [0,0], "UP"));
+  dataTraces.push(...addStormMotionLine("Corfidi Downshear Vector", BRM.DS, "#00ffff", 3, CSMot === Motions.DS ? [0, 12000] : [0,0], "DN"));
+
+  dataTraces.push(...addStormMotionLine("Nixon Right Deviant Tornado", BRM.DTMR, "#3a8100", 2, CSMot === Motions.DTMR ? [0, 12000] : [0,0], "DTMR"));
+  dataTraces.push(...addStormMotionLine("Nixon Left Deviant Tornado", BRM.DTML, "#3a8100", 2, CSMot === Motions.DTML ? [0, 12000] : [0,0], "DTML"));
+
+  dataTraces.push(...addStormMotionLine("Custom Motion", CUMot, "#ff0000", 3, CSMot === CUMot ? [0, 12000] : [0,0], "CM"));
+
+  CSMot.y *= -1;
+
+  if (Display3DArrows){
+    const xMainr = [];
+    const yMainr = [];
+    const zMainr = [];
+    for (let i = 0; i &lt; 12000; i += 500){
+      let p2 = GetLayerByHght(Json.Sounding, i);
+      let Pos = ConvertPolartoCart(p2);
+      xMainr.push(Pos.x);
+      yMainr.push(-Pos.y);
+      zMainr.push(p2.H - startSlice.H);
+    };
+
+    for (let i = 0; i &lt; xMain.length; i++){
+      dataTraces.push({
+        type: 'cone',
+        // 1. Starting coordinate of the arrow base
+        x:[xMainr[i]],
+        y:[yMainr[i]],
+        z:[zMainr[i]],
+
+        u:[xMainr[i] - CSMot.x],//[100*(HodoData.x - mMod.x)],  // Velocity/Length along X
+        v:[yMainr[i] - CSMot.y],//[100*(HodoData.y - mMod.y)],
+        w:[0],//[0],  // Velocity/Length along Z
+        
+        sizemode: 'absolute',    // Keeps the arrow size fixed regardless of zoom scale
+        sizeref: 5,             // Physical scale size of the cone head
+        showscale: false,       // Hides the standard colorbar legend for this trace
+        
+        colorscale: [[0, '#00ffff'], [1, '#00ffff']], // Force a single custom solid color (Neon Cyan)
+        anchor: 'tip',         // 'tail' means the base locks to (x,y,z). Options: 'center', 'tip'
+      });
+
+      dataTraces.push({
+        type: 'scatter3d',
+        mode: 'lines',
+        name: 'lin',
+        x: [CSMot.x, xMainr[i]],
+        y: [CSMot.y, yMainr[i]],
+        z: [zMainr[i], zMainr[i]],
+        line: {
+          color: '#00ffff',
+          width: 1.2
+        },
+        hoverinfo: 'skip',
+      });
+    }
+  }
+  
+
+  
+
+  // ==========================================
+  // 3. BLACK BACKGROUND CONFIGURATION (LAYOUT)
+  // ==========================================
+  const layout = {
+    title: {
+      text: `${brandLine(' - powered by ')}`,
+      font: {
+        family: globalFont,//#'Arial, sans-serif',
+        size: 12,
+        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+      } // White title text
+    },
+    //autosize: true,
+    margin: { l: 0, r: 0, b: 0, t: 20 },
+
+    modebar: {
+      orientation: 'v',        // 'v' makes it stack vertically along the edge
+      bgcolor: 'rgba(0,0,0,0)', // Optional transparent background for a dark look
+      color: '#ffffff'          // Icon line color
+    },
+
+    
+
+    showlegend: false,
+    // Core workspace styling
+    paper_bgcolor: '#000000', // Outer canvas container black background
+    plot_bgcolor: '#000000',  // Graph layout black background
+    
+    scene: {
+      aspectmode: 'manual',
+      aspectratio: {
+        x: 4, // Equal sizing across all directions
+        y: 4, 
+        z: 1  
+      },
+
+      dragmode: 'turntable',
+
+      camera: {
+        // center is where the camera targets (0,0,0 means look at the true origin)
+        center: { x: mMod.x/100, y: mMod.y/100, z: 0 },
+        
+        // eye represents the camera's location vector in 3D coordinate space.
+        // Putting x: 0, y: 0 puts it perfectly dead-center.
+        // Setting z: 2.0 (or higher) positions it straight above the floor.
+        eye: {x: mMod.x/100, y: mMod.y/100, z: 1 },
+        
+        // up establishes the screen's "upward vertical vector orientation"
+        // Since we are looking straight down, y: 1 points the top of your Y-axis up.
+        up: { x: 1, y: 0, z: 0 }
+      },
+
+      xaxis: { 
+        visible: false,       // Disables text titles, ticks, and labels
+        showgrid: false,      // Removes square background gridlines
+        showline: false,      // Removes bounding box outline borders
+        zeroline: false       // Removes the primary zero coordinate lines
+      },
+
+      yaxis: { 
+        visible: false,
+        showgrid: false,
+        showline: false,
+        zeroline: false
+      },
+      
+      // Style the inner 3D box frame surfaces dark
+      bgcolor: '#0f0f0f',
+      
+      zaxis: { 
+        visible: false,
+        showgrid: false,
+        showline: false,
+        zeroline: false
+      }
+    }
+  };
+
+  var config = {
+    displayModeBar: false, // Hides the entire top/side control bar completely
+    responsive: true,       // Forces chart to scale automatically on window resize
+    logging: 0,
+    // Ensures the WebGL canvas context isn't cleared automatically
+    preserveDrawingBuffer: true 
+  };
+
+  Plotly.purge(element);
+  
+  setTimeout(() => {
+    Plotly.newPlot(element, dataTraces, layout, config);
+  }, 50);
+  return;
+}
+
 /** Draws hodograph content.
  * @param {*} Json Parameter for DrawHodograph.
  * @param {*} ghst Parameter for DrawHodograph.
@@ -1127,10 +1612,19 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
 function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   const drawVersion = ++hodographDrawVersion;
   const Canv = $("hodograph");
+  const element = $("hodograph3d");
   const ctx = Canv.getContext("2d");
 
   Canv.width = 800;
   Canv.height = 800;
+
+  if (Display3DHodograph){
+    element.style.visibility = "visible";
+    drawHodograph3D(Json, ghst, comparisonSoundings)
+    return;
+  } else {
+    element.style.visibility = "hidden";
+  }
 
   // --- START AUTO-SCALE LOGIC ---
   let maxWindSpeed = 0;
@@ -6233,7 +6727,7 @@ function LoadWithWind(Sounding, Info, ghost = false, comparisonSoundings = []) {
     DCapeProf: Info.DCapeProf,
   };
 
-  DrawInsetParams(Sounding, WindParams, TPerms, Info.SBParcel, Info.MLParcel, Info.MUParcel, false, Presets, $("Values3"));
+  DrawInsetParams(Sounding, WindParams, TPerms, Info.SBParcel, Info.MLParcel, Info.MUParcel, false, Presets, $("Values3"), useImperialUnits === 1 ? 'metric' : 'default');
 
   //let SRH03 = GetSRH(Sound, 0, 3000, "Hght");
   //// console.log(SRH);
@@ -9190,6 +9684,8 @@ let userSetCustomWind = false;
 let DisplayStormMotions = false;
 let DisplayEHI = false;
 let DisplayOnMapCape = true;
+let Display3DHodograph = false;
+let Display3DArrows = false;
 
 /** Show every storm motion estimate in the lapse-rate box. Toggles when omitted.
  * @param {*} show Parameter for LoadStormMotions.
@@ -9199,6 +9695,26 @@ function LoadStormMotions(show){
   DisplayStormMotions = typeof show === 'boolean' ? show : !DisplayStormMotions;
   if (Snding &amp;&amp; Snding.Sounding) GetLapseBox(Snding.Sounding);
   return DisplayStormMotions;
+}
+
+/** Show 3D Hodograph
+ * @param {*} show Parameter for Load3DHodograph.
+ * @returns {*} Result of the function.
+ */
+function Load3DHodograph(show){
+  Display3DHodograph = typeof show === 'boolean' ? show : !Display3DHodograph;
+  if (Snding &amp;&amp; Snding.Sounding) DrawHodograph(Snding, ghost, currentComparisonSoundings);
+  return Display3DHodograph;
+}
+
+/** Show 3D Hodograph
+ * @param {*} show Parameter for Load3DHodograph.
+ * @returns {*} Result of the function.
+ */
+function Load3DHodoArrows(show){
+  Display3DArrows = typeof show === 'boolean' ? show : !Display3DArrows;
+  if (Snding &amp;&amp; Snding.Sounding) DrawHodograph(Snding, ghost, currentComparisonSoundings);
+  return Display3DArrows;
 }
 
 /** Show EHI in wind box
@@ -9613,18 +10129,51 @@ function SetTitle(K) {
   Canv.width = 800;
   Canv.height = dropsondeMode ? 54 : 30;
 
+  activeTitleSounding = K;
+  const location = {
+    lat: Number(K?.Coords?.lat ?? K?.Location?.[0]),
+    lon: Number(K?.Coords?.lon ?? K?.Location?.[1]),
+  };
+  const locationKey = Number.isFinite(location.lat) &amp;&amp; Math.abs(location.lat) &lt;= 90
+    &amp;&amp; Number.isFinite(location.lon) &amp;&amp; Math.abs(location.lon) &lt;= 180
+    ? `${location.lat.toFixed(5)},${location.lon.toFixed(5)}`
+    : null;
+  activeTitleLocationKey = locationKey;
+
+  if (locationKey &amp;&amp; !titleLocationLookups.has(locationKey)) {
+    const lookup = { text: 'Looking up nearby town…' };
+    titleLocationLookups.set(locationKey, lookup);
+    findNearbyTown(location).then((town) => {
+      if (town) {
+        const distance = Math.round(distanceMiles(location, town));
+        const direction = directionTo(location, town);
+        const state = town.state ? `, ${town.state}` : '';
+        lookup.text = `${distance} mi${direction ? ` ${direction} of` : ' from'} ${town.name}${state}`;
+      } else {
+        lookup.text = 'No nearby town found';
+      }
+      if (activeTitleLocationKey === locationKey) SetTitle(activeTitleSounding);
+    }).catch((error) => {
+      lookup.text = 'Nearby-town lookup unavailable';
+      console.error('SharpJS: nearby-town lookup failed.', error);
+      if (activeTitleLocationKey === locationKey) SetTitle(activeTitleSounding);
+    });
+  }
+  const locationText = locationKey ? titleLocationLookups.get(locationKey)?.text : '';
+
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, Canv.width, Canv.height);
 
-  const title = `${K.Title || ""}`;
+  const title = `${K.Title || ""}${locationText ? ` · ${locationText}` : ''}`;
   const padX = 0.02 * Canv.width;
 
   if (!dropsondeMode) {
-    ctx.font = `bold ${title.length > 35 ? Canv.width / 50 : Canv.width / 40}px ${globalFont}`;
+    const fontSize = title.length > 55 ? Canv.width / 60 : title.length > 35 ? Canv.width / 50 : Canv.width / 40;
+    ctx.font = `bold ${fontSize}px ${globalFont}`;
     ctx.fillStyle = fg;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(title, 0.025 * Canv.width, 22);
+    ctx.fillText(title, 0.025 * Canv.width, 22, Canv.width - 0.05 * Canv.width);
     ctx.fillRect(25, 28, 795, 2);
     return;
   }
@@ -9731,7 +10280,7 @@ function DownloadSounding() {
 function AverageAll(Files) {
   let TF = [];
 
-  
+
 
   Files.forEach((N) => {
     TF.push(Process(N[1]))//[N[0], Process(N[1])]);
@@ -9915,6 +10464,9 @@ function Screenshot(del = true, scale = 1) {
       ModifiedPanel = $("Values4");
     }
 
+    let hodoobj = $("hodograph");// Display3DHodograph ? document.querySelector('#hodograph3d .gl-canvas-context') : $("hodograph");
+
+    
     const shift = 150;
 
     let ToLoad = [
@@ -9922,7 +10474,7 @@ function Screenshot(del = true, scale = 1) {
       [$("skewT"), 0, 40 * scale, (960 - shift) * scale, 720 * scale, true],
       [$("verticalBar"), (985 - 100) * scale, 39 * scale, 214 * scale, 721 * scale],
       [$("skewTNumbers"), 0, 760 * scale, (1050 - shift) * scale, 40 * scale],
-      [$("hodograph"), 1100 * scale, 0, 900 * scale, 800 * scale],
+      [hodoobj, 1100 * scale, 0, 900 * scale, 800 * scale],
       [$("Values1"), 0, 800 * scale, 825 * scale, 200 * scale],
       [$("Values2"), 825 * scale, 800 * scale, 275 * scale, 200 * scale],
       [$("Values3"), 0, 1000 * scale, 1100 * scale, 200 * scale],
@@ -9937,7 +10489,7 @@ function Screenshot(del = true, scale = 1) {
     if (VWPActive){
       ToLoad = [
         [$("skewTTitle"), 0, 2 * scale, 38 * 800/30 * scale, 38 * scale],
-        [$("hodograph"), 0, 40 * scale, 2000 * 0.60 * scale, 1200  * scale, true],
+        [hodoobj, 0, 40 * scale, 2000 * 0.60 * scale, 1200  * scale, true],
         [$("Values5"), 2000 * 0.60 * scale, 0,  2000 * 0.4 * scale, 1200 * 0.36666 * scale],
         [$("Values7"), 2000 * 0.60 * scale, 1200 * 0.36666 * scale,  2000 * 0.4 * scale, 1200 * 0.18333 * scale],
         [$("Values8"), 2000 * 0.60 * scale, 1200 * 0.55 * scale,  2000 * 0.4 * scale, 1200 * 0.45 * scale],
@@ -9961,6 +10513,38 @@ function Screenshot(del = true, scale = 1) {
     const drawEntry = (img) => new Promise((res) => {
       if (!img[0]) { res(); return; }
 
+      if (["hodograph"].includes(img[0].dataset.sjs) &amp;&amp; Display3DHodograph){
+        Plotly.toImage("hodograph3d", {
+          format: 'png',        // Options: 'png', 'jpeg', 'webp', 'svg'
+          width: 800,          // Optional: Force a high-res output width
+          height: 800,          // Optional: Force a high-res output height
+          imageDataOnly: false  // Returns full data URI string (set true for raw base64)
+        })
+        .then(function(dataUrl) {
+          // 1. Convert the Data URL to a native Blob object
+          fetch(dataUrl)
+              .then(res => res.blob())
+              .then(blob => {
+                const newImg = document.createElement("img");
+                const url = URL.createObjectURL(blob);
+                newImg.src = url;
+                newImg.onload = () => {
+                  let ctx = hodoobj.getContext("2d");
+                  ctx.drawImage(newImg, 0, 0, 800, 800);
+
+                  continues();
+                }
+            });
+        })
+        .catch(function(err) {
+            console.error('Export failed:', err);
+        });
+      } else {
+        continues();
+      }
+
+
+      function continues(){
       img[0].toBlob((blob) => {
         if (!blob) { res(); return; }
 
@@ -9989,7 +10573,7 @@ function Screenshot(del = true, scale = 1) {
           URL.revokeObjectURL(url);
           res(); // don't reject — just skip
         };
-      });
+      })};
     });
 
     Promise.all(ToLoad.map(drawEntry))
@@ -10191,6 +10775,8 @@ function getState() {
     verticalBarsWindSpeed: !noWSBox,
     showStormMotions: DisplayStormMotions,
     showEhiInWindBox: DisplayEHI,
+    show3DHodograph: Display3DHodograph,
+    show3DHodoArrows: Display3DArrows,
     showCapeOnMap: DisplayOnMapCape,
     presets: { WindLapse: Presets.WindLapse, Inset: Presets.Inset, Vertical: Presets.Vertical, SidePanel: SidePanelMode },
     presetOverrides: Object.fromEntries(Object.entries(presetOverrides).map(([k, v]) => [k, v || 'auto'])),
@@ -10248,6 +10834,8 @@ function applyState(next = {}, { redraw: doRedraw = true } = {}) {
   if (typeof next.verticalBarsWindSpeed === 'boolean') noWSBox = !next.verticalBarsWindSpeed;
   if (typeof next.showStormMotions === 'boolean') DisplayStormMotions = next.showStormMotions;
   if (typeof next.showEhiInWindBox === 'boolean') DisplayEHI = next.showEhiInWindBox;
+  if (typeof next.show3DHodograph === 'boolean') Display3DHodograph = next.show3DHodograph;
+  if (typeof next.show3DHodoArrows === 'boolean') Display3DArrows = next.show3DHodoArrows;
   if (typeof next.showCapeOnMap === 'boolean') DisplayOnMapCape= next.showCapeOnMap;
   if (next.efScale === 'EF2+' || next.efScale === 'EF0+') currentEFScale = next.efScale;
   if (['Default', 'SharpJS', 'CM1'].includes(next.exportFormat)) SoundingExport = next.exportFormat;
@@ -10345,6 +10933,8 @@ const api = {
   ChangeWBox,
   LoadStormMotions,
   LoadEHIWindBox,
+  Load3DHodograph,
+  Load3DHodoArrows,
   LoadOnMapCape,
   // analysis controls
   LoadNewParcel,
@@ -10409,13 +10999,13 @@ return api;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#GetSWV">GetSWV</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#GetSWV">GetSWV</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createStationMapButton">createStationMapButton</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distanceMiles">distanceMiles</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandAcarsTimeSeries">expandAcarsTimeSeries</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchAcarsArchive">fetchAcarsArchive</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fetchNexradVwpRadarStations">fetchNexradVwpRadarStations</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findNearbyTown">findNearbyTown</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#indexAviationStations">indexAviationStations</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listAcarsArchive">listAcarsArchive</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#mapAviationStationCodes">mapAviationStationCodes</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue Oct 27 2026 18:41:17 GMT-0500 (Central Daylight Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Wed Nov 04 2026 16:49:47 GMT-0600 (Central Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>

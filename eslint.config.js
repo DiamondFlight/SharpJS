@@ -13,7 +13,7 @@ const LEGACY = [
 ];
 
 export default [
-  { ignores: ['dist/**', 'node_modules/**', 'src/data/**', 'test-results/**'] },
+  { ignores: ['dist/**', 'node_modules/**', 'src/data/**', 'test-results/**', 'docs/**', 'app/docs/**', '**/research.js'] },
   js.configs.recommended,
   {
     languageOptions: {

@@ -14,9 +14,7 @@ const storage = {
   },
 };
 
-const controls = "https://acarsproxy.sharpjsteam.workers.dev/soundings/acars/"
-  ? { acarsBaseUrl:"https://acarsproxy.sharpjsteam.workers.dev/soundings/acars/" }
-  : undefined;
+const controls = { acarsBaseUrl: "https://acarsproxy.sharpjsteam.workers.dev/soundings/acars/" };
 
 const chart = SharpJS('#chart', {
   sources,

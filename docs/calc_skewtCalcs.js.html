@@ -38,10 +38,10 @@ const globalFont = '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
  * @param {*} Sounding 
  * @param {*} lowerBound 
  * @param {*} upperBound 
- * @param {*} unit 
+ * @param {"Pres" | "Hght"} unit 
  * @returns 
  */
-function getLayersWithinBounds(Sounding, lowerBound, upperBound, unit) {
+export function getLayersWithinBounds(Sounding, lowerBound, upperBound, unit) {
   let Lower;
   let Upper;
   if (unit == "Pres"){
@@ -491,7 +491,7 @@ export function WindShear(L1, L2) {
  * motions, and deviant tornado motions.
  * @param {object} Sounding Sounding profile (pressure in hPa, height in m, wind in kt).
  * @param {object} EffInflows Effective Inflow Layer to save a ton of computational time
- * @returns {object} Named storm-motion vectors RM, LM, MM, US, DS, DTMR, and DTML;
+ * @returns {{ RM: any, LM: any, MM: any, US: any, DS: any, DTMR: any, DTML: any }} Named storm-motion vectors RM, LM, MM, US, DS, DTMR, and DTML;
  * each x/y component is in kt.
  * @see Bunkers et al. (2000), Predicting supercell motion using a new hodograph technique,
  * https://doi.org/10.1175/1520-0434(2000)015%3C0061:PSMUAN%3E2.0.CO;2
@@ -2296,7 +2296,7 @@ export function GetParams(Info, Type, STPF = false) {
     let esrhT = Info.Wnd.ESRH / 50;
     let ebwdT = EBWD / 20;
 
-    return Math.round(10 * mucapeT * esrhT * ebwdT) / 10;
+    return Math.round(100 * mucapeT * esrhT * ebwdT) / 100;
   } else if (Type == "STPF") {
     let sblcl = Info.Parcels.SB.LCL;
 
@@ -2321,7 +2321,7 @@ export function GetParams(Info, Type, STPF = false) {
     let cape = Info.Parcels.SB.Cape / 1500;
     let srh = (Info.Wnd.SRH01.SRHP + Info.Wnd.SRH01.SRHM) / 150;
 
-    return Math.round(10 * (cape * srh * bwd * sblcl)) / 10;
+    return Math.round(100 * (cape * srh * bwd * sblcl)) / 100;
   } else if (Type == "STPC") {
     let cape = Info.Parcels.ML.Cape / 1500;
     let srh = Info.Wnd.ESRH / 150;
@@ -2356,7 +2356,7 @@ export function GetParams(Info, Type, STPF = false) {
       mlcin = (mlcin + 200) / 150;
     }
 
-    return Math.round(10 * (cape * srh * ebwd * mllcl * mlcin)) / 10;
+    return Math.round(100 * (cape * srh * ebwd * mllcl * mlcin)) / 100;
   } else if (Type == "VTPC") {
     let cape = Info.Parcels.ML.Cape / 1700;
     let srh = Info.Wnd.ESRH / 250;
@@ -2410,7 +2410,7 @@ export function GetParams(Info, Type, STPF = false) {
       MLLR = clamp((MLLR-4.5)/2, 0, 2);
     }
 
-    return Math.round(10 * (cape * srh * ebwd * mllcl * mlcin * cape3 * MLLR)) / 10;
+    return Math.round(100 * (cape * srh * ebwd * mllcl * mlcin * cape3 * MLLR)) / 100;
   } else if (Type == "SHIP") {
     let Mucape = Info.Parcels.MU.Cape;
     let PrclStart = Info.Parcels.MU.Start;
@@ -2438,7 +2438,7 @@ export function GetParams(Info, Type, STPF = false) {
       Ship *= (FZL.H / 2400)
     }
 
-    return Math.round(10 * Ship) / 10;
+    return Math.round(100 * Ship) / 100;
   } else if (Type == "WNDG") {
     let lr03 = LapseRateHght(Info.Sounding.Sounding, "SFC", 3000, false);
 
@@ -2460,7 +2460,7 @@ export function GetParams(Info, Type, STPF = false) {
 
     meanW = Math.sqrt(Math.pow(meanW.x, 2) + Math.pow(meanW.y, 2));
 
-    return Math.round(10 * (lr03 / 9) * (50 + mlcin) / 40 * cape / 2000 * meanW / 15) / 10;
+    return Math.round(100 * (lr03 / 9) * (50 + mlcin) / 40 * cape / 2000 * meanW / 15) / 100;
   } else if (Type == "PWAT") {
     let snd = Info.Sounding.Sounding;
     return calculatePWAT(snd.P, snd.D);
@@ -2471,7 +2471,7 @@ export function GetParams(Info, Type, STPF = false) {
     let MeanW = MeanWind(Info.Sounding.Sounding, PB, PT);
     let meanW = Math.sqrt(Math.pow(MeanW.x, 2) + Math.pow(MeanW.y, 2));
 
-    return Math.round(10 * (Info.TProf.DCapeProf.DCape / 980) * (Info.Parcels.MU.Cape / 2000) * (Shear06 / 20) * (meanW / 16)) / 10;
+    return Math.round(100 * (Info.TProf.DCapeProf.DCape / 980) * (Info.Parcels.MU.Cape / 2000) * (Shear06 / 20) * (meanW / 16)) / 100;
   } else if (Type == "EHI") {
     let cape = Info.DP.Cape;
 
@@ -3018,13 +3018,15 @@ export function GetCapeColor(N) {
  * @param {boolean} retrn Return the computed subset as an object instead of drawing (in 1).
  * @param {object|false} f Optional preset configuration to activate before rendering (in 1).
  * @param {HTMLCanvasElement|null} canvas Destination canvas; uses the default values canvas when null (in px).
+ * @param {'default'|'metric'} units Display units for drawn parameter values (in 1).
  * @returns {object|void} When retrn is true, an object of named analysis values with their
  * field-specific units (including CAPE/DCAPE in J/kg, heights in m, temperatures in F or C,
  * PWAT in in, mixing ratio in g/kg, and relative humidity in %); otherwise draws to the canvas
  * and returns no value (in 1).
  */
-export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false, f = false, canvas = null) {
+export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false, f = false, canvas = null, units = 'default') {
   let Parcels = { SB, ML, MU };
+  const metric = units === 'metric';
   let Scalex = 0;
   let Scaley = 0.8;
   let MScaleY = 6;
@@ -3074,8 +3076,15 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   let LowRH = Math.round(RelHum(Low.T, Low.D));
   let DerechoComp = GetParams({ Wnd, Sounding, Parcels, TProf }, "DerechoComp");
   let LCLTemp = Math.round(CToF(D[1]));
+  const lclTempDisplay = metric ? Math.round(D[1]) : LCLTemp;
   let ConvT = GetParams({ Sounding, Parcels }, "ConvT");
   let MaxT = GetParams({ Sounding, Parcels }, "MaxT");
+  const displayTemp = (value) => value === "--" ? value : metric ? Math.round(FtoC(Number(value))) : value;
+  const convTDisplay = displayTemp(ConvT === "--" ? ConvT : Math.round(ConvT));
+  const maxTDisplay = displayTemp(MaxT);
+  const displayPwat = (value) => value == null || !Number.isFinite(Number(value))
+    ? '--'
+    : metric ? `${(Number(value) * 25.4).toFixed(1)} mm` : `${value} in`;
   let TEHI = Math.round(GetParams({ Sounding, Parcels, Wnd }, "TEHI") * 100) / 100;
   let TTS = Math.round(GetParams({ Sounding, Parcels, Wnd }, "TTS") * 100) / 100;
   let MMR = Math.round(100 * mean_mixratio(Sounding.Sounding, Sfc.P, Low.P)) / 100;
@@ -3154,7 +3163,7 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     ctx.fillRect((0.25 * i) * Canv.width, 0.05 * Canv.height, 1, 0.9 * Canv.height);
   }
 
-  Scaley = CreateInsetParams(`PWAT: `, `${PWAT} in`, MixRatioColor(PWAT * 7.5), 1, Coloumns, Scaley, MScaleY, Canv, ctx);
+  Scaley = CreateInsetParams(`PWAT: `, displayPwat(PWAT), MixRatioColor(PWAT * 7.5), 1, Coloumns, Scaley, MScaleY, Canv, ctx);
   Scaley = CreateInsetParams(`Mean Mix Rat:`, `${MMR} g/kg`, MixRatioColor(MMR), 1, Coloumns, Scaley, MScaleY, Canv, ctx);
   Scaley = CreateInsetParams(`Sfc RelH:`, `${SfcRH}%`, WhiteColorBase, 1, Coloumns, Scaley, MScaleY, Canv, ctx);
   Scaley = CreateInsetParams(`Low RelH:`, `${LowRH}%`, WhiteColorBase, 1, Coloumns, Scaley, MScaleY, Canv, ctx);
@@ -3168,18 +3177,18 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${Math.round(ConvT)} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
     Scaley = CreateInsetParams(`TEHI:`, `${TEHI}`, GetSTPColor(TEHI * 1.5), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`TTS:`, `${TTS}`, GetSTPColor(TTS * 1.5), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(SCP), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`STP (cin):`, `${STPC}`, GetSTPColor(STPC), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(STPF), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`VTP (mod):`, `${VTPC}`, GetSTPColor(VTPC), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(Math.abs(SCP)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`STP (cin):`, `${STPC}`, GetSTPColor(Math.abs(STPC)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(Math.abs(STPF)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`VTP (mod):`, `${VTPC}`, GetSTPColor(Math.abs(VTPC)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
@@ -3192,17 +3201,17 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${Math.round(ConvT)} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
     Scaley = CreateInsetParams(`K Index:`, `${KIndex}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`TT Index:`, `${TTIndex}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(SCP), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Supercell Comp:`, `${SCP}`, GetSCPColor(Math.abs(SCP)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Bulk Rich. Num.:`, `${BRN}`, GetSTPColor(BRN * 3), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(STPF), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`STP (fixed):`, `${STPF}`, GetSTPColor(Math.abs(STPF)), 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`SigSvr:`, `${SigSvr} m³/s³`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
@@ -3215,9 +3224,9 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${ConvT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
@@ -3242,16 +3251,16 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
     Scaley = CreateInsetParams(`Freezing Level:`, `${FZL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`MU MPL:`, `${MUMPL}m`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`3km Theta Diff:`, `${ttadiff}K`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`LCL Temp:`, `${LCLTemp}F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`ConvT:`, `${Math.round(ConvT)} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`MaxT:`, `${MaxT} F`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`LCL Temp:`, `${lclTempDisplay}°${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`ConvT:`, `${convTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`MaxT:`, `${maxTDisplay} °${metric ? 'C' : 'F'}`, WhiteColorBase, 2, Coloumns, Scaley, MScaleY, Canv, ctx);
 
     Scaley = 0.8;
 
     Scaley = CreateInsetParams(`400mb Max WB:  `, `${MaxWB}C`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DGZ Depth: `, `${Math.round(LayerDepth)}m`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DGZ Omega:`, `${Math.round(100 * DGOmega) / 100}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`DGZ Pwat:`, `${Math.round(100 * DGPWAT) / 100}in`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`DGZ Pwat:`, displayPwat(metric ? DGPWAT : Math.round(100 * DGPWAT) / 100), WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DGZ Mix. Rat.:`, `${Math.round(100 * DGMX) / 100}g/kg`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Avg DGZ RH:`, `${avgDGZ_RH}`, WhiteColorBase, 3, Coloumns, Scaley, MScaleY, Canv, ctx);
 
@@ -3259,22 +3268,22 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   }
 
   if (Presets['Inset'] == "Fire" || Presets['Inset'] == "Winter"){
-    Scaley = CreateInsetParams(`Feels Like:`, `${Math.round(FeelsLike)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Feels Like:`, `${displayTemp(Math.round(FeelsLike))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`1k-500mb Dpth:`, `${Math.round(thick1000500)} m`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${Math.round(WBGT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${displayTemp(Math.round(WBGT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DCape:`, `${Math.round(DCape)} J/kg`, GetCapeColor(DCape * 2), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DParcel Pres:`, `${Math.round(TProf.DCapeProf.StartPres.P)}mb`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`DownT:`, `${Math.round(DownT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`DownT:`, `${displayTemp(Math.round(DownT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
   } else if (Presets['Inset'] == "Severe" || Presets['Inset'] == "Default"){
     Scaley = CreateInsetParams(`SHIP:`, `${SHIP}`, GetSTPColor(SHIP * 2), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`LHP`, `${Math.round(LHP)}`, GetSTPColor(LHP / 3), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`WNDG:`, `${WNDG}`, GetSTPColor(WNDG * 1.1), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Derecho Comp:`, `${DerechoComp}`, GetSTPColor(DerechoComp / 1.75), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`DCape:`, `${Math.round(DCape)} J/kg`, GetCapeColor(DCape * 2), 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`DownT:`, `${Math.round(DownT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`DownT:`, `${displayTemp(Math.round(DownT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
   } else if (Presets['Inset'] == 'Ambient'){
-    Scaley = CreateInsetParams(`Feels Like:`, `${Math.round(FeelsLike)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
-    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${Math.round(WBGT)} F`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Feels Like:`, `${displayTemp(Math.round(FeelsLike))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
+    Scaley = CreateInsetParams(`Wet Bulb Globe Temp: `, `${displayTemp(Math.round(WBGT))} °${metric ? 'C' : 'F'}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Rad. Fog Pt.:`, `${Math.round(RFP)} C`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Fog Threat Val.:`, `${Math.round(100 * FTV)/100} C`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
     Scaley = CreateInsetParams(`Fog Stab. Idx:`, `${Math.round(FSI * 100)/100}`, WhiteColorBase, 4, Coloumns, Scaley, MScaleY, Canv, ctx);
@@ -3419,13 +3428,13 @@ export function calculateHeightsAboveGround(pressureLevels, temperatures) {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#GetSWV">GetSWV</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseAviationStationResponse">parseAviationStationResponse</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resetAviationStationCatalog">resetAviationStationCatalog</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#validateAviationStationRecords">validateAviationStationRecords</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#BUFKIT_MODELS">BUFKIT_MODELS</a></li><li><a href="global.html#CM1Round">CM1Round</a></li><li><a href="global.html#CToF">CToF</a></li><li><a href="global.html#CartesianToPolarDeg">CartesianToPolarDeg</a></li><li><a href="global.html#ConvertCartToPolarReal">ConvertCartToPolarReal</a></li><li><a href="global.html#ConvertPolartoCart">ConvertPolartoCart</a></li><li><a href="global.html#ConvertToInfo">ConvertToInfo</a></li><li><a href="global.html#ConvertToRaw">ConvertToRaw</a></li><li><a href="global.html#CreateInsetParams">CreateInsetParams</a></li><li><a href="global.html#CtoK">CtoK</a></li><li><a href="global.html#DISPLAY_VERSION">DISPLAY_VERSION</a></li><li><a href="global.html#DegToRad">DegToRad</a></li><li><a href="global.html#DewFromTRh">DewFromTRh</a></li><li><a href="global.html#DrawInsetParams">DrawInsetParams</a></li><li><a href="global.html#ENGINE_SETTINGS">ENGINE_SETTINGS</a></li><li><a href="global.html#EXPORT_FORMATS">EXPORT_FORMATS</a></li><li><a href="global.html#EffInflowCalc">EffInflowCalc</a></li><li><a href="global.html#FtoC">FtoC</a></li><li><a href="global.html#GetAngleFromVector">GetAngleFromVector</a></li><li><a href="global.html#GetBM">GetBM</a></li><li><a href="global.html#GetCapeColor">GetCapeColor</a></li><li><a href="global.html#GetDCape">GetDCape</a></li><li><a href="global.html#GetDryLapse">GetDryLapse</a></li><li><a href="global.html#GetLayerByHght">GetLayerByHght</a></li><li><a href="global.html#GetLayerByPres">GetLayerByPres</a></li><li><a href="global.html#GetLayerByTemp">GetLayerByTemp</a></li><li><a href="global.html#GetLerpFactor">GetLerpFactor</a></li><li><a href="global.html#GetMoistLapse">GetMoistLapse</a></li><li><a href="global.html#GetNumFromRange">GetNumFromRange</a></li><li><a href="global.html#GetParams">GetParams</a></li><li><a href="global.html#GetSCPColor">GetSCPColor</a></li><li><a href="global.html#GetSRH">GetSRH</a></li><li><a href="global.html#GetSTPColor">GetSTPColor</a></li><li><a href="global.html#GetSWV">GetSWV</a></li><li><a href="global.html#HELP_HTML">HELP_HTML</a></li><li><a href="global.html#KTSTOM2">KTSTOM2</a></li><li><a href="global.html#KTStoMPH">KTStoMPH</a></li><li><a href="global.html#KTStoMPS">KTStoMPS</a></li><li><a href="global.html#LapseRateHght">LapseRateHght</a></li><li><a href="global.html#LapseRatePres">LapseRatePres</a></li><li><a href="global.html#LastItem">LastItem</a></li><li><a href="global.html#Lerp">Lerp</a></li><li><a href="global.html#LerpSoundingSlice">LerpSoundingSlice</a></li><li><a href="global.html#LiftParcel">LiftParcel</a></li><li><a href="global.html#M2TOKTS">M2TOKTS</a></li><li><a href="global.html#MIGRATIONS">MIGRATIONS</a></li><li><a href="global.html#MPHtoKTS">MPHtoKTS</a></li><li><a href="global.html#MPStoKTS">MPStoKTS</a></li><li><a href="global.html#Mag">Mag</a></li><li><a href="global.html#MeanWind">MeanWind</a></li><li><a href="global.html#MeanWindNW">MeanWindNW</a></li><li><a href="global.html#MixRatioColor">MixRatioColor</a></li><li><a href="global.html#ModifLerp">ModifLerp</a></li><li><a href="global.html#PolarToCartesianDeg">PolarToCartesianDeg</a></li><li><a href="global.html#Process">Process</a></li><li><a href="global.html#QCCheck">QCCheck</a></li><li><a href="global.html#RadToDeg">RadToDeg</a></li><li><a href="global.html#RelHum">RelHum</a></li><li><a href="global.html#RoundTo">RoundTo</a></li><li><a href="global.html#SALR">SALR</a></li><li><a href="global.html#SETTINGS_SCHEMA">SETTINGS_SCHEMA</a></li><li><a href="global.html#SETTINGS_VERSION">SETTINGS_VERSION</a></li><li><a href="global.html#SharpJS">SharpJS</a></li><li><a href="global.html#SurfaceLayerInfo">SurfaceLayerInfo</a></li><li><a href="global.html#USALR">USALR</a></li><li><a href="global.html#UpdateCSMotStorm">UpdateCSMotStorm</a></li><li><a href="global.html#UpdatePresets">UpdatePresets</a></li><li><a href="global.html#VERSION">VERSION</a></li><li><a href="global.html#VaporPressure">VaporPressure</a></li><li><a href="global.html#VirtTemp">VirtTemp</a></li><li><a href="global.html#WindShear">WindShear</a></li><li><a href="global.html#WindShearAvg">WindShearAvg</a></li><li><a href="global.html#WindShearFind">WindShearFind</a></li><li><a href="global.html#WindShearFindP">WindShearFindP</a></li><li><a href="global.html#Wobf">Wobf</a></li><li><a href="global.html#absHum">absHum</a></li><li><a href="global.html#absoluteValue">absoluteValue</a></li><li><a href="global.html#alwaysAvailable">alwaysAvailable</a></li><li><a href="global.html#analyze">analyze</a></li><li><a href="global.html#arrayIndex">arrayIndex</a></li><li><a href="global.html#autoAdapter">autoAdapter</a></li><li><a href="global.html#breakdownCM1">breakdownCM1</a></li><li><a href="global.html#bufkitPath">bufkitPath</a></li><li><a href="global.html#buildNexradVwpSkeletonSoundingFromParse">buildNexradVwpSkeletonSoundingFromParse</a></li><li><a href="global.html#buildVwpSounding">buildVwpSounding</a></li><li><a href="global.html#bulkShear">bulkShear</a></li><li><a href="global.html#calcNxtPrs">calcNxtPrs</a></li><li><a href="global.html#calc_ecape_a">calc_ecape_a</a></li><li><a href="global.html#calc_ecape_ncape">calc_ecape_ncape</a></li><li><a href="global.html#calc_psi">calc_psi</a></li><li><a href="global.html#calc_sr_wind">calc_sr_wind</a></li><li><a href="global.html#calculateHeightsAboveGround">calculateHeightsAboveGround</a></li><li><a href="global.html#calculatePWAT">calculatePWAT</a></li><li><a href="global.html#calculateQV">calculateQV</a></li><li><a href="global.html#celsiusToKelvin">celsiusToKelvin</a></li><li><a href="global.html#clamp">clamp</a></li><li><a href="global.html#clone">clone</a></li><li><a href="global.html#combineStationLists">combineStationLists</a></li><li><a href="global.html#compareStationCodes">compareStationCodes</a></li><li><a href="global.html#computeThermo">computeThermo</a></li><li><a href="global.html#computeWindParams">computeWindParams</a></li><li><a href="global.html#compute_NCAPE">compute_NCAPE</a></li><li><a href="global.html#cookieAdapter">cookieAdapter</a></li><li><a href="global.html#countryName">countryName</a></li><li><a href="global.html#createBufkitMapButton">createBufkitMapButton</a></li><li><a href="global.html#createControls">createControls</a></li><li><a href="global.html#createEngine">createEngine</a></li><li><a href="global.html#createSettingsStore">createSettingsStore</a></li><li><a href="global.html#createStationMapButton">createStationMapButton</a></li><li><a href="global.html#createTimeSlider">createTimeSlider</a></li><li><a href="global.html#degtoRad">degtoRad</a></li><li><a href="global.html#density_temperature">density_temperature</a></li><li><a href="global.html#dewpointCFromQv">dewpointCFromQv</a></li><li><a href="global.html#diffFromDefaults">diffFromDefaults</a></li><li><a href="global.html#directionTo">directionTo</a></li><li><a href="global.html#distanceMiles">distanceMiles</a></li><li><a href="global.html#domega">domega</a></li><li><a href="global.html#drawCanvasPath">drawCanvasPath</a></li><li><a href="global.html#drawHodographLocationInset">drawHodographLocationInset</a></li><li><a href="global.html#dry_air_density">dry_air_density</a></li><li><a href="global.html#drylift">drylift</a></li><li><a href="global.html#dwp_from_spechum">dwp_from_spechum</a></li><li><a href="global.html#dwp_from_vaporpres">dwp_from_vaporpres</a></li><li><a href="global.html#ebwd">ebwd</a></li><li><a href="global.html#ecape_parcel">ecape_parcel</a></li><li><a href="global.html#entrainment_rate">entrainment_rate</a></li><li><a href="global.html#expandAcarsTimeSeries">expandAcarsTimeSeries</a></li><li><a href="global.html#expandBufkitTimeSeries">expandBufkitTimeSeries</a></li><li><a href="global.html#exportSounding">exportSounding</a></li><li><a href="global.html#exportToCm1">exportToCm1</a></li><li><a href="global.html#exportToSharppy">exportToSharppy</a></li><li><a href="global.html#fetchAcarsArchive">fetchAcarsArchive</a></li><li><a href="global.html#fetchBufkitDirectory">fetchBufkitDirectory</a></li><li><a href="global.html#fetchIemBufkit">fetchIemBufkit</a></li><li><a href="global.html#fetchIemBufkitForecasts">fetchIemBufkitForecasts</a></li><li><a href="global.html#fetchIemRaob">fetchIemRaob</a></li><li><a href="global.html#fetchNexradVwp">fetchNexradVwp</a></li><li><a href="global.html#fetchNexradVwpArchive">fetchNexradVwpArchive</a></li><li><a href="global.html#fetchNexradVwpRadarStations">fetchNexradVwpRadarStations</a></li><li><a href="global.html#fillVwpWindColumnsFromParse">fillVwpWindColumnsFromParse</a></li><li><a href="global.html#findBlock">findBlock</a></li><li><a href="global.html#findMessageStart">findMessageStart</a></li><li><a href="global.html#findNearbyTown">findNearbyTown</a></li><li><a href="global.html#findTextHeaderEnd">findTextHeaderEnd</a></li><li><a href="global.html#flipY">flipY</a></li><li><a href="global.html#forecastHourOf">forecastHourOf</a></li><li><a href="global.html#formatCM1Line">formatCM1Line</a></li><li><a href="global.html#fromArrays">fromArrays</a></li><li><a href="global.html#getAngleDifference">getAngleDifference</a></li><li><a href="global.html#getAviationStationCatalog">getAviationStationCatalog</a></li><li><a href="global.html#getHodographMapTile">getHodographMapTile</a></li><li><a href="global.html#getLayersWithinBounds">getLayersWithinBounds</a></li><li><a href="global.html#getOk">getOk</a></li><li><a href="global.html#h">h</a></li><li><a href="global.html#heaviside">heaviside</a></li><li><a href="global.html#hypsometricHeights">hypsometricHeights</a></li><li><a href="global.html#ice_fraction">ice_fraction</a></li><li><a href="global.html#ice_fraction_deriv">ice_fraction_deriv</a></li><li><a href="global.html#indexAviationStations">indexAviationStations</a></li><li><a href="global.html#inflate">inflate</a></li><li><a href="global.html#injectStyles">injectStyles</a></li><li><a href="global.html#isBufkitText">isBufkitText</a></li><li><a href="global.html#isEmptyObject">isEmptyObject</a></li><li><a href="global.html#isSounding">isSounding</a></li><li><a href="global.html#keyUnix">keyUnix</a></li><li><a href="global.html#lastSynoptic">lastSynoptic</a></li><li><a href="global.html#lcltemp">lcltemp</a></li><li><a href="global.html#lerp">lerp</a></li><li><a href="global.html#levelAt">levelAt</a></li><li><a href="global.html#linear_interp">linear_interp</a></li><li><a href="global.html#listAcarsArchive">listAcarsArchive</a></li><li><a href="global.html#listBufkitForecastHours">listBufkitForecastHours</a></li><li><a href="global.html#listBufkitStationCodes">listBufkitStationCodes</a></li><li><a href="global.html#listKeys">listKeys</a></li><li><a href="global.html#ln">ln</a></li><li><a href="global.html#loadTornadoClimo">loadTornadoClimo</a></li><li><a href="global.html#localStorageAdapter">localStorageAdapter</a></li><li><a href="global.html#log10">log10</a></li><li><a href="global.html#mapAviationStationCodes">mapAviationStationCodes</a></li><li><a href="global.html#matchStationMetadata">matchStationMetadata</a></li><li><a href="global.html#mean_layer_temp">mean_layer_temp</a></li><li><a href="global.html#mean_mixratio">mean_mixratio</a></li><li><a href="global.html#mean_relh">mean_relh</a></li><li><a href="global.html#mean_rh_in_layer">mean_rh_in_layer</a></li><li><a href="global.html#mean_theta">mean_theta</a></li><li><a href="global.html#mean_thetae">mean_thetae</a></li><li><a href="global.html#memoryAdapter">memoryAdapter</a></li><li><a href="global.html#migrate">migrate</a></li><li><a href="global.html#mixratio">mixratio</a></li><li><a href="global.html#mixratiohighprec">mixratiohighprec</a></li><li><a href="global.html#modelFromFileName">modelFromFileName</a></li><li><a href="global.html#mount">mount</a></li><li><a href="global.html#nearestVal">nearestVal</a></li><li><a href="global.html#nexradDate">nexradDate</a></li><li><a href="global.html#noop">noop</a></li><li><a href="global.html#omega">omega</a></li><li><a href="global.html#pad">pad</a></li><li><a href="global.html#parseBufkit">parseBufkit</a></li><li><a href="global.html#parseBufkitTime">parseBufkitTime</a></li><li><a href="global.html#parseCM1Sounding">parseCM1Sounding</a></li><li><a href="global.html#parseIemRaob">parseIemRaob</a></li><li><a href="global.html#parsePDB">parsePDB</a></li><li><a href="global.html#parseSounding">parseSounding</a></li><li><a href="global.html#parseSymbologyWinds">parseSymbologyWinds</a></li><li><a href="global.html#parseTabularFull">parseTabularFull</a></li><li><a href="global.html#parseVWP">parseVWP</a></li><li><a href="global.html#polar">polar</a></li><li><a href="global.html#polarMotion">polarMotion</a></li><li><a href="global.html#pres_at_hght">pres_at_hght</a></li><li><a href="global.html#projectHodographMapCoordinate">projectHodographMapCoordinate</a></li><li><a href="global.html#qc">qc</a></li><li><a href="global.html#r_sat">r_sat</a></li><li><a href="global.html#radarIdFromHeader">radarIdFromHeader</a></li><li><a href="global.html#raobStationLocation">raobStationLocation</a></li><li><a href="global.html#raw">raw</a></li><li><a href="global.html#readFile">readFile</a></li><li><a href="global.html#readKeyValues">readKeyValues</a></li><li><a href="global.html#ready">ready</a></li><li><a href="global.html#relh">relh</a></li><li><a href="global.html#renderChart">renderChart</a></li><li><a href="global.html#resolveAdapter">resolveAdapter</a></li><li><a href="global.html#resolveTarget">resolveTarget</a></li><li><a href="global.html#rev_linear_interp">rev_linear_interp</a></li><li><a href="global.html#sanitizeSettings">sanitizeSettings</a></li><li><a href="global.html#satlift">satlift</a></li><li><a href="global.html#set">set</a></li><li><a href="global.html#sharppyText">sharppyText</a></li><li><a href="global.html#specHum">specHum</a></li><li><a href="global.html#spec_heat_cap_of_moist_air">spec_heat_cap_of_moist_air</a></li><li><a href="global.html#spechum_from_dwp">spechum_from_dwp</a></li><li><a href="global.html#splitSections">splitSections</a></li><li><a href="global.html#srhTotal">srhTotal</a></li><li><a href="global.html#stationStateName">stationStateName</a></li><li><a href="global.html#storage">storage</a></li><li><a href="global.html#strokeCanvasLine">strokeCanvasLine</a></li><li><a href="global.html#strokeCanvasSegments">strokeCanvasSegments</a></li><li><a href="global.html#summarizeParcel">summarizeParcel</a></li><li><a href="global.html#tempCFromTheta">tempCFromTheta</a></li><li><a href="global.html#temp_at_mixrat">temp_at_mixrat</a></li><li><a href="global.html#thalvl">thalvl</a></li><li><a href="global.html#theta">theta</a></li><li><a href="global.html#thetae">thetae</a></li><li><a href="global.html#thetahighprec">thetahighprec</a></li><li><a href="global.html#titleTime">titleTime</a></li><li><a href="global.html#toCelsius">toCelsius</a></li><li><a href="global.html#toDate">toDate</a></li><li><a href="global.html#toSounding">toSounding</a></li><li><a href="global.html#unwrap">unwrap</a></li><li><a href="global.html#updraft_radius">updraft_radius</a></li><li><a href="global.html#v">v</a></li><li><a href="global.html#vappres">vappres</a></li><li><a href="global.html#virtemp">virtemp</a></li><li><a href="global.html#vp">vp</a></li><li><a href="global.html#vp_from_spechum">vp_from_spechum</a></li><li><a href="global.html#vwpVolumeMetaFromParse">vwpVolumeMetaFromParse</a></li><li><a href="global.html#wetbulb">wetbulb</a></li><li><a href="global.html#wetlift">wetlift</a></li><li><a href="global.html#windDirDiff">windDirDiff</a></li><li><a href="global.html#withLocation">withLocation</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue Oct 27 2026 18:41:17 GMT-0500 (Central Daylight Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Wed Nov 04 2026 16:49:47 GMT-0600 (Central Standard Time)
 </footer>
 
 <script> prettyPrint(); </script>
