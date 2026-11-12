@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SharpJS remote sounding example</title>
+  </head>
+  <body>
+    <div id="chart"></div>
+    <script type="module">
+      import { SharpJS } from '../src/index.js';
+
+      const fileLocation = new URLSearchParams(location.search).get('file');
+      if (!fileLocation) throw new Error('Provide a sounding URL with ?file=https%3A%2F%2Fexample.com%2Fsounding.txt');
+
+      SharpJS('#chart', { fileLocation });
+    </script>
+  </body>
+</html>

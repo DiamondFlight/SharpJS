@@ -101,8 +101,6 @@ export const SHARPJS_CSS = `
   top: 0;
   border: 1.5px solid var(--sjs-border);
   overflow: hidden;
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
-  background: #000;
 }
 
 ${v('skewTTitle')} { position: absolute; top: 0; left: 0; width: 100%; height: 5%; background: #000; }
@@ -128,7 +126,6 @@ ${v('Values6')}, ${v('Values7')}, ${v('Values8')}, ${v('Values11')} {
   position: absolute !important;
   border: 1.5px solid var(--sjs-border);
   border-radius: 0;
-  background-color: #000;
   box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.5);
 }
 
@@ -319,7 +316,7 @@ ${v('Values8')} { top: 55%; left: 0; height: 40% !important; width: 100% !import
 }
 .sharpjs .sjs-section > summary {
   cursor: pointer; list-style: none;
-  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  font-size: 0.9rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--sjs-muted);
 }
 .sharpjs .sjs-section > summary::-webkit-details-marker { display: none; }
@@ -327,11 +324,50 @@ ${v('Values8')} { top: 55%; left: 0; height: 40% !important; width: 100% !import
 .sharpjs .sjs-section:not([open]) > summary::after { transform: rotate(-90deg); }
 .sharpjs .sjs-section[open] > summary { margin-bottom: 8px; }
 .sharpjs .sjs-sub { margin: 10px 0 6px; font-size: 0.72rem; font-weight: 700; color: var(--sjs-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sharpjs .sjs-display-group { margin: 10px 0 6px; }
+.sharpjs .sjs-display-group > summary {
+  margin-bottom: 6px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sjs-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sharpjs .sjs-display-group > summary::-webkit-details-marker { display: none; }
+.sharpjs .sjs-display-group > summary::after { content: '▾'; float: right; transition: transform 0.15s ease; }
+.sharpjs .sjs-display-group:not([open]) > summary { margin-bottom: 0; }
+.sharpjs .sjs-display-group:not([open]) > summary::after { transform: rotate(-90deg); }
 .sharpjs .sjs-row { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 5px; margin-bottom: 5px; }
 .sharpjs .sjs-row > .sjs-button { width: 100%; }
 .sharpjs .sjs-stack > .sjs-button { width: 100%; margin-bottom: 5px; justify-content: space-between; text-align: left; }
 .sharpjs .sjs-stack > .sjs-button > span:last-child { color: var(--sjs-muted); font-weight: 500; }
 .sharpjs .sjs-stack > .sjs-button[aria-pressed="true"] > span:last-child { color: inherit; }
+.sharpjs .sjs-checkbox-list { display: grid; gap: 3px; }
+.sharpjs .sjs-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 1px;
+  color: var(--sjs-text);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+.sharpjs .sjs-checkbox > input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--sjs-accent);
+}
+.sharpjs .sjs-checkbox > span {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
 .sharpjs .sjs-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 7px; font-size: 0.75rem; color: var(--sjs-muted); }
 .sharpjs .sjs-field-row { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 6px; }
 .sharpjs .sjs-input, .sharpjs .sjs-select {

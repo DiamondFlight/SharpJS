@@ -13,6 +13,7 @@ import { renderChart } from './template.js';
 import { injectStyles } from './styles.js';
 import { createControls } from './controls.js';
 import { createSettingsStore } from '../settings/store.js';
+import { setColorMode } from '../settings/colors.js';
 import { toSounding, isSounding } from '../io/input.js';
 import { withLocation } from '../io/location.js';
 import { buildVwpSounding } from '../io/vwp.js';
@@ -23,8 +24,16 @@ import { createTimeSlider, expandBufkitTimeSeries } from './time-slider.js';
 
 /** Settings the chart engine owns (the rest belong to the controls panel). */
 const ENGINE_SETTINGS = [
-  'units', 'skewTSkew', 'hodographNumbers', 'hodographColorTable', 'hodographScaleMode',
-  'hodographTrimWindProfile', 'hodographMode', 'readOut', 'verticalBarsWindSpeed', 'showStormMotions', 
+  'units', 'skewTSkew', 'showSkewTTemperatureLines',
+  'showSkewTFZL', 'showSkewTWBZ0', 'showSkewTMixingRatio', 'showSkewTDryAdiabats',
+  'showSkewTMoistAdiabats', 'showSkewTEL', 'showSkewTPBL', 'showSkewTInflowLayer',
+  'showSkewTWetBulb', 'showSkewTVirtualTemperature', 'showSkewTECapeParcel',
+  'showSkewTDCapeParcel', 'showSkewTLCLLFC', 'showSkewTHeights', 'showSkewTParcelPath',
+  'showHodographBunkersMotions', 'showHodographCustomMeanMotions',
+  'showHodographCorfidiMotions', 'showHodographDeviantMotions',
+  'showHodographInflowRegion', 'hodographRingSpacing', 'hodographMaxHeight', 'showHodographMap',
+  'hodographNumbers', 'hodographColorTable', 'hodographScaleMode',
+  'hodographTrimWindProfile', 'hodographMode', 'darkMode', 'readOut', 'verticalBarsWindSpeed', 'showStormMotions',
   'showEhiInWindBox', 'show3DHodograph', 'show3DHodoArrows', 'showCapeOnMap',
   'presetOverrides', 'efScale', 'defaultParcel', 'defaultMotion', 'exportFormat',
 ];
@@ -63,7 +72,7 @@ async function readFile(file) {
   }
   if (!binary || /\.txt$|\.buf$|\.csv$|\.json$/i.test(file.name)) {
     const text = new TextDecoder().decode(bytes);
-    if (text.includes('%RAW%') || text.includes('STID') || text.includes('"level"') || !/\p{L}/u.test(text)) {
+    if (text.includes('%RAW%') || text.includes("VAR_make_datatype") || text.includes("MODEL GRIDDED SOUNDING PLOTTING") || text.includes('STID') || text.includes('"level"') || !/\p{L}/u.test(text)) {
       return { name: file.name, text };
     }
   }
@@ -98,7 +107,7 @@ SharpJS.version = VERSION;
  * @returns {object} Mounted chart handle.
  */
 function mount(el, initialProps) {
-  let props = { ...initialProps };
+  let props = { fileLocation: null, ...initialProps };
   let destroyed = false;
   const listeners = new Map();
   const on = (type, fn) => {
@@ -153,6 +162,7 @@ function mount(el, initialProps) {
   let comparisons = [];
   let soundingKey;
   let vwpOn = false;
+  let fileLocationRequest = 0;
   let controls = null;
   const hasSounding = () => !!(main || vwpOn);
   const timeSliderController = createTimeSlider(timeSlider, stage, controlsHost, el.ownerDocument, (_index, item, reset) => {
@@ -178,6 +188,7 @@ function mount(el, initialProps) {
     defaults: props.defaultSettings,
     overrides: props.settings,
   });
+  setColorMode(store.get().darkMode);
 
   // ── engine ─────────────────────────────────────────────────────────────────────────────
   let stateTimer = null;
@@ -224,6 +235,7 @@ function mount(el, initialProps) {
   }
 
   store.subscribe((settings) => {
+    setColorMode(settings.darkMode);
     if (!syncingFromEngine) {
       const current = engine.getState();
       const changed = ENGINE_SETTINGS.filter((k) => JSON.stringify(settings[k]) !== JSON.stringify(current[k]));
@@ -337,6 +349,7 @@ function mount(el, initialProps) {
    * @param {{ title?: string, key?: string, reset?: boolean, location?: {lat:number, lon:number}, parseOptions?: object }} [opts]
    */
   function load(input, opts = {}) {
+    fileLocationRequest += 1;
     try {
       let parsed = toSounding(input, opts.parseOptions);
       let timeline = [];
@@ -392,6 +405,7 @@ function mount(el, initialProps) {
    * @returns {void} Resets the chart to its empty state.
    */
   function clear() {
+    fileLocationRequest += 1;
     clearTimeSeries();
     main = null;
     comparisons = [];
@@ -514,6 +528,22 @@ function mount(el, initialProps) {
       }
     } catch (err) {
       reportError(err);
+    }
+  }
+
+  async function loadFileLocation(fileLocation) {
+    const request = ++fileLocationRequest;
+    if (fileLocation == null || fileLocation === '') return;
+    try {
+      if (typeof fileLocation !== 'string') throw new Error('SharpJS: fileLocation must be a URL string or null');
+      const response = await fetch(fileLocation);
+      if (!response.ok) throw new Error(`SharpJS: failed to fetch sounding (${response.status} ${response.statusText})`);
+      const text = await response.text();
+      if (request !== fileLocationRequest || destroyed) return;
+      const fileName = new URL(fileLocation, el.ownerDocument.baseURI).pathname.split('/').pop();
+      load(text, { parseOptions: { fileName } });
+    } catch (err) {
+      if (request === fileLocationRequest && !destroyed) reportError(err);
     }
   }
 
@@ -717,6 +747,7 @@ function mount(el, initialProps) {
    */
   function update(next = {}) {
     if (destroyed) return handle;
+    const fileLocationChanged = 'fileLocation' in next && next.fileLocation !== props.fileLocation;
     props = { ...props, ...next };
     if ('brandLabel' in next) engineOptions.brandLabel = next.brandLabel;
     if ('savedBy' in next) engineOptions.savedBy = next.savedBy;
@@ -735,6 +766,8 @@ function mount(el, initialProps) {
     if ('sounding' in next) {
       if (next.sounding == null) clear();
       else load(next.sounding, { key: next.soundingKey, title: next.title, location: next.location });
+    } else if (fileLocationChanged) {
+      loadFileLocation(next.fileLocation);
     } else if ('comparisons' in next) {
       setComparisons(next.comparisons);
     } else if ('title' in next && main) {
@@ -773,6 +806,8 @@ function mount(el, initialProps) {
     if (props.comparisons) comparisons = normalizeComparisons(props.comparisons);
     load(props.sounding, { key: props.soundingKey, title: props.title, location: props.location });
     if (props.vwp) setVwp(props.vwp);
+  } else if (props.fileLocation != null) {
+    loadFileLocation(props.fileLocation);
   }
   if (props.mapImage) {
     engine.SetMapImage(props.mapImage);

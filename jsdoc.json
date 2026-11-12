@@ -2,7 +2,9 @@
   "source": {
     "include": ["src"],
     "exclude": [
-      "src/viewer/research.js"
+      "src/viewer/research.js",
+      "src/io/cod.js",
+      "app/main_urlparams.js"
     ]
   }
 }

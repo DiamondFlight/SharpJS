@@ -32,6 +32,32 @@ const PRESET_TITLES = { WindLapse: 'Wind / Lapse', Inset: 'Inset Parameters', Ve
 const COLOR_TABLES = ['Default', 'SounderPY', 'Rainbow', 'Greyscale'];
 const SCALE_MODES = ['None', 'Storm Relative', 'Dynamic'];
 const SKEWS = { 0.5: 'Low', 0.625: 'Medium', 0.75: 'Default', 0.825: 'High' };
+const SKEWT_OPTIONS = [
+  ['showSkewTTemperatureLines', 'Temperature lines (-10/-20/-30°C)'],
+  ['showSkewTFZL', 'Freezing level (FZL)'],
+  ['showSkewTWBZ0', 'Wet-bulb zero (WBZ0)'],
+  ['showSkewTMixingRatio', 'Mixing ratio lines'],
+  ['showSkewTDryAdiabats', 'Dry adiabats'],
+  ['showSkewTMoistAdiabats', 'Moist adiabats'],
+  ['showSkewTEL', 'Equilibrium level (EL)'],
+  ['showSkewTPBL', 'Planetary boundary layer (PBL)'],
+  ['showSkewTInflowLayer', 'Effective inflow layer'],
+  ['showSkewTWetBulb', 'Wet-bulb temperature'],
+  ['showSkewTVirtualTemperature', 'Virtual temperature'],
+  ['showSkewTECapeParcel', 'ECAPE parcel'],
+  ['showSkewTDCapeParcel', 'DCAPE parcel'],
+  ['showSkewTLCLLFC', 'LCL/LFC'],
+  ['showSkewTHeights', 'Height markers'],
+  ['showSkewTParcelPath', 'Parcel path'],
+];
+const HODOGRAPH_OPTIONS = [
+  ['showHodographBunkersMotions', 'Bunkers right/left'],
+  ['showHodographCustomMeanMotions', 'Custom/mean motion'],
+  ['showHodographCorfidiMotions', 'Corfidi up/downshear'],
+  ['showHodographDeviantMotions', 'Deviant tornado left/right'],
+  ['showHodographInflowRegion', 'Inflow region'],
+  ['showHodographMap', 'Map'],
+];
 const UNITS = { default: 'Default (kt / °C)', metric: 'Metric', imperial: 'Imperial' };
 const EXPORTS = { Default: 'SHARPpy', SharpJS: 'SharpJS (SHARPpy + omega)', CM1: 'CM1 input_sounding' };
 const BUFKIT_MODELS = { hrrr: 'HRRR', rap: 'RAP', ruc: 'RUC', nam: 'NAM', nam4km: 'NAM 3 km', gfs: 'GFS' };
@@ -131,6 +157,11 @@ export function createControls(host, {
     const b = H('button', { type: 'button', class: 'sjs-button', onclick, 'aria-pressed': 'false' }, H('span', {}, title), value);
     refs[key] = { button: b, value };
     return b;
+  };
+  const checkbox = (key, title, onchange) => {
+    const control = H('input', { type: 'checkbox', onchange: (event) => onchange(event.target.checked) });
+    refs[key] = control;
+    return H('label', { class: 'sjs-checkbox' }, control, H('span', {}, title));
   };
   const field = (label, control) => H('label', { class: 'sjs-field' }, H('span', {}, label), control);
   const input = (key, attrs = {}) => (refs[key] = H('input', { class: 'sjs-input', ...attrs }));
@@ -477,25 +508,62 @@ export function createControls(host, {
       field('Custom speed (kt)', input('motionSpd', { type: 'number', min: 0, max: 100, placeholder: '30', onchange: () => selectMotion('CM') }))),
   );
 
-  const displaySection = section('display', 'Display',
-    H('div', { class: 'sjs-stack' },
-      toggle('verticalBars', 'Vertical bars', () => engine.ChangeWBox()),
-      toggle('ehiInWindBox', 'EHI within Wind Box', () => engine.LoadEHIWindBox()),
-      toggle('onMapCape', 'HGZ/DGZ Cape on Skew-T', () => engine.LoadOnMapCape()),
-      toggle('skew', 'Skew-T skew', () => engine.ChangeStateSkewTSkew()),
-      toggle('stormMotions', 'Storm motions', () => engine.LoadStormMotions()),
+  const displaySection = section('display', 'Display/Graphics',
+    H('div', { class: 'sjs-checkbox-list' },
+      checkbox('verticalBars', 'Vertical bars (wind speed)', (checked) => engine.applyState({ verticalBarsWindSpeed: checked })),
+      checkbox('ehiInWindBox', 'EHI within Wind Box', (checked) => engine.LoadEHIWindBox(checked)),
+      checkbox('stormMotions', 'Storm motions', (checked) => engine.LoadStormMotions(checked)),
+      checkbox('darkMode', 'Dark mode', (checked) => { store.set({ darkMode: checked }); engine.changeBGColor(); }),
     ),
-    H('div', { class: 'sjs-sub' }, 'Hodograph'),
-    H('div', { class: 'sjs-stack' },
-      toggle('hodograph3d', '3D Hodograph', () => engine.Load3DHodograph()),
-      toggle('hodograph3DArrows', '3D Hodograph Arrows', () => engine.Load3DHodoArrows()),
-      toggle('hodoNumbers', 'Hodograph heights', () => engine.ChangeStateHodographNumbers()),
-      toggle('colorTable', 'Hodograph colors', () => engine.ChangeStateHodographColorTable()),
-      toggle('hodoScale', 'Hodograph scale', () => engine.ChangeStateDynamicHodo()),
-      toggle('trimWind', 'Hodograph wind', () => engine.setHodographTrimWindProfile(!engine.getState().hodographTrimWindProfile)),
+    H('div', { class: 'sjs-display-group' }, fieldRow(1,H('summary', {}, ''))),
+    H('details', { class: 'sjs-display-group', open: true },
+      H('summary', {}, 'SkewT'),
+      fieldRow(1,
+      field('Skew-T skew', select('skew', {
+          0.5: SKEWS[0.5], 0.625: SKEWS[0.625], 0.75: SKEWS[0.75], 0.825: SKEWS[0.825],
+        }, { onchange: (e) => engine.applyState({ skewTSkew: Number(e.target.value) }) })),
+        
+      ),
+      H('div', { class: 'sjs-checkbox-list' },
+        checkbox('onMapCape', 'HGZ/DGZ CAPE', (checked) => engine.LoadOnMapCape(checked)),
+        ...SKEWT_OPTIONS.map(([key, title]) =>
+          checkbox(key, title, (checked) => engine.applyState({ [key]: checked }))),
+      ),
     ),
-    field('Hodograph mode', select('hodoMode', { Relative: 'Hodo-relative (centered)', Storm: 'Storm-relative (fixed)' }, { onchange: (e) => engine.SetHodoMode(e.target.value) })),
-    field('Units', select('units', UNITS, { onchange: (e) => engine.applyState({ units: e.target.value }) })),
+    H('div', { class: 'sjs-display-group' }, fieldRow(1,H('summary', {}, ''))),
+    H('details', { class: 'sjs-display-group', open: true },
+      H('summary', {}, 'Hodograph'),
+      fieldRow(2,
+      field('Hodograph colors', select('colorTable', Object.fromEntries(COLOR_TABLES.map((label, index) => [index, label])),
+        { onchange: (e) => engine.ChangeStateHodographColorTable(Number(e.target.value)) })),
+      field('Hodograph scale', select('hodoScale', Object.fromEntries(SCALE_MODES.map((label, index) => [index, label])),
+        { onchange: (e) => engine.ChangeStateDynamicHodo(Number(e.target.value)) })),
+      ),
+      fieldRow(2,
+        field('Ring density (kt)', select('hodographRingSpacing', {
+          10: '10 kts', 20: '20 kts', 40: '40 kts', 0: 'None',
+        }, { onchange: (e) => engine.applyState({ hodographRingSpacing: Number(e.target.value) }) })),
+        field('Maximum height', select('hodographMaxHeight', {
+          12000: '12 km', 18000: '18 km', 24000: '24 km',
+        }, { onchange: (e) => engine.applyState({ hodographMaxHeight: Number(e.target.value) }) })),
+      ),
+      fieldRow(2,
+        field('Hodograph mode', select('hodoMode', {
+          Relative: 'Hodo-relative (centered)', Storm: 'Storm-relative (fixed)',
+        }, { onchange: (e) => engine.SetHodoMode(e.target.value) })),
+        field('Units', select('units', UNITS, { onchange: (e) => engine.applyState({ units: e.target.value }) })),
+      ),
+      H('div', { class: 'sjs-checkbox-list' },
+        ...HODOGRAPH_OPTIONS.map(([key, title]) =>
+          checkbox(key, title, (checked) => engine.applyState({ [key]: checked }))),
+        checkbox('hodograph3d', '3D Hodograph', (checked) => engine.Load3DHodograph(checked)),
+        checkbox('hodograph3DArrows', '3D Hodograph arrows', (checked) => engine.Load3DHodoArrows(checked)),
+        checkbox('hodoNumbers', 'Hodograph heights', (checked) => engine.ChangeStateHodographNumbers(checked)),
+        checkbox('trimWind', 'Trim hodograph wind profile', (checked) => engine.applyState({
+          hodographTrimWindProfile: checked,
+        })),
+      ),
+    ),
   );
 
   const presetChildren = Object.keys(PRESET_VALUES).map((type) =>
@@ -625,6 +693,10 @@ export function createControls(host, {
     const el = refs[key];
     if (el && doc.activeElement !== el && el.value !== String(value)) el.value = String(value);
   };
+  const setChecked = (key, checked) => {
+    const el = refs[key];
+    if (el) el.checked = Boolean(checked);
+  };
 
   /**
    * Synchronize controls with the current chart state and persisted UI settings.
@@ -636,23 +708,28 @@ export function createControls(host, {
     for (const [id] of PARCELS) refs[`parcel${id}`].setAttribute('aria-pressed', state.parcel === id ? 'true' : 'false');
     for (const [id] of MOTIONS) refs[`motion${id}`].setAttribute('aria-pressed', state.motion === id ? 'true' : 'false');
 
-    setToggle('verticalBars', state.verticalBarsWindSpeed ? 'Full' : 'No wind speed', !state.verticalBarsWindSpeed);
-    setToggle('hodoNumbers', state.hodographNumbers ? 'On' : 'Off', state.hodographNumbers);
-    setToggle('colorTable', COLOR_TABLES[state.hodographColorTable] || 'Default', state.hodographColorTable !== 0);
-    setToggle('hodoScale', SCALE_MODES[state.hodographScaleMode] || 'None', state.hodographScaleMode !== 0);
-    setToggle('trimWind', state.hodographTrimWindProfile ? 'Trimmed' : 'Full resolution', !state.hodographTrimWindProfile);
-    setToggle('stormMotions', state.showStormMotions ? 'Shown' : 'Hidden', state.showStormMotions);
-    setToggle('ehiInWindBox', state.showEhiInWindBox ? 'Shown' : 'Hidden', state.showEhiInWindBox);
-    setToggle('hodograph3d', state.show3DHodograph ? 'Shown' : 'Hidden', state.show3DHodograph);
-    setToggle('hodograph3DArrows', state.show3DHodoArrows ? 'Shown' : 'Hidden', state.show3DHodoArrows);
-    setToggle('onMapCape', state.showCapeOnMap ? 'Shown' : 'Hidden', state.showCapeOnMap);
-    setToggle('skew', SKEWS[state.skewTSkew] || 'Default', state.skewTSkew !== 0.75);
     setToggle('readout', state.readOut ? 'On' : 'Off', state.readOut);
     setToggle('front', state.frontActive ? 'On' : 'Off', state.frontActive);
     setToggle('modify', state.modifyActive ? 'On' : 'Off', state.modifyActive);
 
+    setValue('skew', state.skewTSkew);
+    setValue('colorTable', state.hodographColorTable);
+    setValue('hodoScale', state.hodographScaleMode);
     setValue('hodoMode', state.hodographMode);
     setValue('units', state.units);
+    setValue('hodographRingSpacing', state.hodographRingSpacing);
+    setValue('hodographMaxHeight', state.hodographMaxHeight);
+    setChecked('verticalBars', state.verticalBarsWindSpeed);
+    setChecked('ehiInWindBox', state.showEhiInWindBox);
+    setChecked('stormMotions', state.showStormMotions);
+    setChecked('darkMode', state.darkMode);
+    setChecked('onMapCape', state.showCapeOnMap);
+    setChecked('hodograph3d', state.show3DHodograph);
+    setChecked('hodograph3DArrows', state.show3DHodoArrows);
+    setChecked('hodoNumbers', state.hodographNumbers);
+    setChecked('trimWind', state.hodographTrimWindProfile);
+    for (const [key] of SKEWT_OPTIONS) setChecked(key, state[key]);
+    for (const [key] of HODOGRAPH_OPTIONS) setChecked(key, state[key]);
     setValue('exportFormat', state.exportFormat);
     setValue('efScale', state.efScale);
     setValue('sfcUnit', settings.surfaceTempUnit);

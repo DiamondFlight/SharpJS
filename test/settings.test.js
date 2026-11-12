@@ -27,9 +27,61 @@ test('only changed keys are stored, so new defaults reach existing users', () =>
   assert.deepEqual(diffFromDefaults(s), { units: 'imperial' });
 });
 
+test('Skew-T overlays default to visible and can be disabled', () => {
+  const overlayKeys = [
+    'showSkewTTemperatureLines', 'showSkewTFZL',
+    'showSkewTWBZ0', 'showSkewTMixingRatio', 'showSkewTDryAdiabats',
+    'showSkewTMoistAdiabats', 'showSkewTEL', 'showSkewTPBL',
+    'showSkewTInflowLayer', 'showSkewTWetBulb', 'showSkewTVirtualTemperature',
+    'showSkewTECapeParcel', 'showSkewTDCapeParcel', 'showSkewTLCLLFC',
+    'showSkewTHeights', 'showSkewTParcelPath',
+  ];
+  assert.ok(overlayKeys.every((key) => DEFAULT_SETTINGS[key] === true));
+  const settings = sanitizeSettings({ showSkewTTemperatureLines: false, showSkewTECapeParcel: false });
+  assert.equal(settings.showSkewTTemperatureLines, false);
+  assert.equal(settings.showSkewTECapeParcel, false);
+});
+
+test('Hodograph display options default on and validate ring and height choices', () => {
+  const visibilityKeys = [
+    'showHodographBunkersMotions',
+    'showHodographCustomMeanMotions',
+    'showHodographCorfidiMotions',
+    'showHodographDeviantMotions',
+    'showHodographInflowRegion',
+    'showHodographMap',
+  ];
+  assert.ok(visibilityKeys.every((key) => DEFAULT_SETTINGS[key] === true));
+  assert.equal(DEFAULT_SETTINGS.hodographRingSpacing, 10);
+  assert.equal(DEFAULT_SETTINGS.hodographMaxHeight, 12000);
+  assert.equal(DEFAULT_SETTINGS.hodographTrimWindProfile, false);
+
+  const settings = sanitizeSettings({
+    showHodographMap: false,
+    hodographRingSpacing: 40,
+    hodographMaxHeight: 24000,
+  });
+  assert.equal(settings.showHodographMap, false);
+  assert.equal(settings.hodographRingSpacing, 40);
+  assert.equal(settings.hodographMaxHeight, 24000);
+  assert.equal(sanitizeSettings({ hodographRingSpacing: 15 }).hodographRingSpacing, 10);
+  assert.equal(sanitizeSettings({ hodographMaxHeight: 20000 }).hodographMaxHeight, 12000);
+});
+
 test('migrate understands the current payload', () => {
   assert.deepEqual(migrate({ v: SETTINGS_VERSION, settings: { units: 'metric' } }), { units: 'metric' });
   assert.deepEqual(migrate(null), {});
+});
+
+test('migrate combines saved Skew-T temperature line settings', () => {
+  assert.deepEqual(
+    migrate({ v: 1, settings: { showSkewTMinus10: true, showSkewTMinus20: false } }),
+    { showSkewTTemperatureLines: false },
+  );
+  assert.deepEqual(
+    migrate({ v: 1, settings: { showSkewTMinus10: true, showSkewTMinus20: true, showSkewTMinus30: true } }),
+    { showSkewTTemperatureLines: true },
+  );
 });
 
 test('store: set, persist, reload, reset', () => {

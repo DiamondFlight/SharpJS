@@ -1,10 +1,23 @@
 import { calc_ecape_ncape, calc_sr_wind, linear_interp, spechum_from_dwp, rev_linear_interp } from './ecapeCalc.js';
 import { ecape_parcel, density_temperature } from './ecape.js';
 import { ConvertToRaw, ln, RadToDeg, QCCheck, qc, clamp } from '../io/general.js';
+import { getColorMode } from '../settings/colors.js';
 export { ConvertToRaw, qc, clamp };
 const globalFont = '"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif';
 
+let DarkMode = getColorMode();
 
+/** Grabs the correct color based on the dark/light mode
+ *
+ */
+function cff(c1,c2){
+  DarkMode = getColorMode();
+  if (!DarkMode){
+    return c2;
+  } else {
+    return c1;
+  }
+}
 /**
  * Retrieves the layers within the specified pressure or height bounds.
  * @param {*} Sounding 
@@ -845,7 +858,7 @@ function satlift(p, thetam, conv = 0.1) {
  * @param {number} p2 Target pressure (in hPa).
  * @returns {number} Parcel temperature at p2 (in C), or the missing-data sentinel (in ANY).
  */
-function wetlift(p, t, p2) {
+export function wetlift(p, t, p2) {
   if (!qc(p) || !qc(t) || !qc(p2)) return RMISSD;
   let thta = theta(p, t, 1000.);
   let thetam = thta - Wobf(thta) + Wobf(t);
@@ -1180,9 +1193,6 @@ export function LiftParcel(Sounding, type, start, doEcape = true, FastProfile = 
     }
 
     Slice.virt_temp = virtemp(Slice.P, Slice.T, Slice.D);
-    if (Slice.virt_temp != Slice.virt_temp){
-      console.log(P, Slice);
-    }
 
     TSounding.push(Slice);
 
@@ -2816,7 +2826,8 @@ export function GetParams(Info, Type, STPF = false) {
  */
 function CreateInsetParams(TitleText, otherText, fillStyle, coloumn, mColoumn, Scaley, MScaleY, Canv, ctx) {
   ctx.font = `normal 600 ${Canv.width / 55}px ${globalFont}`;
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+
   ctx.textAlign = "left";
   ctx.fillText(TitleText, (0.01 + (coloumn - 1) / mColoumn) * Canv.width, Canv.height * Scaley / MScaleY);
 
@@ -2898,17 +2909,17 @@ function MixRatioColor(N) {
   } else if (N >= 6 && N < 8) {
     return "rgba(125,125,0,1)";
   } else if (N >= 8 && N < 10) {
-    return "rgba(100, 175, 0, 1)";
+    return cff("rgba(100, 175, 0, 1)", "rgb(78, 90, 63)");
   } else if (N >= 10 && N < 12) {
-    return "rgba(50, 200, 50, 1)";
+    return cff("rgba(50, 200, 50, 1)", "rgb(53, 138, 53)");
   } else if (N >= 12 && N < 14) {
-    return "rgba(75,255,75,1)";
+    return cff("rgba(75,255,75,1)" ,"rgb(24, 83, 24)");
   } else if (N >= 14 && N < 17) {
-    return "rgba(255,255,55,1)";
+    return cff("rgba(255,255,55,1)", "rgb(122, 122, 28)");
   } else if (N >= 17 && N < 20) {
-    return "rgba(255,125,0,1)";
+    return cff("rgba(255,125,0,1)", "rgba(125,65,0,1)");
   } else {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   }
 }
 
@@ -2921,15 +2932,15 @@ function GetSTPColor(N) {
   if (N <= 1) {
     return "rgba(125,125,125,1)";
   } else if (N <= 2 && N > 1) {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   } else if (N <= 3 && N > 2) {
-    return "rgba(255,255,0,1)";
+    return cff("rgba(255,255,0,1)", "rgba(125,125,0,1)");
    } else if (N <= 5 && N > 3) {
-    return "rgb(255, 149, 0)";
+    return cff("rgb(255, 149, 0)", "rgb(125, 65, 0)");
   } else if (N <= 8 && N > 5) {
-    return "rgba(255,0,0,1)";
+    return cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   } else {
-    return "rgba(255,0,255,1)";
+    return cff("rgba(255,0,255,1)", "rgba(125,0,125,1)");
   }
 }
 
@@ -2942,13 +2953,13 @@ function GetSCPColor(N) {
   if (N <= 5) {
     return "rgba(125,125,125,1)";
   } else if (N <= 8 && N > 5) {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   } else if (N <= 15 && N > 8) {
-    return "rgba(255,255,0,1)";
+    return cff("rgba(255,255,0,1)", "rgba(125,125,0,1)");
   } else if (N <= 25 && N > 15) {
-    return "rgba(255,0,0,1)";
+    return cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   } else {
-    return "rgba(255,0,255,1)";
+    return cff("rgba(255,0,255,1)", "rgba(125,0,125,1)");
   }
 }
 
@@ -2959,21 +2970,22 @@ function GetSCPColor(N) {
  * @returns {string} CSS RGBA/RGB color string (in 1).
  */
 export function GetCapeColor(N) {
+  DarkMode = getColorMode();
   // Add check for non-numeric values
   if (N === "--" || N === undefined || N === null || isNaN(N)) {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   }
 
   if (N <= 2000) {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   } else if (N <= 3000 && N > 2000) {
-    return "rgba(255,255,0,1)";
+    return cff("rgba(255,255,0,1)", "rgb(63, 63, 0)");
   } else if (N <= 4000 && N > 3000) {
-    return "rgb(255, 123, 0)";
+    return cff("rgb(255, 123, 0)", "rgb(125, 65, 0)");
   } else if (N <= 5000 && N > 4000) {
-    return "rgba(255,0,0,1)";
+    return cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   } else {
-    return "rgba(255,0,255,1)";
+    return cff("rgba(255,0,255,1)", "rgba(125,0,125,1)");
   }
 }
 
@@ -3002,6 +3014,8 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   let Scalex = 0;
   let Scaley = 0.8;
   let MScaleY = 6;
+
+  DarkMode = getColorMode();
 
   if (f) {
     Presets = f;
@@ -3125,13 +3139,16 @@ export function DrawInsetParams(Sounding, Wnd, TProf, SB, ML, MU, retrn = false,
   const Canv = canvas || document.getElementById("Values3");
   const ctx = Canv.getContext("2d");
 
-  Canv.width = 975;
-  Canv.height = 150;
+  Canv.width = 1200;
+  Canv.height = 1200 * 86.425/517.150;
 
-  let WhiteColorBase = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
+  ctx.fillRect(0,0,1200,1200);
+
+  let WhiteColorBase = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   for (let i = 1; i < 4; i++) {
-    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.fillRect((0.25 * i) * Canv.width, 0.05 * Canv.height, 1, 0.9 * Canv.height);
   }
 

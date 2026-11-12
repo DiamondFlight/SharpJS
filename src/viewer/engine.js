@@ -15,10 +15,11 @@ import {
   GetLayerByTemp, RelHum, mixratio, MeanWind, MeanWindNW, ConvertToInfo, virtemp,
   CtoK, clamp, Mag, VirtTemp, degtoRad, Lerp, RMISSD, ROCP, temp_at_mixrat, qc, DewFromTRh,
   mean_rh_in_layer, GetCapeColor, CToF, UpdateCSMotStorm, UpdatePresets, VaporPressure, FtoC,
-  GetAngleFromVector, theta, getLayersWithinBounds
+  GetAngleFromVector, theta, getLayersWithinBounds, wetlift
 } from "../calc/skewtCalcs.js";
 import { ConvertToRaw, ln, lerp, noop, arrayIndex, absoluteValue } from '../io/general.js';
 import { directionTo, distanceMiles, findNearbyTown } from '../io/nearby_town.js';
+import { setColorMode } from '../settings/colors.js';
 
 import { computeWindParams } from '../calc/params.js';
 import { Process } from '../io/sharppy.js';
@@ -29,7 +30,7 @@ import numbs from '../data/climo/Cases.js';
 import numbs2 from '../data/climo/CasesEF2.js';
 
 import Plotly from 'plotly.js-dist-min/plotly.min.js';
-
+let DarkMode = true;
 // Tornado side-panel percentile tables (~2 MB) load on first use in Tornado mode, not with
 // the page. Cases*.js above stay static: the bounds check needs them synchronously.
 // The cache is shared by every chart on the page.
@@ -39,6 +40,21 @@ const HODO_MAP_TILE_SIZE = 256;
 const HODO_MAP_ZOOM = 5;
 const HODO_MAP_TILE_URL = 'https://tile.openstreetmap.org';
 const hodographMapTiles = new Map();
+
+
+
+/** Grabs the correct color based on the dark/light mode
+ *
+ */
+function cff(c1,c2){
+  setColorMode(DarkMode);
+
+  if (!DarkMode){
+    return c2;
+  } else {
+    return c1;
+  }
+}
 
 /**
  * Begins, traces, and strokes a single line.
@@ -190,7 +206,7 @@ function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady, bounds)
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#17232c';
+  ctx.fillStyle = cff('#17232c', '#7abcee');
   ctx.fillRect(insetX, insetY, insetWidth, insetHeight);
   ctx.beginPath();
   ctx.rect(insetX, insetY, insetWidth, insetHeight);
@@ -216,7 +232,7 @@ function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady, bounds)
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (loadedTiles === 0 && failedTiles > 0) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.fillStyle = cff('rgba(0, 0, 0, 0.72)', 'rgba(255, 255, 255, 0.72)');
     ctx.fillRect(insetX, insetY, insetWidth, insetHeight);
     ctx.fillStyle = '#fff';
     ctx.font = '10px sans-serif';
@@ -225,17 +241,17 @@ function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady, bounds)
   }
   ctx.beginPath();
   ctx.arc(insetX + insetWidth / 2, insetY + insetHeight / 2, 3, 0, Math.PI * 2);
-  ctx.fillStyle = '#f04438';
+  ctx.fillStyle = cff('#f04438', '#441310');
   ctx.fill();
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = cff('#fff', '#000');
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.strokeStyle = cff('rgba(255,255,255,0.95)', 'rgba(0,0,0,0.95)');
   ctx.lineWidth = 2;
   ctx.strokeRect(insetX + 1, insetY + 1, insetWidth - 2, insetHeight - 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillStyle = cff('rgba(0,0,0,0.72)', 'rgba(255,255,255,0.72)');
   ctx.fillRect(insetX + insetWidth - 27, insetY + insetHeight - 12, 25, 10);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = cff('#fff', '#000');
   ctx.font = '7px sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText('© OSM', insetX + insetWidth - 4, insetY + insetHeight - 4);
@@ -283,6 +299,34 @@ export function createEngine(root, options = {}) {
 // Everything below is per-chart state and behaviour. It keeps the layout of the original
 // single-file script so changes can be compared side by side with older SharpJS builds.
 // ---------------------------------------------------------------------------------------------
+const SKEWT_DISPLAY_SETTINGS = {
+  showSkewTTemperatureLines: true,
+  showSkewTFZL: true,
+  showSkewTWBZ0: true,
+  showSkewTMixingRatio: true,
+  showSkewTDryAdiabats: true,
+  showSkewTMoistAdiabats: true,
+  showSkewTEL: true,
+  showSkewTPBL: true,
+  showSkewTInflowLayer: true,
+  showSkewTWetBulb: true,
+  showSkewTVirtualTemperature: true,
+  showSkewTECapeParcel: true,
+  showSkewTDCapeParcel: true,
+  showSkewTLCLLFC: true,
+  showSkewTHeights: true,
+  showSkewTParcelPath: true,
+};
+const HODOGRAPH_DISPLAY_SETTINGS = {
+  showHodographBunkersMotions: true,
+  showHodographCustomMeanMotions: true,
+  showHodographCorfidiMotions: true,
+  showHodographDeviantMotions: true,
+  showHodographInflowRegion: true,
+  hodographRingSpacing: 10,
+  hodographMaxHeight: 12000,
+  showHodographMap: true,
+};
 const elementCache = new Map();
 /** Root-scoped replacement for document.getElementById (elements carry data-sjs="<id>").
  * @param {*} id Parameter for $.
@@ -656,6 +700,23 @@ function LevelToSkewNum(N, BP) {
   return SkewNumber - SkewNumber * Lerp(0, 1, PressuretoSkew(N));
 }
 
+/**Change BG Color
+ *
+ */
+function changeBGColor(){
+  let query = document.querySelector(".skewTInset");
+  if (query){
+    if (DarkMode){
+      query.style.backgroundColor = "#000";
+      query.style.boxShadow = "inset 0 0 10px rgba(0, 0, 0, 0.5)";
+    } else {
+      query.style.backgroundColor = "#fff";
+      query.style.boxShadow = "inset 0 0 10px rgba(255,255,255, 0.5)";
+    }
+  }
+
+}
+
 var LapseType = false;
 
 const SKEW_STEPS = [0.5, 0.625, 0.75, 0.825];
@@ -703,15 +764,15 @@ var OutsideFitBase = 0;
 
 // Viridis-like colortable (low → high)
 const HODO_COLORS = [
-  "#ffffff",
-  "#5c3dff",
-  "#2f8cff",
-  "#00c8b4",
-  "#79f04b",
-  "#04ff1f",
-  "#ffb000",
-  "#ff6a00",
-  "#ff0000"
+  cff("#ffffff", "#111111"),
+  cff("#5c3dff", "#32218a"),
+  cff("#2f8cff", "#1c4d88"),
+  cff("#00c8b4", "#048f81"),
+  cff("#79f04b", "#305f1d"),
+  cff("#04ff1f", "#0e3502"),
+  cff("#ffb000", "#434a00"),
+  cff("#ff6a00", "#4a2a00"),
+  cff("#ff0000", "#4a0000")
 ];
 
 // Convert hex → RGB
@@ -752,29 +813,34 @@ const VWP_HODOGRAPH_RMS_FILL_ALPHA = 0.15;
  * @returns {*} Result of the function.
  */
 function GetHodographColor(Hght, ctx, trans=1) {
+  if (Hght > 12000 && Hght <= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight) {
+    return Hght <= 18000
+      ? cff(`rgba(0,0,139,${trans})`, `rgba(173,216,230,${trans})`)
+      : cff(`rgba(75,0,130,${trans})`, `rgba(216,191,216,${trans})`);
+  }
   if (HodographColorTable == 0) {
     if (Hght <= 1000) {
-      return `rgba(225,0,225,${trans})`;
+      return cff(`rgba(225,0,225,${trans})`, `rgba(175,0,175,${trans})`);
     } else if (Hght <= 3000 && Hght > 1000) {
-      return `rgba(225,0,0,${trans})`;
+      return cff(`rgba(225,0,0,${trans})`, `rgba(175,0,0,${trans})`);
     } else if (Hght <= 6000 && Hght > 3000) {
-      return `rgba(0,225,0,${trans})`;
+      return cff(`rgba(0,225,0,${trans})`, `rgba(0,175,0,${trans})`);
     } else if (Hght <= 9000 && Hght > 6000) {
-      return `rgba(225,225,0,${trans})`;
+      return cff(`rgba(225,225,0,${trans})`, `rgba(175,175,0,${trans})`);
     } else if (Hght <= 12000 && Hght > 9000) {
-      return `rgba(0,225,225,${trans})`;
+      return cff(`rgba(0,225,225,${trans})`, `rgba(0,175,175,${trans})`);
     }
   } else if (HodographColorTable == 1) {
     if (Hght <= 1000) {
       return `rgba(128,0,128,${trans})`;
     } else if (Hght <= 3000 && Hght > 1000) {
-      return `rgba(255,0,0,${trans})`;
+      return cff(`rgba(255,0,0,${trans})`, `rgba(175,0,0,${trans})`);
     } else if (Hght <= 6000 && Hght > 3000) {
-      return `rgba(255,140,0,${trans})`;
+      return cff(`rgba(255,140,0,${trans})`, `rgba(175,85,0,${trans})`);
     } else if (Hght <= 9000 && Hght > 6000) {
-      return `rgba(255,215,0,${trans})`;
+      return cff(`rgba(255,215,0,${trans})`, `rgba(175,120,0,${trans})`);
     } else if (Hght <= 12000 && Hght > 9000) {
-      return `rgba(255,240,159,${trans})`;
+      return cff(`rgba(255,240,159,${trans})`, `rgba(175,130,100,${trans})`);
     }
   } else if (HodographColorTable == 2) {
     const maxHeight = 12000;
@@ -801,7 +867,7 @@ function GetHodographColor(Hght, ctx, trans=1) {
   } else if (HodographColorTable == 3) {
     const N = Hght * 205 / 12000 + 50;
 
-    return `rgba(${N}, ${N}, ${N}, ${trans})`;
+    return cff(`rgba(${N}, ${N}, ${N}, ${trans})`, `rgba(${N-50}, ${N-50}, ${N-50}, ${trans})`);
   }
 }
 
@@ -841,7 +907,7 @@ function scheduleHodographMapRedraw(sounding, ghost, comparisonSoundings, drawVe
 }
 
 /** User preference: thin RAOB/import hodograph to SPC-like spacing (default on). Model grid rules unchanged. */
-let HodographTrimWindProfile = true;
+let HodographTrimWindProfile = false;
 
 /**
  * Model grid soundings (sounding.meta.isModel) already have modest vertical resolution on the hodograph.
@@ -889,7 +955,7 @@ function minHeightStepForAglHodo(aglM) {
  * @param {*} SH Parameter for computeThinnedHodographWindIndices.
  * @param {*} maxAglM Parameter for computeThinnedHodographWindIndices.
  */
-function computeThinnedHodographWindIndices(W, SH, maxAglM = 12000) {
+function computeThinnedHodographWindIndices(W, SH, maxAglM = HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight) {
   const n = W.length;
   if (n < 2) return null;
 
@@ -1084,10 +1150,10 @@ function drawHodographStormMotionFill(ctx, Sounding, Center, Scale, Mod, W, step
   if (pts.length < 1) return;
 
   ctx.save();
-  ctx.fillStyle = "rgba(125,200,255,0.18)";
+  ctx.fillStyle = cff("rgba(125,200,255,0.18)", "rgba(68, 112, 143, 0.18)");
   drawCanvasPath(ctx, [sm, ...pts], true, false, true);
 
-  ctx.strokeStyle = "rgba(125,200,255,0.55)";
+  ctx.strokeStyle = cff("rgba(125,200,255,0.55)", "rgba(68, 112, 143, 0.55)");
   ctx.lineWidth = 1.5;
   strokeCanvasSegments(ctx, [
     [sm.x, sm.y, pts[0].x, pts[0].y],
@@ -1106,7 +1172,7 @@ function addStormMotionLine(distxt, motion, color, width, z, min){
       y: [-motion.y, -motion.y],
       z: [(z[0] + z[1])/2],
       line: {
-        color: '#ffffff',
+        color: cff("#fff", "#000"),
         width: 3
       },
       hoverinfo: 'skip',
@@ -1115,7 +1181,7 @@ function addStormMotionLine(distxt, motion, color, width, z, min){
       textfont: {
         family: globalFont,//'Arial, sans-serif',
         size: 10,
-        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+        color: cff("#fff", "#000") // Crisp white text font color to stand out on dark canvas
       },
   },{
     type: 'scatter3d',
@@ -1156,7 +1222,10 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
     mMod.y += CSMot.y;
   }
 
-  const ringRadii = Array.from({ length: 6 }, (_, i) => i * 20);; // Define sizes of your circular grid lines
+  const ringStep = HODOGRAPH_DISPLAY_SETTINGS.hodographRingSpacing;
+  const ringRadii = ringStep
+    ? Array.from({ length: Math.floor(100 / ringStep) + 1 }, (_, i) => (i + 1) * ringStep)
+    : [];
   const floorHeight = 0;             // The baseline Z level for the bottom floor
 
   ringRadii.forEach(radius => {
@@ -1182,7 +1251,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       name: `Grid R=${radius}`,
       showlegend: false,
       line: {
-        color: 'rgba(255, 255, 255, 0.4)', // White color with partial transparency
+        color: cff('rgba(255, 255, 255, 0.4)', 'rgba(0, 0, 0, 0.4)'), // White color with partial transparency
         width: 1,
         dash: '5px,10px'                      // Dashed lines look excellent for grids
       },
@@ -1205,13 +1274,14 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       textfont: {
         family: 'Arial, sans-serif',
         size: 12,
-        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+        color: cff('#fff', '#000')
       },
       hoverinfo: 'skip'
     });
   });
 
-  let layers = getLayersWithinBounds(Json.Sounding, 0, 12000, "Hght")
+  const maxHeight = HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight;
+  let layers = getLayersWithinBounds(Json.Sounding, 0, maxHeight, "Hght")
   let startSlice = GetLayerByPres(Json.Sounding, "SFC");
 
   const xMain = [];
@@ -1225,7 +1295,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
     xMain.push(Pos.x);
     yMain.push(-Pos.y);
     zMain.push(p.H - startSlice.H);
-    colorscale.push([(p.H - startSlice.H)/12000, GetHodographColor(p.H - startSlice.H, undefined)]);
+    colorscale.push([(p.H - startSlice.H) / maxHeight, GetHodographColor(p.H - startSlice.H, undefined)]);
   });
 
   dataTraces.push({
@@ -1253,7 +1323,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
     y: [0, 0],
     z: [0, 0],
     line: {
-      color: '#ffffff',
+      color: cff("#fff", "#000"),
       width: 1
     }
   });
@@ -1266,21 +1336,21 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
     y: [-200, 200],
     z: [0, 0],
     line: {
-      color: '#ffffff',
+      color: cff("#fff", "#000"),
       width: 1
     }
   });
 
-  for (let i = 0 ; i < 13; i++){
+  for (let i = 0; i <= maxHeight / 1000; i++) {
     dataTraces.push({
       type: 'scatter3d',
       mode: 'text',
       name: 'Hodograph Path',
       x: [-200],
       y: [0],
-      z: [1000*i],
+      z: [1000 * i],
       line: {
-        color: '#ffffff',
+        color: cff("#fff", "#000"),
         width: 3
       },
       hoverinfo: 'skip',
@@ -1289,7 +1359,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       textfont: {
         family: 'Arial, sans-serif',
         size: 12,
-        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+        color: cff('#ff6868', '#5c0d0d') // Crisp white text font color to stand out on dark canvas
       },
     });
     dataTraces.push({
@@ -1300,7 +1370,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       y: [-200],
       z: [1000*i],
       line: {
-        color: '#ffffff',
+        color: cff("#fff", "#000"),
         width: 3
       },
       hoverinfo: 'skip',
@@ -1309,7 +1379,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       textfont: {
         family: 'Arial, sans-serif',
         size: 12,
-        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+        color: cff('#ff6868', '#5c0d0d') // Crisp white text font color to stand out on dark canvas
       },
     });
     dataTraces.push({
@@ -1320,7 +1390,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       y: [200],
       z: [1000*i],
       line: {
-        color: '#ffffff',
+        color: cff("#fff", "#000"),
         width: 3
       },
       hoverinfo: 'skip',
@@ -1329,7 +1399,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       textfont: {
         family: 'Arial, sans-serif',
         size: 12,
-        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+        color: cff('#ff6868', '#5c0d0d')  // Crisp white text font color to stand out on dark canvas
       },
     });
     
@@ -1341,7 +1411,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       y: [0],
       z: [1000*i],
       line: {
-        color: '#ffffff',
+        color: cff("#fff", "#000"),
         width: 3
       },
       hoverinfo: 'skip',
@@ -1350,7 +1420,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       textfont: {
         family: 'Arial, sans-serif',
         size: 12,
-        color: '#ff6868' // Crisp white text font color to stand out on dark canvas
+        color: cff('#ff6868', '#5c0d0d')
       },
     });
     dataTraces.push({
@@ -1359,9 +1429,9 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       name: 'Hodograph Path',
       x: [0,0],
       y: [0,0],
-      z: [1000 * i, 1000 * (i+1)],
+      z: [1000 * i, Math.min(1000 * (i + 1), maxHeight)],
       line: {
-        color: 'rgba(255,255,255,0.1)',
+        color: cff('rgba(255,255,255,0.1)', 'rgba(0,0,0,0.1)'),
         width: 3,
         dash: "dot",
       },
@@ -1379,7 +1449,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       name: 'Hodograph Path',
       x: [Pos.x, Pos.x],
       y: [-Pos.y, -Pos.y],
-      z: [0, 1000 * (i)],
+      z: [0, 1000 * i],
       line: {
         color: GetHodographColor(CurLay.H - startSlice.H, undefined),
         width: 3,
@@ -1398,7 +1468,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       y: [-Pos.y, -Pos.y],
       z: [1000*i],
       line: {
-        color: '#ffffff',
+        color: cff("#fff", "#000"),
         width: 3
       },
       hoverinfo: 'skip',
@@ -1407,7 +1477,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       textfont: {
         family: globalFont,//'Arial, sans-serif',
         size: 12,
-        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+        color: cff("#fff", "#000") // Crisp white text font color to stand out on dark canvas
       },
     });
     
@@ -1416,17 +1486,23 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
 
   CSMot.y *= -1;
 
-  dataTraces.push(...addStormMotionLine("Bunkers Right Motion", BRM.RM, "#ff0000", 4, CSMot === Motions.RM ? [0, 12000] : [0,0], "RM"));
-  dataTraces.push(...addStormMotionLine("Bunkers Left Motion", BRM.LM, "#ff000", 4, CSMot === Motions.LM ? [0, 12000] : [0,0], "LM"));
-  dataTraces.push(...addStormMotionLine("Mean Motion", BRM.MM, "#743705", 3, CSMot === Motions.MM ? [0, 12000] : [0,0], "MM"));
-
-  dataTraces.push(...addStormMotionLine("Corfidi Upshear Vector", BRM.US, "#00ffff", 3, CSMot === Motions.US ? [0, 12000] : [0,0], "UP"));
-  dataTraces.push(...addStormMotionLine("Corfidi Downshear Vector", BRM.DS, "#00ffff", 3, CSMot === Motions.DS ? [0, 12000] : [0,0], "DN"));
-
-  dataTraces.push(...addStormMotionLine("Nixon Right Deviant Tornado", BRM.DTMR, "#3a8100", 2, CSMot === Motions.DTMR ? [0, 12000] : [0,0], "DTMR"));
-  dataTraces.push(...addStormMotionLine("Nixon Left Deviant Tornado", BRM.DTML, "#3a8100", 2, CSMot === Motions.DTML ? [0, 12000] : [0,0], "DTML"));
-
-  dataTraces.push(...addStormMotionLine("Custom Motion", CUMot, "#ff0000", 3, CSMot === CUMot ? [0, 12000] : [0,0], "CM"));
+  const activeMotionHeight = (motion) => CSMot === motion ? [0, maxHeight] : [0, 0];
+  if (HODOGRAPH_DISPLAY_SETTINGS.showHodographBunkersMotions) {
+      dataTraces.push(...addStormMotionLine("Bunkers Right Motion", BRM.RM, cff("#f00", "#500"), 4, activeMotionHeight(Motions.RM), "RM"));
+    dataTraces.push(...addStormMotionLine("Bunkers Left Motion", BRM.LM, cff("#f00", "#500"), 4, activeMotionHeight(Motions.LM), "LM"));
+  }
+  if (HODOGRAPH_DISPLAY_SETTINGS.showHodographCustomMeanMotions) {
+    dataTraces.push(...addStormMotionLine("Mean Motion", BRM.MM, cff("#743705", "#a54f08"), 3, activeMotionHeight(Motions.MM), "MM"));
+    dataTraces.push(...addStormMotionLine("Custom Motion", CUMot, cff("#f00", "#500"), 3, activeMotionHeight(CUMot), "CM"));
+  }
+  if (HODOGRAPH_DISPLAY_SETTINGS.showHodographCorfidiMotions) {
+    dataTraces.push(...addStormMotionLine("Corfidi Upshear Vector", BRM.US, cff("#0ff", "#055"), 3, activeMotionHeight(Motions.US), "UP"));
+    dataTraces.push(...addStormMotionLine("Corfidi Downshear Vector", BRM.DS, cff("#0ff", "#055"), 3, activeMotionHeight(Motions.DS), "DN"));
+  }
+  if (HODOGRAPH_DISPLAY_SETTINGS.showHodographDeviantMotions) {
+    dataTraces.push(...addStormMotionLine("Nixon Right Deviant Tornado", BRM.DTMR, cff("#3a8100", "#2a4414"), 2, activeMotionHeight(Motions.DTMR), "DTMR"));
+    dataTraces.push(...addStormMotionLine("Nixon Left Deviant Tornado", BRM.DTML, cff("#3a8100", "#2a4414"), 2, activeMotionHeight(Motions.DTML), "DTML"));
+  }
 
   CSMot.y *= -1;
 
@@ -1434,7 +1510,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
     const xMainr = [];
     const yMainr = [];
     const zMainr = [];
-    for (let i = 0; i < 12000; i += 500){
+    for (let i = 0; i < maxHeight; i += 500) {
       let p2 = GetLayerByHght(Json.Sounding, i);
       let Pos = ConvertPolartoCart(p2);
       xMainr.push(Pos.x);
@@ -1450,15 +1526,15 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
         y:[yMainr[i]],
         z:[zMainr[i]],
 
-        u:[xMainr[i] - CSMot.x],//[100*(HodoData.x - mMod.x)],  // Velocity/Length along X
-        v:[yMainr[i] - CSMot.y],//[100*(HodoData.y - mMod.y)],
+        u:[xMainr[i] - mMod.x],//[100*(HodoData.x - mMod.x)],  // Velocity/Length along X
+        v:[yMainr[i] - mMod.y],//[100*(HodoData.y - mMod.y)],
         w:[0],//[0],  // Velocity/Length along Z
         
         sizemode: 'absolute',    // Keeps the arrow size fixed regardless of zoom scale
         sizeref: 5,             // Physical scale size of the cone head
         showscale: false,       // Hides the standard colorbar legend for this trace
         
-        colorscale: [[0, '#00ffff'], [1, '#00ffff']], // Force a single custom solid color (Neon Cyan)
+        colorscale: [[0, cff('#0ff', '#055')], [1, cff('#0ff', '#055')]], // Force a single custom solid color (Neon Cyan)
         anchor: 'tip',         // 'tail' means the base locks to (x,y,z). Options: 'center', 'tip'
       });
 
@@ -1466,11 +1542,11 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
         type: 'scatter3d',
         mode: 'lines',
         name: 'lin',
-        x: [CSMot.x, xMainr[i]],
-        y: [CSMot.y, yMainr[i]],
+        x: [mMod.x, xMainr[i]],
+        y: [mMod.y, yMainr[i]],
         z: [zMainr[i], zMainr[i]],
         line: {
-          color: '#00ffff',
+          color: cff('#0ff', '#055'),
           width: 1.2
         },
         hoverinfo: 'skip',
@@ -1490,7 +1566,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       font: {
         family: globalFont,//#'Arial, sans-serif',
         size: 12,
-        color: '#ffffff' // Crisp white text font color to stand out on dark canvas
+        color: cff("#fff", "#000") // Crisp white text font color to stand out on dark canvas
       } // White title text
     },
     //autosize: true,
@@ -1498,16 +1574,16 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
 
     modebar: {
       orientation: 'v',        // 'v' makes it stack vertically along the edge
-      bgcolor: 'rgba(0,0,0,0)', // Optional transparent background for a dark look
-      color: '#ffffff'          // Icon line color
+      bgcolor: cff('rgba(0,0,0,0)', 'rgba(255,255,255,1'), // Optional transparent background for a dark look
+      color: cff("#fff", "#000")          // Icon line color
     },
 
     
 
     showlegend: false,
     // Core workspace styling
-    paper_bgcolor: '#000000', // Outer canvas container black background
-    plot_bgcolor: '#000000',  // Graph layout black background
+    paper_bgcolor: cff('#000', '#fff'), // Outer canvas container black background
+    plot_bgcolor: cff('#000', '#fff'),  // Graph layout black background
     
     scene: {
       aspectmode: 'manual',
@@ -1548,7 +1624,7 @@ function drawHodograph3D(Json, ghst= false, comparisonSoundings=[]){
       },
       
       // Style the inner 3D box frame surfaces dark
-      bgcolor: '#0f0f0f',
+      bgcolor: cff('#111', '#eee'),
       
       zaxis: { 
         visible: false,
@@ -1640,12 +1716,12 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   const Scale = fitBase * HodographScaleMulti;
 
   // 1. Clear the canvas
-  ctx.fillStyle = "rgba(0,0,0,1)";
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
   ctx.fillRect(0, 0, 1000, 1000);
 
   // 2. Draw the copyright text
-  ctx.fillStyle = "rgba(255,255,255,1)"
-  ctx.strokeStyle = "rgb(0, 0, 0)"
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)")
+  ctx.strokeStyle = cff("rgb(0,0,0)", "rgb(255,255,255)")
   ctx.lineWidth = 1.2;
   ctx.font = `bold ${Canv.width / 55}px ${globalFont}`;
   ctx.textAlign = "left"; // Align to the right
@@ -1660,7 +1736,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
     comparisonSoundings.forEach(comp => {
       if (!comp.metadata.isVisible) return;
       const metadata = comp.metadata;
-      const color = metadata.comparisonColor || "rgba(0, 191, 255, 1)";
+      const color = metadata.comparisonColor || cff("rgba(0, 191, 255, 1)", "rgba(0, 60, 80, 1)");
 
       ctx.fillStyle = color;
       ctx.fillRect(legendX, legendY, legendBoxSize, legendBoxSize);
@@ -1675,7 +1751,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
         legendText = metadata.title;
       }
 
-      ctx.fillStyle = "rgba(255, 255, 255, 1)";
+      ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
       ctx.font = `bold ${Canv.width / 50}px ${globalFont}`;
       ctx.textAlign = "left";
       ctx.fillText(legendText, legendX + legendBoxSize + 10, legendY + legendBoxSize / 1.4);
@@ -1684,10 +1760,11 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
     });
   }
 
-  ctx.fillStyle = "rgba(255,255,255,1)"
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)")
   ctx.textAlign = "left";
 
-  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.strokeStyle = cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
+
   ctx.lineWidth = 4;
   ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 4]);
@@ -1695,7 +1772,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   let Sounding = Json.Sounding;
   let BRM = GetBM(Sounding, GlobalEffInflow);
 
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   const CT = GetPositionScale(50, 50, Canv);
   ctx.font = `bold ${Canv.width / 75}px ${globalFont}`;
@@ -1729,7 +1806,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
     Center = GetPositionScale(50, 50, Canv);
   }
 
-  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.strokeStyle = cff("rgba(255,255,255,0.3)", "rgba(5, 0, 0, 0.3)");
   ctx.beginPath();
   ctx.setLineDash([]);
   ctx.moveTo(0, Center.y / 2);
@@ -1740,18 +1817,19 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   ctx.moveTo(Center.x / 2, 0);
   ctx.lineTo(Center.x / 2, Canv.height);
   ctx.stroke();
-  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.strokeStyle = cff("rgba(255,255,255,0.2)", "rgba(0, 0, 0, 0.2)");
 
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.strokeStyle = cff("rgba(255,255,255,0.2)", "rgba(0, 0, 0, 0.2)");
 
   // Update loop limit to ensure rings cover the maximum wind speed
-  for (let i = 10; i < Math.max(200, maxWindSpeed + 20); i += 10) {
+  const ringStep = HODOGRAPH_DISPLAY_SETTINGS.hodographRingSpacing;
+  for (let i = ringStep; ringStep > 0 && i < Math.max(200, maxWindSpeed + 20); i += ringStep) {
     ctx.beginPath();
     ctx.arc(Center.x / 2, Center.y / 2, i * Scale / 10, 0, 2 * Math.PI);
     ctx.stroke();
 
-    ctx.fillStyle = "rgba(200,200,200,1)";
+    ctx.fillStyle = cff("rgba(200,200,200,1)", "rgba(50, 50, 50, 1)");
     ctx.textAlign = "left";
     const speedLabel = useImperialUnits === 2 ? Math.round(KtsToMph(i)) : i;
     ctx.fillText(speedLabel, Center.x / 2 + i * Scale / 10 - 5, Center.y / 2 + 3 + 10);
@@ -1761,6 +1839,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
     ctx.fillText(speedLabel, Center.x / 2 + 10, Center.y / 2 + i * Scale / 10 + 3);
     ctx.closePath();
   }
+  ctx.textAlign = "center";
 
 
   ctx.setLineDash([]);
@@ -1771,14 +1850,15 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   //DrawHodograph
 
   //let Start = ConvertPolartoCart(Sounding.W[0]);
-  ctx.fillStyle = "rgba(225,0,0,1)";
-  ctx.strokeStyle = "rgba(225,0,0,1)";
+  ctx.fillStyle = cff("rgba(225,0,0,1)", "rgba(49, 0, 0, 1)");
+  ctx.strokeStyle = cff("rgba(225,0,0,1)", "rgba(49, 0, 0, 1)");
+
 
   //ctx.moveTo(Center.x, Center.y);
 
   ctx.lineWidth = 1.5;
 
-  // ctx.lineStyle = "rgba(255,0,0,1)";
+  // ctx.lineStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   if (ghst != false) {
 
     ghost.forEach((O) => {
@@ -1799,7 +1879,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
         const i = pr[0];
         const i2 = pr[1];
 
-        if (Obj.H[i] - SH >= 12000 || Obj.W[i].H - SH >= 12000) {
+        if (Obj.H[i] - SH >= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight || Obj.W[i].H - SH >= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight) {
           break;
         }
 
@@ -1832,14 +1912,14 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
       ctx.fill();
     });
     ctx.lineWidth = 2;
-    ctx.fillStyle = "rgba(225,0,0,1)";
-    ctx.strokeStyle = "rgba(225,0,0,1)";
+    ctx.fillStyle = cff("rgba(225,0,0,1)", "rgba(49, 0, 0, 1)");
+    ctx.strokeStyle = cff("rgba(225,0,0,1)", "rgba(49, 0, 0, 1)");
   }
 
   if (comparisonSoundings && comparisonSoundings.length > 0 && !VWPActive) {
     comparisonSoundings.forEach(comp => {
       if (!comp.metadata.isVisible) return;
-      const comparisonColor = comp.metadata.comparisonColor || "rgba(0, 191, 255, 1)";
+      const comparisonColor = comp.metadata.comparisonColor || cff("rgba(0, 191, 255, 1)", "rgba(0, 60, 80, 1)");
       ctx.strokeStyle = comparisonColor;
       ctx.lineWidth = 2;
 
@@ -1856,7 +1936,10 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
       for (const pr of compPairs) {
         const i = pr[0];
         const i2 = pr[1];
-        if (compObj.W[i].H - compSH >= 12000 || compObj.W[i2].H - compSH >= 12000) break;
+        if (
+          compObj.W[i].H - compSH >= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight ||
+          compObj.W[i2].H - compSH >= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight
+        ) break;
         if (compObj.W[i].WS === -9999 || compObj.W[i].WD === -9999) continue;
         if (compObj.W[i2].WS === -9999 || compObj.W[i2].WD === -9999) continue;
 
@@ -1880,23 +1963,26 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
 
   let Obj = Json.Sounding;
 
-  ctx.strokeStyle = "rgba(225,0,225,1)";
+  ctx.strokeStyle = cff("rgba(225,0,225,1)", "rgba(100,0,100,1)");
+
   ctx.lineWidth = 2;
 
   const mainStepIdx = getHodographWindStepIndices(Json, Obj.W, SH);
   const mainPairs = hodographSegmentIndexPairs(Json.WWL, mainStepIdx);
 
   let Mod = getHodographStormOffsetMod();
-  drawHodographStormMotionFill(
-    ctx,
-    Obj,
-    Center,
-    Scale,
-    Mod,
-    Obj.W,
-    mainStepIdx,
-    typeof Info !== "undefined" ? Info.EffInflow : false
-  );
+  if (HODOGRAPH_DISPLAY_SETTINGS.showHodographInflowRegion) {
+    drawHodographStormMotionFill(
+      ctx,
+      Obj,
+      Center,
+      Scale,
+      Mod,
+      Obj.W,
+      mainStepIdx,
+      typeof Info !== "undefined" ? Info.EffInflow : false
+    );
+  }
 
   for (const pr of mainPairs) {
     const i = pr[0];
@@ -1904,7 +1990,11 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
     const currentLevel = Obj.W[i];
     const nextLevel = Obj.W[iNext];
 
-    if (Obj.H[i] - SH >= 12000 || currentLevel.H - SH >= 12000 || nextLevel.H - SH >= 12000) {
+    if (
+      Obj.H[i] - SH >= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight ||
+      currentLevel.H - SH >= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight ||
+      nextLevel.H - SH >= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight
+    ) {
       break;
     }
 
@@ -1966,7 +2056,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
       Number.isFinite(errTop) &&
       top.WS != -9999 &&
       top.WD != -9999 &&
-      top.H - SH < 12000
+      top.H - SH < HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight
     ) {
       let Ptop = ConvertPolartoCart(top);
       if (!HodoMode) {
@@ -1986,10 +2076,10 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
 
   // Numbers
   if (DisplayHodographNumbers) {
-    ctx.strokeStyle = "rgba(255,225,225,1)";
+    ctx.strokeStyle = cff("rgba(255,225,225,1)", "rgba(100, 125, 125, 1)");
     ctx.font = `bold 8px ${globalFont}`;
 
-    for (var x of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+    for (let x = 1; x <= HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight / 1000; x++) {
       const Lyr = GetLayerByHght(Json.Sounding, x * 1000);
 
       let Pos = ConvertPolartoCart(Lyr);
@@ -1998,13 +2088,13 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
         Pos.y += isNaN(CSMot.y) ? 0 : CSMot.y;
       }
 
-      ctx.fillStyle = "rgba(255,225,225,0.75)";
+      ctx.fillStyle = cff("rgba(255,225,225,.75)", "rgba(100, 125, 125, .75)");
       ctx.beginPath();
       ctx.arc(Center.x / 2 + Pos.x * (Scale / 10), Center.y / 2 + Pos.y * (Scale / 10), 4, 0, 2 * Math.PI);
       //ctx.moveTo(Center.x/2 + Pos2.x, Center.y + Pos2.y);
       ctx.fill();
 
-      ctx.fillStyle = "rgba(0,0,0,1)";
+      ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
       ctx.fillText(`${x}`, Center.x / 2 + Pos.x * (Scale / 10), Center.y / 2 + Pos.y * (Scale / 10) + 2);
     }
     ctx.font = `${Canv.width / 75}px ${globalFont}`;
@@ -2014,39 +2104,49 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
 
   const unitSuffix = useImperialUnits === 2 ? "mph" : "kts";
 
-  ctx.fillStyle = CSMot == Motions.RM && "rgba(255,255,255,1)" || "rgba(255,255,255,0.7)";
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographBunkersMotions ? 1 : 0;
+  ctx.fillStyle = CSMot == Motions.RM && cff("rgba(255,255,255,1)", "rgba(0,0,0,1)") || cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
   ctx.textAlign = "left";
   var rmSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(BrmComps.WS)) : BrmComps.WS;
   rmSpeed = CSMot === Motions.RM ? `${BrmComps.WD} / ${rmSpeed}` : rmSpeed;
   ctx.fillText(`${rmSpeed}${unitSuffix} RM`, Center.x / 2 + (Mod.x + BRM.RM.x) * (Scale / 10) + 5, Center.y / 2 + (Mod.y + BRM.RM.y) * (Scale / 10) + 10);
 
-  ctx.fillStyle = CSMot == Motions.LM && "rgba(255,255,255,1)" || "rgba(255,255,255,0.7)";
+  ctx.fillStyle = CSMot == Motions.LM && cff("rgba(255,255,255,1)", "rgba(0,0,0,1)") || cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
   ctx.textAlign = "left";
   var lmSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(BlmComps.WS)) : BlmComps.WS;
   lmSpeed = CSMot === Motions.LM ? `${BlmComps.WD} / ${lmSpeed}` : lmSpeed;
   ctx.fillText(`${lmSpeed}${unitSuffix} LM`, Center.x / 2 + (Mod.x + BRM.LM.x) * (Scale / 10) + 5, Center.y / 2 + (Mod.y + BRM.LM.y) * (Scale / 10) + 10);
+  ctx.restore();
 
-  ctx.fillStyle = CSMot == CUMot && "rgba(255,255,255,1)" || "rgba(255,255,255,0.7)";
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographCustomMeanMotions ? 1 : 0;
+  ctx.fillStyle = CSMot == CUMot && cff("rgba(255,255,255,1)", "rgba(0,0,0,1)") || cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
   ctx.textAlign = "left";
   var cmSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(CustomComps.WS)) : CustomComps.WS;
   cmSpeed = CSMot === CUMot ? `${(360 + 180 - CustomComps.WD)%360} / ${cmSpeed}` : cmSpeed;
   ctx.fillText(`${cmSpeed}${unitSuffix} CM`, Center.x / 2 + (Mod.x + CUMot.x) * (Scale / 10) + 5, Center.y / 2 - (-Mod.y + CUMot.y) * (Scale / 10) + 10);
+  ctx.restore();
 
   ctx.font = `8px ${globalFont}`;
 
-  ctx.fillStyle = CSMot == Motions.US && "rgba(255,255,255,1)" || "rgba(255,255,255,0.7)";
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographCorfidiMotions ? 1 : 0;
+  ctx.fillStyle = CSMot == Motions.US && cff("rgba(255,255,255,1)", "rgba(0,0,0,1)") || cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
   ctx.textAlign = "left";
   var usSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(USComps.WS)) : USComps.WS;
   usSpeed = CSMot === Motions.US ? `${USComps.WD} / ${usSpeed}` : usSpeed;
   ctx.fillText(`${usSpeed}${unitSuffix} UP`, Center.x / 2 + (Mod.x + BRM.US.x) * (Scale / 10) + 5, Center.y / 2 + (Mod.y + BRM.US.y) * (Scale / 10) + 10);
 
-  ctx.fillStyle = CSMot == Motions.DS && "rgba(255,255,255,1)" || "rgba(255,255,255,0.7)";
+  ctx.fillStyle = CSMot == Motions.DS && cff("rgba(255,255,255,1)", "rgba(0,0,0,1)") || cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
   ctx.textAlign = "left";
   var dsSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(DSComps.WS)) : DSComps.WS;
   dsSpeed = CSMot === Motions.DS ? `${DSComps.WD} / ${dsSpeed}` : dsSpeed;
   ctx.fillText(`${dsSpeed}${unitSuffix} DN`, Center.x / 2 + (Mod.x + BRM.DS.x) * (Scale / 10) + 5, Center.y / 2 + (Mod.y + BRM.DS.y) * (Scale / 10) + 10);
+  ctx.restore();
 
-
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographDeviantMotions ? 1 : 0;
   ctx.fillStyle = CSMot == Motions.DTMR && "rgba(161, 161, 161, 1)" || "rgba(161, 161 ,161 ,0.7)";
   ctx.textAlign = "left";
   var dtmrSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(DTMRComps.WS)) : DTMRComps.WS;
@@ -2058,38 +2158,51 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   var dtmlSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(DTMLComps.WS)) : DTMLComps.WS;
   dtmlSpeed = CSMot === Motions.DTML ? `${DTMLComps.WD} / ${dtmlSpeed}` : dtmlSpeed;
   ctx.fillText(`${dtmlSpeed}${unitSuffix} DTML`, Center.x / 2 + (Mod.x + BRM.DTML.x) * (Scale / 10) + 5, Center.y / 2 + (Mod.y + BRM.DTML.y) * (Scale / 10) + 10);
+  ctx.restore();
 
   ctx.font = `10px ${globalFont}`;
 
-  ctx.strokeStyle = CSMot == Motions.RM && "rgba(255,0,0,0.9)" || "rgba(255,0,0,0.5)";
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographBunkersMotions ? 1 : 0;
+  ctx.strokeStyle = CSMot == Motions.RM && cff("rgba(255,0,0,0.9)", "rgba(100,0,0,0.9)") || cff("rgba(255,0,0,0.5)", "rgba(100,0,0,0.5)");
+
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(Center.x / 2 + (Mod.x + BRM.RM.x) * (Scale / 10), Center.y / 2 + (Mod.y + BRM.RM.y) * (Scale / 10), 4, 0, 2 * Math.PI);
   ctx.stroke();
 
-  ctx.strokeStyle = CSMot == Motions.LM && "rgba(255,0,0,0.9)" || "rgba(255,0,0,0.5)";
+  ctx.strokeStyle = CSMot == Motions.LM && cff("rgba(255,0,0,0.9)", "rgba(100,0,0,0.9)") || cff("rgba(255,0,0,0.5)", "rgba(100,0,0,0.5)");
   ctx.beginPath();
   ctx.arc(Center.x / 2 + (Mod.x + BRM.LM.x) * (Scale / 10), Center.y / 2 + (Mod.y + BRM.LM.y) * (Scale / 10), 4, 0, 2 * Math.PI);
   ctx.stroke();
+  ctx.restore();
 
-  ctx.strokeStyle = CSMot == CUMot && "rgba(255,0,0,0.9)" || "rgba(255,0,0,0.5)";
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographCustomMeanMotions ? 1 : 0;
+  ctx.strokeStyle = CSMot == CUMot && cff("rgba(255,0,0,0.9)", "rgba(100,0,0,0.9)") || cff("rgba(255,0,0,0.5)", "rgba(100,0,0,0.5)");
   ctx.beginPath();
   ctx.arc(Center.x / 2 + (Mod.x + CUMot.x) * (Scale / 10), Center.y / 2 - (-Mod.y + CUMot.y) * (Scale / 10), 4, 0, 2 * Math.PI);
   ctx.stroke();
+  ctx.restore();
 
   //Others
 
-  ctx.strokeStyle = CSMot == Motions.US && "rgba(0, 255, 255, 0.9)" || "rgba(0, 255, 255, 0.4)";
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographCorfidiMotions ? 1 : 0;
+  ctx.strokeStyle = CSMot == Motions.US && cff("rgba(0, 255, 255, 0.9)", "rgba(0, 100, 125, 0.9)") || cff("rgba(0, 255, 255, 0.4)", "rgba(0, 100, 125, 0.4)");
   ctx.beginPath();
   ctx.arc(Center.x / 2 + (Mod.x + BRM.US.x) * (Scale / 10), Center.y / 2 + (Mod.y + BRM.US.y) * (Scale / 10), 3, 0, 2 * Math.PI);
   ctx.stroke();
 
-  ctx.strokeStyle = CSMot == Motions.DS && "rgba(0, 255, 255, 0.9)" || "rgba(0, 255, 255, 0.4)";
+  ctx.strokeStyle = CSMot == Motions.DS && cff("rgba(0, 255, 255, 0.9)", "rgba(0, 100, 125, 0.9)") || cff("rgba(0, 255, 255, 0.4)", "rgba(0, 100, 125, 0.4)");
   ctx.beginPath();
   ctx.arc(Center.x / 2 + (Mod.x + BRM.DS.x) * (Scale / 10), Center.y / 2 + (Mod.y + BRM.DS.y) * (Scale / 10), 3, 0, 2 * Math.PI);
   ctx.stroke();
+  ctx.restore();
 
   //Deviant Motions
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographDeviantMotions ? 1 : 0;
   ctx.strokeStyle = CSMot == Motions.DTMR && "rgba(170, 115, 83, 0.9)" || "rgba(170, 115, 83, 0.4)";
   ctx.beginPath();
   ctx.arc(Center.x / 2 + (Mod.x + BRM.DTMR.x) * (Scale / 10), Center.y / 2 + (Mod.y + BRM.DTMR.y) * (Scale / 10), 3, 0, 2 * Math.PI);
@@ -2099,6 +2212,7 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
   ctx.beginPath();
   ctx.arc(Center.x / 2 + (Mod.x + BRM.DTML.x) * (Scale / 10), Center.y / 2 + (Mod.y + BRM.DTML.y) * (Scale / 10), 3, 0, 2 * Math.PI);
   ctx.stroke();
+  ctx.restore();
 
 
   let hght0km = GetLayerByHght(Sounding, "SFC");
@@ -2107,44 +2221,47 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
 
   let MM = MeanWind(Sounding, hght0km.P, hght6km.P, 1);
 
+  ctx.save();
+  ctx.globalAlpha = HODOGRAPH_DISPLAY_SETTINGS.showHodographCustomMeanMotions ? 1 : 0;
   ctx.strokeStyle = CSMot == Motions.MM && "rgba(255,100,50,0.9)" || "rgba(200,100,50,0.5)";
   ctx.strokeRect(Center.x / 2 + (Mod.x + MM.x) * (Scale / 10), Center.y / 2 + (Mod.y + MM.y) * (Scale / 10), 6, 6);
-  ctx.fillStyle = CSMot == Motions.MM && "rgba(255,255,255,1)" || "rgba(255,255,255,0.7)";
+  ctx.fillStyle = CSMot == Motions.MM && cff("rgba(255,255,255,1)", "rgba(0,0,0,1)") || cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
   ctx.textAlign = "left";
   var mmSpeed = useImperialUnits === 2 ? Math.round(KtsToMph(MeanComps.WS)) : Math.round(MeanComps.WS);
   mmSpeed = CSMot === Motions.MM ? `${MeanComps.WD} / ${mmSpeed}` : mmSpeed;
   ctx.fillText(`${mmSpeed}${unitSuffix} MM`, Center.x / 2 + (Mod.x + MM.x) * (Scale / 10) + 10, Center.y / 2 + (Mod.y + MM.y) * (Scale / 10) + 10);
+  ctx.restore();
 
   var P = 195;
 
-  if (CSMot == CUMot) {
+  if (HODOGRAPH_DISPLAY_SETTINGS.showHodographCustomMeanMotions && CSMot == CUMot) {
     ctx.textAlign = "left";
-    ctx.fillStyle = "rgba(255,0,0,1)";
+    ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
     ctx.fillText(`Custom Motion`, Center.x / 2 + (Mod.x + CSMot.x) * (Scale / 10) - 180, Center.y / 2 - (-Mod.y + CSMot.y) * (Scale / 10) + P);
     P -= 15;
   }
 
   if (ModifiedWind) {
     ctx.textAlign = "left";
-    ctx.fillStyle = "rgba(255,0,0,1)";
+    ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
     ctx.fillText("Custom Surface Data", Center.x / 2 + (Mod.x + CSMot.x) * (Scale / 10) - 180, Center.y / 2 - (-Mod.y + CSMot.y) * (Scale / 10) + P);
     // console.log("AYO");
     P -= 15;
   }
   if (!HodoMode) {
     ctx.textAlign = "left";
-    ctx.fillStyle = "rgba(255,0,0,1)";
+    ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
     ctx.fillText("Storm-Relative", Center.x / 2 + (Mod.x + CSMot.x) * (Scale / 10) - 180, Center.y / 2 - (-Mod.y + CSMot.y) * (Scale / 10) + P);
   }
   ctx.textAlign = "center";
 
-  if (!VWPActive) {
+  if (!VWPActive && HODOGRAPH_DISPLAY_SETTINGS.showHodographMap) {
     drawHodographLocationInset(ctx, Canv, Json, () => {
       scheduleHodographMapRedraw(Json, ghst, comparisonSoundings, drawVersion);
     });
   }
 
-  if (mapImage && !VWPActive) {
+  if (mapImage && !VWPActive && HODOGRAPH_DISPLAY_SETTINGS.showHodographMap) {
     const mapSize = 200;
     const padding = 0; // You can increase this if you want some spacing from the edge
     
@@ -2177,9 +2294,12 @@ function DrawSkewNumbers() {
   Canv.width = 800;
   Canv.height = 45;
 
+  ctx.fillStyle = dropsondeMode ? "#0a0c0e" : cff("rgba(0,0,0,0)", 'rgba(255,255,255,1)');
+  ctx.fillRect(0,0,1000,1000);
+
   //ctx.translate(SkewTPosition.x,0);
 
-  ctx.fillStyle = dropsondeMode ? "#0a0c0e" : "rgba(0,0,0,0)";
+  ctx.fillStyle = dropsondeMode ? "#0a0c0e" : cff("rgba(0,0,0,0)", 'rgba(255,255,255,1)');
   if (dropsondeMode) ctx.fillRect(0, 0, Canv.width, Canv.height);
 
   ctx.font = `${dropsondeMode ? 600 : 400} ${Canv.width / (dropsondeMode ? 36 : 40)}px ${globalFont}`;
@@ -2193,14 +2313,14 @@ function DrawSkewNumbers() {
   const tEnd = Math.floor((skv.tleft + skv.tspread) / 10) * 10;
   for (let i = tStart; i <= tEnd; i += 10) {
     let N = GetSkewRatio(i) * Canv.width * SkewTScale * 0.9;
-    ctx.fillStyle = dropsondeMode ? "#8ea3b3" : "rgba(255,255,255,1)";
+    ctx.fillStyle = dropsondeMode ? "#8ea3b3" : cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.textAlign = "center";
     const tempLabel = useImperialUnits === 2 ? Math.round(CToF(i)) : i;
 
     ctx.fillText(`${tempLabel}`, N + SkewTPosition.x * SkewTScale * 0.9, Canv.height * 2 / 3);
   }
 
-  ctx.fillStyle = dropsondeMode ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,1)";
+  ctx.fillStyle = dropsondeMode ? "rgba(255,255,255,0.12)" : cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.fillRect(25, 1, 700, dropsondeMode ? 1 : 1);
 }
 
@@ -2220,18 +2340,18 @@ function GetSkewRatio(N) {
  */
 function BarbColor(N) {
   let ColorIndex = [
-    "rgba(100,100,255,1)",
-    "rgba(0,125,255,1)",
-    "rgba(0,255,0,1)",
-    "rgba(255,255,0,1)",
-    "rgba(255,125,0,1)",
-    "rgba(255,0,0,1)",
-    "rgba(255,0,125,1)",
-    "rgba(255,0,255,1)",
-    "rgba(125,0,255,1)",
-    "rgba(0,0,255,1)",
-    "rgba(125,125,125,1)",
-    "rgba(255,255,255,1)",
+    cff("rgba(100,100,255,1)","rgba(55, 55, 141,1)"),
+    cff("rgba(0,125,255,1)", "rgba(0, 44, 92,1)"),
+    cff("rgba(0,255,0,1)", "rgba(0,125,0,1)"),
+    cff("rgba(255,255,0,1)", "rgba(100,100,0,1)"),
+    cff("rgba(255,125,0,1)", "rgb(112, 54, 0)"),
+    cff("rgba(255,0,0,1)", "rgba(125,0,0,1)"),
+    cff("rgba(255,0,125,1)", "rgba(125,0,65,1)"),
+    cff("rgba(255,0,255,1)", "rgba(125,0,125,1)"),
+    cff("rgba(125,0,255,1)", "rgba(65,0,125,1)"),
+    cff("rgba(0,0,255,1)", "rgba(0,0,125,1)"),
+    cff("rgba(125,125,125,1)", "rgba(80,80,80,1)"),
+    cff("rgba(255,255,255,1)", "rgba(0,0,0,1)"),
   ];
 
   return ColorIndex[Math.min(Math.floor(N / 10), 11)];
@@ -2535,11 +2655,11 @@ function DrawBarbs(Sounding, comparisonSoundings = []) {
   const Canv = $("barbs");
   const ctx = Canv.getContext("2d");
 
-  ctx.fillStyle = "rgba(0,0,0,1)";
-  ctx.fillRect(0, 0, 1000, 1000);
-
   Canv.height = 800;
   Canv.width = 100;
+
+  //ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
+  //ctx.fillRect(0, 0, 1000, 1000);
 
   // EDITED: Get main sounding latitude
   const mainLat = Sounding.Location ? Sounding.Location[0] : 0;
@@ -2549,7 +2669,7 @@ function DrawBarbs(Sounding, comparisonSoundings = []) {
     comparisonSoundings.forEach(comp => {
       if (!comp.metadata.isVisible) return;
       // Use the model's assigned color for its barbs
-      const color = comp.metadata.comparisonColor || "rgba(0, 191, 255, 1)";
+      const color = comp.metadata.comparisonColor || cff("rgba(0, 191, 255, 1)", "rgba(0, 60, 80, 1)");
       const sound = comp.sounding.Sounding;
 
       // EDITED: Get comparison sounding latitude
@@ -2634,10 +2754,10 @@ function MixRatioLine(val) {
 
   ctx.save();
   ctx.setLineDash([2, 2]);
-  ctx.strokeStyle = CheckMode("rgba(4,125,4,1)", "rgba(4,75,4,1)");
+  ctx.strokeStyle = cff("rgba(4,125,4,1)", "rgba(4,75,4,1)");
   ctx.lineWidth = 3;
   strokeCanvasLine(ctx, x0, y0, x1, y1);
-  ctx.fillStyle = CheckMode('rgba(45, 200, 45, 1)', 'rgba(25, 100, 25, 1)');
+  ctx.fillStyle = cff('rgba(45, 200, 45, 1)', 'rgba(25, 100, 25, 1)');
   ctx.textAlign = "center";
   ctx.fillText(`${val}`, x1, y1);
   ctx.restore();
@@ -2681,7 +2801,7 @@ function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
       }
 
       ctx.lineWidth = 3;
-      ctx.strokeStyle = CheckMode("rgba(0,200,200,0.5)", "rgba(30,144,255,0.5)");
+      ctx.strokeStyle = cff("rgba(0,200,200,0.5)", "rgba(30,144,255,0.5)");
 
       ctx.beginPath();
 
@@ -2735,19 +2855,19 @@ function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
     const dropStyle = isDropsondeSounding(Sounding);
     if (type == "Dew") {
       ctx.lineWidth = dropStyle ? 5 : 4;
-      ctx.strokeStyle = CheckMode("rgba(0,225,0,1)", "rgba(0,139,0,1)");
+      ctx.strokeStyle = cff("rgba(0,225,0,1)", "rgba(0,139,0,1)");
       Loop = Sound.DW; LoopVar = Sounding.DWL; EndVar = "D";
     } else if (type == "Temp") {
       ctx.lineWidth = dropStyle ? 5 : 4;
-      ctx.strokeStyle = CheckMode("rgba(225,0,0,1)", "rgba(139,0,0,1)");
+      ctx.strokeStyle = cff("rgba(225,0,0,1)", "rgba(139,0,0,1)");
       Loop = Sound.TW; LoopVar = Sounding.TWL; EndVar = "T";
     } else if (type == "VTemp") {
       ctx.lineWidth = 4;
-      ctx.strokeStyle = CheckMode("rgba(255,0,0,0.7)", "rgba(139,0,0,0.7)");
+      ctx.strokeStyle = cff("rgba(255,0,0,0.7)", "rgba(139,0,0,0.7)");
       Loop = Sound.TW; LoopVar = Sounding.TWL; EndVar = "VT";
     } else if (type == "WetBulb") {
       ctx.lineWidth = 2;
-      ctx.strokeStyle = CheckMode("rgba(0,200,200,1)", "rgba(30,144,255,1)");
+      ctx.strokeStyle = cff("rgba(0,200,200,1)", "rgba(30,144,255,1)");
       Loop = Sound.TW; LoopVar = Sounding.TWL; EndVar = "WB";
     }
     if (dropStyle && (type == "Temp" || type == "Dew")) {
@@ -2764,12 +2884,12 @@ function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
     ctx.beginPath();
 
     if (type == "Temp") {
-      ctx.fillStyle = CheckMode("rgba(255,75,75,.3)", "rgba(139,20,20,.3)");
+      ctx.fillStyle = cff("rgba(255,75,75,.3)", "rgba(139,20,20,.3)");
       Loop = Sound.TW; 
       LoopVar = Sounding.TWL; 
       EndVar = "T";
     } else if (type == "Dew"){
-      ctx.fillStyle = CheckMode("rgba(0,225,0,.2)", "rgba(0,139,0,.2)");
+      ctx.fillStyle = cff("rgba(0,225,0,.2)", "rgba(0,139,0,.2)");
       Loop = Sound.DW; 
       LoopVar = Sounding.DWL; 
       EndVar = "D";
@@ -2885,7 +3005,7 @@ function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
       if (Loop[Math.max(1, i)].T >= -30 && Loop[Math.min(LoopVar, i)].T <= -10) {
         Layers.push(Loop[i]);
       } else if (!isDropsondeSounding(Sounding)) {
-        ctx.strokeStyle = CheckMode("rgba(255,0,0,1)", "rgba(139,0,0,1)");
+        ctx.strokeStyle = cff("rgba(255,0,0,1)", "rgba(139,0,0,1)");
       }
     }
   }
@@ -2920,10 +3040,10 @@ function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
     let PY2 = PressuretoSkew(Layers[0].P, SfcSlice.P);
     let Rio2 = GetSkewRatio(Layers[0].T);
 
-    ctx.strokeStyle = CheckMode("rgba(255,175,126,1)", "rgba(125,85,65,1)");
+    ctx.strokeStyle = cff("rgba(255,175,126,1)", "rgba(125,85,65,1)");
     ctx.lineWidth = 4;
 
-    ctx.strokeStyle = CheckMode("rgba(255,175,126,1)", "rgba(125,85,65,1)");
+    ctx.strokeStyle = cff("rgba(255,175,126,1)", "rgba(125,85,65,1)");
     ctx.beginPath();
 
     ctx.moveTo((Rio + PX) * Canv.width, PY * Canv.height);
@@ -2949,13 +3069,75 @@ function DrawLine(Sounding, type, ghost = false, overrideColor = null) {
     let PsY2 = PressuretoSkew(End.P, SfcSlice.P);
     let Rtio2 = GetSkewRatio(Math.max(-30, End.T));
 
-    ctx.strokeStyle = "rgba(255,175,126,1)";
+    ctx.strokeStyle = cff("rgba(255,175,126,1)", "rgba(125,85,65,1)");
     ctx.lineTo((Rtio2 + PsX2) * Canv.width, PsY2 * Canv.height);
 
 
     ctx.stroke();
     ctx.fill();
   }
+}
+
+/**
+ * Calculates air temperature in Celsius from potential temperature (Theta)
+ * and a given pressure level, using a 1050 hPa reference start pressure.
+ *
+ * @param {number} theta - Potential temperature in Kelvin (K)
+ * @param {number} pressure - The target pressure level in hPa (mb)
+ * @returns {number} Temperature in Celsius (°C)
+ */
+function getTempFromTheta(theta, pressure) {
+    const P0 = 1050; // Reference start pressure in hPa
+    const KAPPA = 0.2854; // Poisson's constant for dry air (R / Cp)
+
+    // Calculate temperature in Kelvin
+    const tempKelvin = theta * Math.pow((pressure / P0), KAPPA);
+
+    // Convert to Celsius
+    return tempKelvin - 273.15;
+}
+
+/** Draws moist adiabat content.
+ * @param {*} thta Parameter for moist_adiabat.
+ * @param {*} style Parameter for moist_adiabat.
+ * @returns {void} No value.
+ */
+function moist_adiabat(thta, style = null) {
+  const Canv = $("skewT");
+  const ctx = Canv.getContext("2d");
+  const dropsondeMode = !!root.querySelector(".sjs-viz.dropsonde-mode");
+
+  ctx.beginPath();
+  ctx.lineWidth = style?.lineWidth ?? 1;
+  ctx.strokeStyle = style?.strokeStyle
+    ?? (DarkMode == true && cff("rgba(200,255,200,0.2)", "rgba(0, 20, 0, 0.2)") || "rgba(0,20,0,0.2)");
+
+  if (dropsondeMode){
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+  } else {
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "butt";
+  }
+
+  const adiabatBot = skv.pbot;
+  const adiabatTop = Math.max(50, skv.ptop - 20);
+  let plcl = 1050;
+  let tlcl = getTempFromTheta(thta+273.15, plcl);
+  for (var pres = adiabatBot; pres >= adiabatTop; pres -= 10) {
+    // temp = 2;
+    let t3 = wetlift(plcl, tlcl, pres);
+    var temp = virtemp(pres, t3, t3);
+    let x = LevelToSkewNum(pres, adiabatBot);
+    let y = PressuretoSkew(pres, adiabatBot);
+    let r = GetSkewRatio(temp);
+    if (pres == adiabatBot) {
+      ctx.moveTo((r + x) * Canv.width, y * Canv.height);
+    }
+
+    ctx.lineTo((r + x) * Canv.width, y * Canv.height);
+  }
+  ctx.stroke();
 }
 
 /** Draws dry adiabat content.
@@ -2971,7 +3153,7 @@ function dry_adiabat(thta, style = null) {
   ctx.beginPath();
   ctx.lineWidth = style?.lineWidth ?? 1;
   ctx.strokeStyle = style?.strokeStyle
-    ?? (DarkMode == true && "rgba(255,255,255,0.2)" || "rgba(0,0,0,0.2)");
+    ?? (DarkMode == true && cff("rgba(255,200,200,0.2)", "rgba(20, 0, 0, 0.2)") || "rgba(20,0,0,0.2)");
   
   if (dropsondeMode){
     ctx.lineCap = "round";
@@ -3005,13 +3187,13 @@ function dry_adiabat(thta, style = null) {
  */
 function Get3CapeColor(N) {
   if (N <= 50) {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   } else if (N <= 100 && N > 50) {
-    return "rgba(255,255,0,1)";
+    return cff("rgba(255,255,0,1)", "rgba(100,100,0,1)");
   } else if (N <= 200 && N > 100) {
-    return "rgba(255,0,0,1)";
+    return cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   } else {
-    return "rgba(255,0,255,1)";
+    return cff("rgba(255,0,255,1)", "rgba(125,0,125,1)");
   }
 }
 
@@ -3021,13 +3203,13 @@ function Get3CapeColor(N) {
  */
 function Get6CapeColor(N) {
   if (N <= 400) {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   } else if (N <= 800 && N > 400) {
-    return "rgba(255,255,0,1)";
+    return cff("rgba(255,255,0,1)", "rgba(100,100,0,1)");
   } else if (N <= 1200 && N > 800) {
-    return "rgba(255,0,0,1)";
+    return cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   } else {
-    return "rgba(255,0,255,1)";
+    return cff("rgba(255,0,255,1)", "rgba(125,0,125,1)");
   }
 }
 
@@ -3037,13 +3219,13 @@ function Get6CapeColor(N) {
  */
 function GetCinColor(N) {
   if (N > -50) {
-    return "rgba(0,255,0,1)";
+    return cff("rgba(0,255,0,1)", "rgba(0,125,0,1)");
   } else if (N > -100) {
-    return "rgba(255,255,0,1)";
+    return cff("rgba(255,255,0,1)", "rgba(100,100,0,1)");
   } else if (N > -200) {
-    return "rgba(255,0,0,1)";
+    return cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   } else {
-    return "rgba(125,175,0,1)";
+    return cff("rgba(125,175,0,1)", "rgba(40,80,0,1)");
   }
 }
 
@@ -3075,8 +3257,11 @@ function DrawValuesKey() {
   const Canv = $("Values1");
   const ctx = Canv.getContext("2d");
 
-  Canv.width = 900;
-  Canv.height = 175;
+  Canv.width = 1200 * .75;
+  Canv.height = 1200 * .75 * 86.425/387.462;
+
+  ctx.fillStyle = cff('rgba(0,0,0,1)', 'rgba(255,255,255,1)');
+  ctx.fillRect(0,0,1000,1000);
 
   let Scale = 1;
   let typeR = "Parcel";
@@ -3087,7 +3272,7 @@ function DrawValuesKey() {
 
   let HeaderSize = Canv.width / 42.5;
 
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   ctx.fillRect(Canv.width * 0.02, Canv.height * 0.175, Canv.width * 0.96, 2);
 
@@ -3149,6 +3334,8 @@ function DrawValues(type, Values, Selected = false) {
   const Canv = $("Values1");
   const ctx = Canv.getContext("2d");
 
+
+
   let Scale = 1;
   let typeR = "Parcel";
 
@@ -3175,13 +3362,13 @@ function DrawValues(type, Values, Selected = false) {
   }
 
   if (Selected == true) {
-    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.strokeStyle = cff("rgba(255,255,255,0.9)", "rgba(0,0,0,0.9)");
     ctx.lineWidth = 2;
     ctx.strokeRect(Canv.width * (0.005 + Scaler / 22), Canv.height * (0.165 + 0.2 * (Scale - 1)), 0.99 * Canv.width, 0.2 * Canv.height);
   }
 
   let HeaderSize = Canv.width / 50;
-  let WhiteColor = "rgba(255,255,255,1)";
+  let WhiteColor = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   const heightUnit = useImperialUnits === 2 ? "ft" : "m";
 
@@ -3225,49 +3412,83 @@ function DrawInflowHodo(Sounding, inflowInfo, BRM) {
   // because existing callers still invoke this after a hodograph redraw.
 }
 
+
+
+
+/** Estiamtes the depth of the boundary layer, derived from SHARPPY
+ *  @param {*} Sounding Sounding Object
+ *  @returns {*} PBL TOP (in pressure, false if none);
+ */
+function PBL_Top(Sounding){
+  let Sfc = GetLayerByPres(Sounding, "SFC");
+  let sfc_vtta = theta(Sfc.P, virtemp(Sfc.P, Sfc.T, Sfc.D), 1000)
+
+  for (let i = Sfc.P-5; i > (Sfc.P - 300); i-=5){
+    let lyr = GetLayerByPres(Sounding, i);
+    let lyr_vtta = theta(lyr.P, virtemp(lyr.P, lyr.T, lyr.D), 1000)
+
+    if (sfc_vtta + .5 < lyr_vtta){
+      return Math.round(i);
+    }
+  }
+
+  return false;
+}
+
 /** Draws inflow content.
  * @param {*} Sounding Parameter for DrawInflow.
  * @param {*} Info Parameter for DrawInflow.
  * @returns {void} No value.
  */
-function DrawInflow(Sounding, Info) {
+function DrawInflow(Sounding, Info, showInflowLayer = true, showPBL = true) {
   const Canv = $("skewT");
   const ctx = Canv.getContext("2d");
 
-  if (Info == false) {
-    return;
+  if (showInflowLayer && Info !== false) {
+    let BotLayer = GetLayerByPres(Sounding, Info.Bot);
+    let TopLayer = GetLayerByPres(Sounding, Info.Top);
+
+    ctx.fillStyle = cff("rgb(125, 200, 255)", "rgb(65, 100, 125)");
+
+    let Y0 = PressuretoSkew(Info.Bot);
+    let Y1 = PressuretoSkew(Info.Top);
+
+    let SRH = GetSRH(Sounding, BotLayer.P, TopLayer.P, "Pres");
+    let STt = GetLayerByPres(Sounding, "SFC");
+    let ST = STt.H;
+
+    ctx.fillRect(0.27 * Canv.width, Y0 * Canv.height, 0.05 * Canv.width, 2 + 0.005 * Canv.height);
+
+    ctx.font = `normal 550 ${Canv.width / 50}px ${globalFont}`;
+    ctx.textAlign = "center";
+
+    if (Info.isSfc) {
+      ctx.fillText(`SFC`, Canv.width * (0.23), Y0 * Canv.height + (2 + 0.005 * Canv.height));
+    } else {
+      ctx.fillText(`${Math.round(BotLayer.H - ST)}m`, Canv.width * (0.23), Y0 * Canv.height + (2 + 0.005 * Canv.height));
+    }
+
+    ctx.fillText(`${Math.round(TopLayer.H - ST)}m`, Canv.width * (0.23), Y1 * Canv.height - (2 + 0.005 * Canv.height));
+
+    ctx.textAlign = "left";
+    ctx.fillText(`${Math.round(SRH.SRHP + SRH.SRHM)} m²/s²`, Canv.width * (0.27), (Y1 - 0.02) * Canv.height);
+    ctx.fillRect(0.295 * Canv.width - 2, Y0 * Canv.height, 4, (Y1 - Y0) * Canv.height);
+
+    ctx.fillRect(0.27 * Canv.width, Y1 * Canv.height - (2 + 0.005 * Canv.height), 0.05 * Canv.width, 2 + 0.005 * Canv.height);
   }
 
-  let BotLayer = GetLayerByPres(Sounding, Info.Bot);
-  let TopLayer = GetLayerByPres(Sounding, Info.Top);
+  if (showPBL) {
+    const surface = GetLayerByPres(Sounding, "SFC");
+    const pbl = PBL_Top(Sounding);
+    if (!pbl) return;
 
-  ctx.fillStyle = "rgb(125, 200, 255)";
-
-  let Y0 = PressuretoSkew(Info.Bot);
-  let Y1 = PressuretoSkew(Info.Top);
-
-  let SRH = GetSRH(Sounding, BotLayer.P, TopLayer.P, "Pres");
-  let ST = GetLayerByPres(Sounding, "SFC").H;
-
-  ctx.fillRect(0.24 * Canv.width, Y0 * Canv.height, 0.05 * Canv.width, 2 + 0.005 * Canv.height);
-
-  ctx.font = `normal 550 ${Canv.width / 50}px ${globalFont}`;
-  ctx.textAlign = "center";
-
-  if (Info.isSfc) {
-    ctx.fillText(`SFC`, Canv.width * (0.2), Y0 * Canv.height + (2 + 0.005 * Canv.height));
-  } else {
-    ctx.fillText(`${Math.round(BotLayer.H - ST)}m`, Canv.width * (0.2), Y0 * Canv.height + (2 + 0.005 * Canv.height));
+    ctx.fillStyle = cff("rgb(233, 125, 255)", "rgb(41, 22, 39)");
+    const Y0 = PressuretoSkew(surface.P);
+    const Y1 = PressuretoSkew(pbl);
+    ctx.fillRect(0.18 * Canv.width - 2, Y0 * Canv.height, 4, (Y1 - Y0) * Canv.height);
+    ctx.fillRect(0.17 * Canv.width, Y1 * Canv.height - (2 + 0.005 * Canv.height), 0.02 * Canv.width, 2 + 0.005 * Canv.height);
+    ctx.fillText(`PBL`, Canv.width * (0.16), (Y1 - 0.02) * Canv.height);
   }
-
-
-  ctx.fillText(`${Math.round(TopLayer.H - ST)}m`, Canv.width * (0.2), Y1 * Canv.height - (2 + 0.005 * Canv.height));
-
-  ctx.textAlign = "left";
-  ctx.fillText(`${Math.round(SRH.SRHP + SRH.SRHM)} m²/s²`, Canv.width * (0.24), (Y1 - 0.02) * Canv.height);
-  ctx.fillRect(0.265 * Canv.width - 2, Y0 * Canv.height, 4, (Y1 - Y0) * Canv.height);
-
-  ctx.fillRect(0.24 * Canv.width, Y1 * Canv.height - (2 + 0.005 * Canv.height), 0.05 * Canv.width, 2 + 0.005 * Canv.height);
 }
 
 /** Returns the color for a lapse rate based on its value.
@@ -3276,25 +3497,25 @@ function DrawInflow(Sounding, Info) {
  */
 function LapseRateColor(N) {
   if (N == "--") {
-    return "rgba(125,125,125,1)";
+    return cff("rgba(125,125,125,1)", "rgba(80,80,80,1)");
   }
 
   if (N < 5.5) {
-    return "rgba(125,125,125,1)";
+    return cff("rgba(125,125,125,1)", "rgba(80,80,80,1)");
   } else if (N >= 5.5 && N < 6) {
-    return "rgba(125,125,200,1)";
+    return cff("rgba(125,125,200,1)", "rgba(65,65,100,1)");
   } else if (N >= 6 && N < 6.5) {
-    return "rgba(75,255,75,1)";
+    return cff("rgba(75,255,75,1)", "rgba(35,125,35,1)");
   } else if (N >= 6.5 && N < 7) {
-    return "rgba(200,200,50,1)";
+    return cff("rgba(200,200,50,1)", "rgba(100,100,25,1)");
   } else if (N >= 7 && N < 7.5) {
-    return "rgba(200,100,0,1)";
+    return cff("rgba(200,100,0,1)", "rgba(100,50,0,1)");
   } else if (N >= 7.5 && N < 8) {
-    return "rgba(255,55,55,1)";
+    return cff("rgba(255,55,55,1)", "rgba(125,30,30,1)");
   } else if (N >= 8 && N < 9) {
-    return "rgba(255,0,125,1)";
+    return cff("rgba(255,0,125,1)", "rgba(125,0,65,1)");
   } else {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   }
 }
 
@@ -3319,7 +3540,7 @@ function StormMotionBox(Sounding){
   Canv2.width = 500;//Canv.style.width;
   Canv2.height = 275;
 
-  ctx2.fillStyle = "rgb(0, 0, 0)";
+  ctx2.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
   ctx2.fillRect(0, 0, 1000, 1000)
 
   const impSpd = useImperialUnits === 2;
@@ -3351,7 +3572,7 @@ function StormMotionBox(Sounding){
   let BRM = GetBM(Sounding, GlobalEffInflow);
   let FntSiz = Canv2.width / 20;
 
-  ctx2.fillStyle = "rgba(255,255,255,1)";
+  ctx2.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   ctx2.font = `600 ${FntSiz*1.25}px ${globalFont}`;
   ctx2.textAlign = "center";
@@ -3376,13 +3597,13 @@ function StormMotionBox(Sounding){
   let YP = 0.255;
   let YR = 66;
   MotionRows.forEach((N) => {
-    ctx2.fillStyle = "rgb(208, 255, 253)";
+    ctx2.fillStyle = cff("rgb(208, 255, 253)", "rgb(35, 25, 15)");
 
     ctx2.font = `700 ${FntSiz * 1.1}px ${globalFont}`;
     ctx2.textAlign = "left";
     ctx2.fillText(`${N[0]}:`, 10, Canv2.height * YP);
 
-    ctx2.fillStyle = "rgb(255, 211, 211)";
+    ctx2.fillStyle = cff("rgb(255, 211, 211)", "rgb(15, 45, 35)");
 
     ctx2.font = `500 ${FntSiz * 1.1}px ${globalFont}`;
     ctx2.textAlign = "right";
@@ -3411,8 +3632,11 @@ function GetLapseBox(Sounding) {
   const Canv = $("Values2");
   const ctx = Canv.getContext("2d");
 
-  Canv.width = 500;//Canv.style.width;
-  Canv.height = 275;
+  Canv.width = 1200 * .25;//Canv.style.width;
+  Canv.height = 1200 * .25 * 86.425/128.088;
+
+  ctx.fillStyle = cff('rgba(0,0,0,1)', 'rgba(255,255,255,1)');
+  ctx.fillRect(0,0,1200,1200);
 
   if (DisplayStormMotions){
     StormMotionBox(Sounding)
@@ -3440,44 +3664,44 @@ function GetLapseBox(Sounding) {
   const lapseUnit = useImperialUnits === 2 ? "C/kft" : "C/KM";
   const lapseType = LapseType ? "AvLR" : "LR";
 
-  ctx.font = `bold ${Canv.width / 16}px ${globalFont}`;
+  ctx.font = `bold ${40}px ${globalFont}`;
 
   if (Presets['WindLapse'] == "Default" || Presets['WindLapse'] == "Dryline") {
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 210, 210)", `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 165, 165)", `Sfc-LCL ${lapseType}`, Scale, LSLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 120, 120)", `850-500mb ${lapseType}`, Scale, LMR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 65, 65)", `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,210,210)", "rgb(125,105,105)"), `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,165,165)", "rgb(125,83,83)"), `Sfc-LCL ${lapseType}`, Scale, LSLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,120,120)", "rgb(125,60,60)"), `850-500mb ${lapseType}`, Scale, LMR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,65,65)", "rgb(125,32,32)"), `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
   } else if (Presets['WindLapse'] == "Severe" || Presets['WindLapse'] == "Elevated") {
     let LFCELLR = LapseRateHght(Sounding, ((DP.Start != undefined && DP.Start.H || 0) + DP.LFC+ sh) || 0, ((DP.Start != undefined && DP.Start.H || 0) + DP.EL+ sh) || 3000, LapseType, 100);
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 210, 210)", `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 165, 165)", `LFC-EL ${lapseType}`, Scale, LFCELLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 120, 120)", `850-500mb ${lapseType}`, Scale, LMR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 65, 65)", `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,210,210)", "rgb(125,105,105)"), `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,165,165)", "rgb(125,83,83)"), `LFC-EL ${lapseType}`, Scale, LFCELLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,120,120)", "rgb(125,60,60)"), `850-500mb ${lapseType}`, Scale, LMR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,65,65)", "rgb(125,32,32)"), `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
   } else if (Presets['WindLapse'] == "Fire") {
     let SLLLR = LapseRateHght(Sounding, "SFC", 1000+ sh, LapseType, 100);
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Sfc-1km ${lapseType}`, Scale, SLLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 210, 210)", `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 165, 165)", `Sfc-LFC ${lapseType}`, Scale, LFCLR == LFCLR ? LFCLR : LSLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 120, 120)", `850-500mb ${lapseType}`, Scale, LMR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 65, 65)", `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Sfc-1km ${lapseType}`, Scale, SLLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,210,210)", "rgb(125,105,105)"), `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,165,165)", "rgb(125,83,83)"), `Sfc-LFC ${lapseType}`, Scale, LFCLR == LFCLR ? LFCLR : LSLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,120,120)", "rgb(125,60,60)"), `850-500mb ${lapseType}`, Scale, LMR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,65,65)", "rgb(125,32,32)"), `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
   } else if (Presets['WindLapse'] == "Winter") {
     let DGZLR = LapseRatePres(Sounding, GetLayerByTemp(Sounding, -12).P, GetLayerByTemp(Sounding, -18).P, LapseType, 100);
     let FRZLR = LapseRateHght(Sounding, "SFC", Math.max(GetLayerByTemp(Sounding, 0).H, 250)+ sh, LapseType, 100);
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 210, 210)", `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 165, 165)", `DGZ ${lapseType}`, Scale, DGZLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 120, 120)", `SFC-0C ${lapseType}`, Scale, FRZLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 65, 65)", `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
-    Scale = LapseBoxStep(ctx, Canv, "rgb(255, 255, 255)", `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Sfc-3km ${lapseType}`, Scale, LLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,210,210)", "rgb(125,105,105)"), `3km-6km ${lapseType}`, Scale, MLLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,165,165)", "rgb(125,83,83)"), `DGZ ${lapseType}`, Scale, DGZLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,120,120)", "rgb(125,60,60)"), `SFC-0C ${lapseType}`, Scale, FRZLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,65,65)", "rgb(125,32,32)"), `700-500mb ${lapseType}`, Scale, MMR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `Max 2-6km ${lapseType}`, Scale, MaxLR, lapseUnit, 1)
+    Scale = LapseBoxStep(ctx, Canv, cff("rgb(255,255,255)", "rgb(0,0,0)"), `${CustomLapseLayer.Title} ${lapseType}`, Scale, CL, lapseUnit, 1)
   }
 }
 
@@ -3495,11 +3719,11 @@ function GetLapseBox(Sounding) {
 function LapseBoxStep(ctx, Canv, color, Title, Scale, Value, lapseUnit, Step) {
   ctx.fillStyle = color;
   ctx.textAlign = "left";
-  ctx.font = `bold ${Canv.width / 17}px ${globalFont}`;
-  ctx.fillText(Title, 0.05 * Canv.width, Canv.height * Scale / 7);
+  ctx.font = `bold ${19}px ${globalFont}`;
+  ctx.fillText(Title, 0.03 * Canv.width, Canv.height * Scale / 7);
   ctx.fillStyle = LapseRateColor(Value);
   ctx.textAlign = "right";
-  ctx.font = `bold ${Canv.width / 17}px ${globalFont}`;
+  ctx.font = `bold ${17}px ${globalFont}`;
   ctx.fillText(`${convertLapse(Value)} ${lapseUnit}`, 0.95 * Canv.width, Canv.height * Scale / 7);
   return Scale + Step;
 }
@@ -3510,7 +3734,7 @@ function LapseBoxStep(ctx, Canv, color, Title, Scale, Value, lapseUnit, Step) {
  */
 function StepColor(N) {
   if (N <= 1) {
-    return "rgba(125,125,125,1)";
+    return cff("rgba(125,125,125,1)", "rgba(80,80,80,1)");
   } else if (N <= 3 && N > 1) {
     return "rgba(0, 139, 0,1)";
   } else if (N <= 8 && N > 3) {
@@ -3518,7 +3742,7 @@ function StepColor(N) {
   } else if (N <= 15 && N > 8) {
     return "rgba(255, 200, 0 ,1)";
   } else if (N <= 25 && N > 15) {
-    return "rgba(255,0,0,1)";
+    return cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
   } else if (N <= 45 && N > 25) {
     return "rgba(255, 0, 255 ,1)";
   } else if (N <= 60 && N > 45) {
@@ -3526,7 +3750,7 @@ function StepColor(N) {
   } else if (N <= 85 && N > 60) {
     return "rgba(35, 110, 185,1)";
   } else {
-    return "rgba(255,255,255,1)";
+    return cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   }
 }
 
@@ -3535,13 +3759,13 @@ function StepColor(N) {
  * @returns {void} No value.
  */
 function Clean() {
-  let tempN = DarkMode == true && "rgba(0,0,0,1)" || "rgba(255,255,255,1)";
+  let tempN = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)")
   const clearId = (id) => {
     const el = $(id);
     if (!el) return;
     const c = el.getContext("2d");
     if (!c) return;
-    c.fillStyle = tempN;
+    c.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     c.fillRect(0, 0, 1000, 1000);
   };
   clearId("hodograph");
@@ -3579,64 +3803,71 @@ function DrawWindParams(Sounding, WindParams) {
   const Canv = $("Values5");
   const ctx = Canv.getContext("2d");
 
-  Canv.width = 800;
-  Canv.height = 400;
+  Canv.width = 540;
+  Canv.height = 540 * 174.462/253.063;
+
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
+  ctx.fillRect(0,0,1000,1000);
   
   let Scale = 1;
 
   let Scaler = 0.5;
   let TS = 23.7;
+  let fntShrink = 0;
 
   if (!DisplayEHI) TS -= 2.8;
+  if (DisplayEHI) fntShrink = 2;
 
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
-  ctx.fillRect(0.025 * Canv.width, 0.125 * Canv.height, 0.95 * Canv.width, 2);
+  ctx.fillRect(0.015 * Canv.width, 0.125 * Canv.height, 0.95 * Canv.width, 2);
 
-  ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+  let titleFontSize = 20;//Canv.width / 25;
+
+  ctx.font = `bold ${titleFontSize}px ${globalFont}`;
   ctx.textAlign = "center";
   ctx.fillText(`Level`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
-  Scaler += 4.2;
+  Scaler += 4.3;
 
-  ctx.fillStyle = "rgba(255,255,255,1)";
-  ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+  ctx.font = `bold ${titleFontSize}px ${globalFont}`;
   ctx.textAlign = "center";
   ctx.fillText(`Shear`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
-  Scaler += 3.55;
+  Scaler += 3.45;
 
-  ctx.fillStyle = "rgba(255,255,255,1)";
-  ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+  ctx.font = `bold ${titleFontSize}px ${globalFont}`;
   ctx.textAlign = "center";
   ctx.fillText(`SRH`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
-  Scaler += 3.6;
-  ctx.fillStyle = "rgba(255,255,255,1)";
-  ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+  Scaler += 3.7;
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+  ctx.font = `bold ${titleFontSize}px ${globalFont}`;
   ctx.textAlign = "center";
   ctx.fillText(`SRWind`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
   if (DisplayEHI){
-    Scaler += 2.8;
-    ctx.fillStyle = "rgba(255,255,255,1)";
-    ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+    Scaler += 2.9;
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+    ctx.font = `bold ${titleFontSize}px ${globalFont}`;
     ctx.textAlign = "center";
     ctx.fillText(`EHI`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
   }
   
 
-  Scaler += 2.8;
+  Scaler += 2.9;
   
-  ctx.fillStyle = "rgba(255,255,255,1)";
-  ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+  ctx.font = `bold ${titleFontSize}px ${globalFont}`;
   ctx.textAlign = "center";
   ctx.fillText(`SW%`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
-  Scaler += 2.5;
+  Scaler += 2.3;
   
-  ctx.fillStyle = "rgba(255,255,255,1)";
-  ctx.font = `bold ${Canv.width / 30}px ${globalFont}`;
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+  ctx.font = `bold ${titleFontSize}px ${globalFont}`;
   ctx.textAlign = "center";
   ctx.fillText(`SWV`, Canv.width * (0.1 + Scaler / TS), Canv.height * 0.1);
 
@@ -3645,27 +3876,27 @@ function DrawWindParams(Sounding, WindParams) {
   ];
 
   let Index = {
-    "Sfc-500m": ["Sfc-500m", WindParams.BWD005, WindParams.SRH005, WindParams.MeanWind.M005, WindParams.EHI005, WindParams.SWV.SWV005, WindParams.SWV.SWPercent005, "rgba(255,255,255,1)"],
-    "Sfc-1km": ["Sfc-1km", WindParams.BWD01, WindParams.SRH01, WindParams.MeanWind.M01, WindParams.EHI01, WindParams.SWV.SWV01, WindParams.SWV.SWPercent01, "rgba(225,225,255,1)"],
-    "Eff Inflow": ["Eff Inflow", WindParams.BWDE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, WindParams.SWV.ESWV, WindParams.SWV.ESWVPercent, "rgba(0,255,255,1)"], 
-    "Sfc-3km": ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, WindParams.SWV.SWV03, WindParams.SWV.SWPercent03, "rgba(200,200,255,1)"],
-    "1km-3km": ["1km-3km", WindParams.BWD13, WindParams.SRH13, WindParams.MeanWind.M13, WindParams.EHI13, WindParams.SWV.SWV13, WindParams.SWV.SWPercent13, "rgba(175,175,255,1)"],
-    "3km-6km": ["3km-6km", WindParams.BWD36, WindParams.SRH36, WindParams.MeanWind.M36, WindParams.EHI36, WindParams.SWV.SWV36, WindParams.SWV.SWPercent36, "rgba(150,150,255,1)"],
-    "Sfc-6km": ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, WindParams.SWV.SWV06, WindParams.SWV.SWPercent06, "rgba(125,125,255,1)"],
-    "Cstm": [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, CustomWindLayer.SWV, CustomWindLayer.SWVPercent, "rgba(255,255,255,1)", true],
-    "Sfc-MLLFC": ["Sfc-MLLFC", WindParams.BWD0MLLFC, WindParams.SRH0MLLFC, WindParams.MeanWind.M0MLLFC, WindParams.EHI0MLLFC, WindParams.SWV.SWV0MLLFC, WindParams.SWV.SWPercent0MLLFC, "rgba(175,175,255,1)"],
-    "Sfc-SBLCL": ["Sfc-SBLCL", WindParams.BWD0SBLCL, WindParams.SRH0SBLCL, WindParams.MeanWind.M0SBLCL, WindParams.EHI0SBLCL, WindParams.SWV.SWV0SBLCL, WindParams.SWV.SWPercent0SBLCL, "rgba(150,150,255,1)"],
-    "Eff Bot-1km": ["Eff Bot-1km", WindParams.BWDEb01, WindParams.SRHEb01, WindParams.MeanWind.MEb01, WindParams.EHIEb01, WindParams.SWV.SWVb01, WindParams.SWV.SWPercentb01, "rgba(255, 225, 225, 1)"],
-    "Eff Bot-3km": ["Eff Bot-3km", WindParams.BWDEb03, WindParams.SRHEb03, WindParams.MeanWind.MEb03, WindParams.EHIEb03, WindParams.SWV.SWVb03, WindParams.SWV.SWPercentb03, "rgba(210, 195, 195, 1)"],
-    "Eff Bot-6km": ["Eff Bot-6km", WindParams.BWDEb06, WindParams.SRHEb06, WindParams.MeanWind.MEb06, WindParams.EHIEb06, WindParams.SWV.SWVb06, WindParams.SWV.SWPercentb06, "rgba(175, 150, 150, 1)"],
-    "HGZ": ["HGZ", WindParams.BWDHGZ, WindParams.SRHHGZ, WindParams.MeanWind.MHGZ, WindParams.EHIHGZ, WindParams.SWV.SWVHGZ, WindParams.SWV.SWPercentHGZ, "rgb(255, 197, 150)"],  
-    "Sfc-9km": ["Sfc-9km", WindParams.BWD09, WindParams.SRH09, WindParams.MeanWind.M09, WindParams.EHI09, WindParams.SWV.SWV09, WindParams.SWV.SWPercent09, "rgba(200,200,255,1)"],
-    "Sfc-12km": ["Sfc-12km", WindParams.BWD012, WindParams.SRH012, WindParams.MeanWind.M012, WindParams.EHI012, WindParams.SWV.SWV012, WindParams.SWV.SWPercent012, "rgba(175,175,255,1)"],
-    "9-12km": ["9-12km", WindParams.BWD912, WindParams.SRH912, WindParams.MeanWind.M912, WindParams.EHI912, WindParams.SWV.SWV912, WindParams.SWV.SWPercent912, "rgba(125,125,255,1)"],
-    "Sfc-700mb": ["Sfc-700mb", WindParams.BWD0mb700, WindParams.SRH0mb700, WindParams.MeanWind.M0mb700, WindParams.EHI0mb700, WindParams.SWV.SWV0mb700, WindParams.SWV.SWPercent0mb700, "rgba(150,150,255,1)"],
-    "Sfc-500mb": ["Sfc-500mb", WindParams.BWD0mb500, WindParams.SRH0mb500, WindParams.MeanWind.M0mb500, WindParams.EHI0mb500, WindParams.SWV.SWV0mb500, WindParams.SWV.SWPercent0mb500, "rgba(125,125,255,1)"],
-    "DGZ": ["DGZ", WindParams.BWDDGZ, WindParams.SRHDGZ, WindParams.MeanWind.MDGZ, WindParams.EHIDGZ, WindParams.SWV.SWVDGZ, WindParams.SWV.SWPercentDGZ, "rgb(255, 197, 150)"],
-    "Sfc-DGZ": ["SFC-DGZ", WindParams.BWD0T18, WindParams.SRH0T18, WindParams.MeanWind.M0T18, WindParams.EHI0T18, WindParams.SWV.SWV0T18, WindParams.SWV.SWPercent0T18, "rgba(175, 200,255,1)"],
+    "Sfc-500m": ["Sfc-500m", WindParams.BWD005, WindParams.SRH005, WindParams.MeanWind.M005, WindParams.EHI005, WindParams.SWV.SWV005, WindParams.SWV.SWPercent005, cff("rgba(255,255,255,1)", "rgba(0,0,0,1)")],
+    "Sfc-1km": ["Sfc-1km", WindParams.BWD01, WindParams.SRH01, WindParams.MeanWind.M01, WindParams.EHI01, WindParams.SWV.SWV01, WindParams.SWV.SWPercent01, cff("rgba(225,225,255,1)", "rgba(25,25,25,1)")],
+    "Eff Inflow": ["Eff Inflow", WindParams.ShearE, WindParams.ESRH == 0 ? {SRHM: NaN, SRHP: NaN} : WindParams.ESRH, WindParams.MeanWind.ME, WindParams.EHIE, WindParams.SWV.ESWV, WindParams.SWV.ESWVPercent, cff("rgba(0,255,255,1)", "rgba(0,125,125,1)")],
+    "Sfc-3km": ["Sfc-3km", WindParams.BWD03, WindParams.SRH03, WindParams.MeanWind.M03, WindParams.EHI03, WindParams.SWV.SWV03, WindParams.SWV.SWPercent03, cff("rgba(200,200,255,1)", "rgba(50, 50, 125,1)")],
+    "1km-3km": ["1km-3km", WindParams.BWD13, WindParams.SRH13, WindParams.MeanWind.M13, WindParams.EHI13, WindParams.SWV.SWV13, WindParams.SWV.SWPercent13, cff("rgba(175,175,255,1)", "rgba(75, 75, 125,1)")],
+    "3km-6km": ["3km-6km", WindParams.BWD36, WindParams.SRH36, WindParams.MeanWind.M36, WindParams.EHI36, WindParams.SWV.SWV36, WindParams.SWV.SWPercent36, cff("rgba(150,150,255,1)", "rgba(100, 100 ,125,1)")],
+    "Sfc-6km": ["Sfc-6km", WindParams.BWD06, WindParams.SRH06, WindParams.MeanWind.M06, WindParams.EHI06, WindParams.SWV.SWV06, WindParams.SWV.SWPercent06, cff("rgba(125,125,255,1)", "rgba(125, 125, 125,1)")],
+    "Cstm": [CustomWindLayer.Title, CustomWindLayer.SHR, CustomWindLayer.SRH, CustomWindLayer.MW, CustomWindLayer.EHI, CustomWindLayer.SWV, CustomWindLayer.SWVPercent, cff("rgba(255,255,255,1)", "rgba(0,0,0,1)"), true],
+    "Sfc-MLLFC": ["Sfc-MLLFC", WindParams.BWD0MLLFC, WindParams.SRH0MLLFC, WindParams.MeanWind.M0MLLFC, WindParams.EHI0MLLFC, WindParams.SWV.SWV0MLLFC, WindParams.SWV.SWPercent0MLLFC, cff("rgba(175,175,255,1)", "rgba(75, 75, 125,1)")],
+    "Sfc-SBLCL": ["Sfc-SBLCL", WindParams.BWD0SBLCL, WindParams.SRH0SBLCL, WindParams.MeanWind.M0SBLCL, WindParams.EHI0SBLCL, WindParams.SWV.SWV0SBLCL, WindParams.SWV.SWPercent0SBLCL, cff("rgba(150,150,255,1)", "rgba(100,100,125,1)")],
+    "Eff Bot-1km": ["Eff Bot-1km", WindParams.BWDEb01, WindParams.SRHEb01, WindParams.MeanWind.MEb01, WindParams.EHIEb01, WindParams.SWV.SWVb01, WindParams.SWV.SWPercentb01, cff("rgba(255, 225, 225, 1)", "rgba(125, 100,125,1)")],
+    "Eff Bot-3km": ["Eff Bot-3km", WindParams.BWDEb03, WindParams.SRHEb03, WindParams.MeanWind.MEb03, WindParams.EHIEb03, WindParams.SWV.SWVb03, WindParams.SWV.SWPercentb03, cff("rgba(210, 195, 195, 1)", "rgba(105, 90, 90,1)")],
+    "Eff Bot-6km": ["Eff Bot-6km", WindParams.BWDEb06, WindParams.SRHEb06, WindParams.MeanWind.MEb06, WindParams.EHIEb06, WindParams.SWV.SWVb06, WindParams.SWV.SWPercentb06, cff("rgba(175, 150, 150, 1)", "rgba(100, 75, 75,1)")],
+    "HGZ": ["HGZ", WindParams.BWDHGZ, WindParams.SRHHGZ, WindParams.MeanWind.MHGZ, WindParams.EHIHGZ, WindParams.SWV.SWVHGZ, WindParams.SWV.SWPercentHGZ, cff("rgb(255, 197, 150)", "rgba(125, 105, 85,1)")],
+    "Sfc-9km": ["Sfc-9km", WindParams.BWD09, WindParams.SRH09, WindParams.MeanWind.M09, WindParams.EHI09, WindParams.SWV.SWV09, WindParams.SWV.SWPercent09, cff("rgba(200,200,255,1)", "rgba(100,100,125,1)")],
+    "Sfc-12km": ["Sfc-12km", WindParams.BWD012, WindParams.SRH012, WindParams.MeanWind.M012, WindParams.EHI012, WindParams.SWV.SWV012, WindParams.SWV.SWPercent012, cff("rgba(175,175,255,1)", "rgba(100, 75, 125,1)")],
+    "9-12km": ["9-12km", WindParams.BWD912, WindParams.SRH912, WindParams.MeanWind.M912, WindParams.EHI912, WindParams.SWV.SWV912, WindParams.SWV.SWPercent912, cff("rgba(125,125,255,1)", "rgba(50, 50, 125,1)")],
+    "Sfc-700mb": ["Sfc-700mb", WindParams.BWD0mb700, WindParams.SRH0mb700, WindParams.MeanWind.M0mb700, WindParams.EHI0mb700, WindParams.SWV.SWV0mb700, WindParams.SWV.SWPercent0mb700, cff("rgba(150,150,255,1)", "rgba(75, 75, 125,1)")],
+    "Sfc-500mb": ["Sfc-500mb", WindParams.BWD0mb500, WindParams.SRH0mb500, WindParams.MeanWind.M0mb500, WindParams.EHI0mb500, WindParams.SWV.SWV0mb500, WindParams.SWV.SWPercent0mb500, cff("rgba(125,125,255,1)", "rgba(60, 60, 120,1)")],
+    "DGZ": ["DGZ", WindParams.BWDDGZ, WindParams.SRHDGZ, WindParams.MeanWind.MDGZ, WindParams.EHIDGZ, WindParams.SWV.SWVDGZ, WindParams.SWV.SWPercentDGZ, cff("rgb(255, 197, 150)", "rgba(125, 105, 85,1)")],
+    "Sfc-DGZ": ["SFC-DGZ", WindParams.BWD0T18, WindParams.SRH0T18, WindParams.MeanWind.M0T18, WindParams.EHI0T18, WindParams.SWV.SWV0T18, WindParams.SWV.SWPercent0T18, cff("rgba(175,200,255,1)", "rgba(75, 100, 125,1)")],
   }
 
   if (Presets['WindLapse'] == "Default") {
@@ -3735,8 +3966,8 @@ function DrawWindParams(Sounding, WindParams) {
     ];
   }
 
-  const FntSize = Canv.width / 42.5;
-  const FntSize2 = Canv.width / 33;
+  const FntSize = 16-fntShrink;//Canv.width / 42.5;
+  const FntSize2 = 19-fntShrink;//Canv.width / 33;
 
   Ps.forEach((obj) => {
     Scaler = 0.5;
@@ -3749,7 +3980,7 @@ function DrawWindParams(Sounding, WindParams) {
     }
 
     ctx.textAlign = "left";
-    ctx.fillText(`${obj[0]}:`, Canv.width * (0.01 + Scaler / TS), Canv.height * (0.11 + Scale / Ps.length * 0.8));
+    ctx.fillText(`${obj[0]}:`, Canv.width * (0.005 + Scaler / TS), Canv.height * (0.11 + Scale / Ps.length * 0.8));
 
     Scaler += 3;
 
@@ -3795,7 +4026,7 @@ function DrawWindParams(Sounding, WindParams) {
     ctx.textAlign = "left";
     ctx.fillText(`${srwAng} / ${srwSpeed} ${speedUnit}`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
 
-    Scaler += 3.5;
+    Scaler += 3.6;
 
     if (DisplayEHI){
       ctx.font = `500 ${FntSize}px ${globalFont}`;
@@ -3808,7 +4039,7 @@ function DrawWindParams(Sounding, WindParams) {
     ctx.textAlign = "left";
 
     ctx.fillText(`${isNaN(obj[6]) ? "--" : Math.round(obj[6])}%`, Canv.width * (0.1 + Scaler / TS), Canv.height * (0.1 + Scale / Ps.length * 0.8));
-    Scaler += 2.5;
+    Scaler += 2.4;
 
     ctx.font = `500 ${FntSize}px ${globalFont}`;
     ctx.textAlign = "left";
@@ -3818,12 +4049,12 @@ function DrawWindParams(Sounding, WindParams) {
     Scale += 0.925;
   })
 
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillStyle = cff("rgba(255,255,255,0.5)", "rgba(0,0,0,0.5)");
   ctx.fillRect(0.1 * Canv.width, 0.9 * Canv.height, 0.8 * Canv.width, 2);
 
   Scale += 0.2;
 
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   ctx.font = `600 ${FntSize}px ${globalFont}`;
   ctx.textAlign = "right";
@@ -3841,7 +4072,7 @@ function DrawWindParams(Sounding, WindParams) {
   ctx.textAlign = "left";
   ctx.fillText(`${ebwdang} / ${ebwdspeed} ${spdUnit}`, Canv.width * 0.15, Canv.height * (0.1 + Scale / Ps.length * 0.787));
 
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   ctx.font = `600 ${FntSize}px ${globalFont}`;
   ctx.textAlign = "right";
@@ -3929,7 +4160,7 @@ function DrawVWPInsets(Sounding){
 
     Canv2.width = 700;
     Canv2.height = 200;
-    ctx2.fillStyle = "rgb(0, 0, 0)";
+    ctx2.fillStyle = cff("rgb(0,0,0)", "rgb(255,255,255)");
     ctx2.fillRect(0, 0, 1000, 1000)
 
     const impSpd = useImperialUnits === 2;
@@ -3960,7 +4191,7 @@ function DrawVWPInsets(Sounding){
     let BRM = GetBM(Sounding.Sounding);
     let FntSiz = Canv2.width / 35;
 
-    ctx2.fillStyle = "rgba(255,255,255,1)";
+    ctx2.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
     ctx2.font = `600 ${FntSiz*1.5}px ${globalFont}`;
     ctx2.textAlign = "center";
@@ -3992,13 +4223,13 @@ function DrawVWPInsets(Sounding){
       YP = 0.5;
       N.forEach((P) => {
         
-        ctx2.fillStyle = "rgb(208, 255, 253)";
+        ctx2.fillStyle = cff("rgb(208, 255, 253)", "rgb(35, 25, 15)");
 
         ctx2.font = `700 ${FntSiz * 1.1}px ${globalFont}`;
         ctx2.textAlign = "left";
         ctx2.fillText(`${P[0]}:`, 20 + XP  * XR, Canv2.height * 0.15 + YP * YR);
 
-        ctx2.fillStyle = "rgb(255, 211, 211)";
+        ctx2.fillStyle = cff("rgb(255, 211, 211)", "rgb(15, 45, 35)");
 
         ctx2.font = `500 ${FntSiz}px ${globalFont}`;
         ctx2.textAlign = "right";
@@ -4028,9 +4259,9 @@ function DrawVWPInsets(Sounding){
     let BoundsX = [0, 300];
     let BoundsY = [0, 700];
 
-    ctx3.strokeStyle = "rgba(255,255,255,1)";
+    ctx3.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx3.lineWidth = 3;
-    ctx3.fillStyle = "rgba(0,0,0,1)";
+    ctx3.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx3.fillRect(0, 0, 300, 700);
     ctx3.strokeRect(0, 0, 300, 700);
 
@@ -4047,8 +4278,8 @@ function DrawVWPInsets(Sounding){
     ctx3.beginPath();
     ctx3.lineWidth = 5;
     ctx3.setLineDash([5, 5]);
-    ctx3.strokeStyle = "rgba(255,0,0,1)";
-    ctx3.fillStyle = "rgba(255,0,0,0.1)";
+    ctx3.strokeStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
+    ctx3.fillStyle = cff("rgba(255,0,0,0.1)", "rgba(125,0,0,0.1)");
     ctx3.lineTo(0, 700);
 
     let pl = 0;
@@ -4079,7 +4310,7 @@ function DrawVWPInsets(Sounding){
 
 
     ctx3.font = `bold ${25}px ${globalFont}`;
-    ctx3.fillStyle = "rgba(255,255,255,1)";
+    ctx3.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx3.textAlign = "center";
     let Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
     ctx3.fillText(`SR Wind (${spdUnitLbl})`, Pos.x, Pos.y);
@@ -4113,17 +4344,17 @@ function DrawVWPInsets(Sounding){
     BoundsX = [300, 600];
     BoundsY = [0, 350];
 
-    ctx3.strokeStyle = "rgba(255,255,255,1)";
+    ctx3.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx3.lineWidth = 3;
-    ctx3.fillStyle = "rgba(0,0,0,1)";
+    ctx3.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx3.fillRect(300, 0, 300, 350);
     ctx3.strokeRect(300, 0, 300, 350);
 
     ctx3.beginPath();
     ctx3.lineWidth = 5;
     ctx3.setLineDash([]);
-    ctx3.strokeStyle = "rgb(0, 255, 242)";
-    ctx3.fillStyle = "rgba(0, 255, 213, 0.1)";
+    ctx3.strokeStyle = cff("rgb(0, 255, 242)", "rgb(0, 125, 122)");
+    ctx3.fillStyle = cff("rgba(0, 255, 213, 0.1)", "rgba(0, 125, 113, 0.1)");
     ctx3.lineTo(300, 350);
 
     pl = 0;
@@ -4152,7 +4383,7 @@ function DrawVWPInsets(Sounding){
 
     //ERROR BARS (RMS uncertainty crosses — keep fairly light so profile stays readable)
     const ErrHght = 10;
-    const errCrossStroke = "rgba(255, 0, 0, 0.55)";
+    const errCrossStroke = cff("rgba(255, 0, 0, 0.55)", "rgba(125,0,0,0.55)");
     pl = 0;
 
     for (let i = 0; i < Sound.W.length; i+=2) {
@@ -4187,9 +4418,9 @@ function DrawVWPInsets(Sounding){
       ctx3.fill();
 
       ctx3.beginPath();
-      ctx3.fillStyle = "rgba(0, 255, 213, 1)";
+      ctx3.fillStyle = cff("rgba(0, 255, 213, 1)", "rgba(0, 125, 100, 1)");
       ctx3.lineWidth = 2;
-      ctx3.strokeStyle = "rgb(0, 0, 0)";
+      ctx3.strokeStyle = cff("rgb(0,0,0)", "rgb(255,255,255)");
       ctx3.arc(Pos.x, Pos.y, ErrHght/2, 0, 2 * Math.PI);
       ctx3.stroke();
       ctx3.fill();
@@ -4198,7 +4429,7 @@ function DrawVWPInsets(Sounding){
 
 
     ctx3.font = `bold ${25}px ${globalFont}`;
-    ctx3.fillStyle = "rgba(255,255,255,1)";
+    ctx3.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx3.textAlign = "center";
     Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
     ctx3.fillText(`Wind Spd (${spdUnitLbl})`, Pos.x, Pos.y);
@@ -4231,17 +4462,17 @@ function DrawVWPInsets(Sounding){
     BoundsX = [300, 600];
     BoundsY = [350, 700];
 
-    ctx3.strokeStyle = "rgba(255,255,255,1)";
+    ctx3.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx3.lineWidth = 3;
-    ctx3.fillStyle = "rgba(0,0,0,1)";
+    ctx3.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx3.fillRect(300, 350, 300, 350);
     ctx3.strokeRect(300, 350, 300, 350);
 
     ctx3.beginPath();
     ctx3.lineWidth = 3;
     ctx3.setLineDash([]);
-    ctx3.strokeStyle = "rgb(0, 255, 242)";
-    ctx3.fillStyle = "rgba(0, 255, 213, 0.1)";
+    ctx3.strokeStyle = cff("rgb(0, 255, 242)", "rgb(0, 125, 122)");
+    ctx3.fillStyle = cff("rgba(0, 255, 213, 0.1)", "rgba(0, 125, 113, 0.1)");
     //ctx3.lineTo(0, 350);
 
     pl = 0;
@@ -4305,9 +4536,9 @@ function DrawVWPInsets(Sounding){
     ctx3.stroke();
     ctx3.fill();
 
-    ctx3.fillStyle = "rgba(255, 255, 255, 0.75)";
+    ctx3.fillStyle = cff("rgba(255, 255, 255, 0.75)", "rgba(0,0,0,0.75)");
     ctx3.fillRect((BoundsX[1] - BoundsX[0])/2 + BoundsX[0], 350, 3, 350);
-    ctx3.fillStyle = "rgba(0, 255, 213, 0.1)";
+    ctx3.fillStyle = cff("rgba(0, 255, 213, 0.1)", "rgba(0, 125, 113, 0.1)");
 
     //ERROR BARS
     pl = 0;
@@ -4381,9 +4612,9 @@ function DrawVWPInsets(Sounding){
       
 
       ctx3.beginPath();
-      ctx3.fillStyle = "rgba(0, 255, 213, 1)";
+      ctx3.fillStyle = cff("rgba(0, 255, 213, 1)", "rgba(0, 125, 100, 1)");
       ctx3.lineWidth = 2;
-      ctx3.strokeStyle = "rgb(0, 0, 0)";
+      ctx3.strokeStyle = cff("rgb(0,0,0)", "rgb(255,255,255)");
       ctx3.arc(Pos.x, Pos.y, ErrHght/2, 0, 2 * Math.PI);
       ctx3.stroke();
       ctx3.fill();
@@ -4392,7 +4623,7 @@ function DrawVWPInsets(Sounding){
 
 
     ctx3.font = `bold ${25}px ${globalFont}`;
-    ctx3.fillStyle = "rgba(255,255,255,1)";
+    ctx3.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx3.textAlign = "center";
     Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
     ctx3.fillText(`Wind Dir (Deg)`, Pos.x, Pos.y);
@@ -4422,9 +4653,9 @@ function DrawVWPInsets(Sounding){
     BoundsX = [600, 900];
     BoundsY = [350, 700];
 
-    ctx3.strokeStyle = "rgba(255,255,255,1)";
+    ctx3.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx3.lineWidth = 3;
-    ctx3.fillStyle = "rgba(0,0,0,1)";
+    ctx3.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx3.fillRect(600, 350, 300, 350);
     ctx3.strokeRect(600, 350, 300, 350);
     let Psv = GetBoxPos(BoundsX, BoundsY, 35, 50);
@@ -4433,15 +4664,15 @@ function DrawVWPInsets(Sounding){
       let Hght = x*1000;
       let hd;
       if (Hght <= 1000) {
-        hd = "rgba(225,0,225,1)";
+        hd = cff("rgba(225,0,225,1)", "rgba(100,0,100,1)");
       } else if (Hght <= 3000 && Hght > 1000) {
-        hd = "rgba(225,0,0,1)";
+        hd = cff("rgba(225,0,0,1)", "rgba(49, 0, 0, 1)");
       } else if (Hght <= 6000 && Hght > 3000) {
-        hd = "rgba(0,225,0,1)";
+        hd = cff("rgba(0,225,0,1)", "rgba(0,105,0,1)");
       } else if (Hght <= 9000 && Hght > 6000) {
-        hd = "rgba(225,225,0,1)";
+        hd = cff("rgba(255,225,0,1)", "rgba(105,105,0,1)");
       } else if (Hght <= 12000 && Hght > 9000) {
-        hd = "rgba(0,225,225,1)";
+        hd = cff("rgba(0,225,225,1)", "rgba(0,105,105,1)");
       }
       ctx3.fillStyle = hd;
       ctx3.font = `500 ${250 * 0.1}px ${globalFont}`;
@@ -4466,15 +4697,17 @@ function DrawVWPInsets(Sounding){
 
     const mapSize = 300;
     const padding = 0; // You can increase this if you want some spacing from the edge
-    if (mapImage) {
-      ctx3.fillStyle = "rgba(255, 255, 255,1)";
+    if (mapImage && HODOGRAPH_DISPLAY_SETTINGS.showHodographMap) {
+      ctx3.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
       ctx3.save();
       ctx3.drawImage(mapImage, 0, 0, mapImage.width || mapSize, mapImage.height || mapSize, 600, 0, 300, 350);
       ctx3.restore();
     }
-    drawHodographLocationInset(ctx3, Canv3, Sounding, () => {
-      if (VWPActive) DrawVWPInsets(VWPSounding);
-    }, { x: 600, y: 0, width: 300, height: 350 });
+    if (HODOGRAPH_DISPLAY_SETTINGS.showHodographMap) {
+      drawHodographLocationInset(ctx3, Canv3, Sounding, () => {
+        if (VWPActive) DrawVWPInsets(VWPSounding);
+      }, { x: 600, y: 0, width: 300, height: 350 });
+    }
 }
 
 /** Returns box pos data.
@@ -4873,7 +5106,7 @@ function DrawWinterStats(ctx, Canv, Sounding, Info) {
 
     const fs = (frac) => `${Math.round(Math.min(H, W) * frac)}px`;
 
-    ctx.fillStyle = "rgba(0,0,0,1)";
+    ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx.fillRect(0, 0, W, H);
 
     let DGOmega = mean_layer_temp(Sounding, -12, -18, "Omega");
@@ -4889,14 +5122,14 @@ function DrawWinterStats(ctx, Canv, Sounding, Info) {
 
     // --- Header ---
     ctx.font = `bold ${fs(0.055)} ${globalFont}`;
-    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.textAlign = "center";
     ctx.fillText(`Dendritic Growth Zone (DGZ) Stats`, cx, H * 0.07);
     ctx.fillRect(W * 0.03, H * 0.095, W * 0.94, 1);
 
     // --- OPRH ---
     ctx.font = `bold ${fs(0.09)} ${globalFont}`;
-    ctx.fillStyle = OPRH < 0 ? "rgba(100,200,255,1)" : "rgba(255,100,100,1)";
+    ctx.fillStyle = OPRH < 0 ? cff("rgba(100,200,255,1)", "rgba(50,100,125,1)") : cff("rgba(255,100,100,1)", "rgba(125,50,50,1)");
     ctx.fillText(`OPRH = ${OPRH.toFixed(4)}`, cx, H * 0.20);
 
     // --- Stats list ---
@@ -4908,49 +5141,49 @@ function DrawWinterStats(ctx, Canv, Sounding, Info) {
 
     // Depth row
     ctx.font = `bold ${fs(0.057)} ${globalFont}`;
-    ctx.fillStyle = "rgba(230,230,230,1)";
+    ctx.fillStyle = cff("rgba(230,230,230,1)", "rgba(115, 115, 115,1)");
     ctx.fillText(`Depth: ${LayerDepth.toFixed(0)}m`, lx, yPos);
     ctx.font = `${fs(0.048)} ${globalFont}`;
-    ctx.fillStyle = "rgba(160,160,160,1)";
+    ctx.fillStyle = cff("rgba(160,160,160,1)", "rgba(80,80,80,1)");
     ctx.fillText(`(${Math.round(LayerTopH - LayerDepth)}m – ${Math.round(LayerTopH)}m)`, W * 0.48, yPos);
     yPos += lineH;
 
     ctx.font = `${fs(0.056)} ${globalFont}`;
-    ctx.fillStyle = "rgba(220,220,220,1)";
+    ctx.fillStyle = cff("rgba(220,220,220,1)", "rgba(110,110,110,1)");
     ctx.fillText(`Mean Layer RH: ${DGRH.toFixed(0)}%`, lx, yPos);           yPos += lineH;
     ctx.fillText(`Mean Layer PWAT: ${DGPWAT.toFixed(3)} in`, lx, yPos);     yPos += lineH;
     ctx.fillText(`Mean Layer MixRat: ${DGMX.toFixed(2)} g/kg`, lx, yPos);  yPos += lineH;
     ctx.fillText(`Mean Layer Omega: ${(1000*DGOmega).toFixed(2)} ub/s`, lx, yPos); yPos += lineH;
 
     // --- Separator ---
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.fillStyle = cff("rgba(255,255,255,0.2)", "rgba(0, 0, 0, 0.2)");
     ctx.fillRect(W * 0.03, yPos - H * 0.04, W * 0.94, 1);
     yPos += H * 0.045;
 
     // --- Initial Phase ---
     ctx.font = `bold ${fs(0.062)} ${globalFont}`;
-    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.textAlign = "center";
     ctx.fillText(`Initial Phase: ${Initphase[3]}`, cx, yPos);
     yPos += H * 0.06;
 
     ctx.font = `${fs(0.048)} ${globalFont}`;
-    ctx.fillStyle = "rgba(180,180,180,1)";
+    ctx.fillStyle = cff("rgba(180,180,180,1)", "rgba(90,90,90,1)");
     ctx.fillText(`From ${Initphase[0]}mb (${Initphase[2]}°C)`, cx, yPos);
     yPos += H * 0.075;
 
     // --- Best Guess Precip ---
     ctx.font = `bold ${fs(0.058)} ${globalFont}`;
-    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.fillText(`Best Guess Precip Type:`, cx, yPos);
     yPos += H * 0.090;
 
     ctx.font = `bold ${fs(0.095)} ${globalFont}`;
-    if      (PrecipType.includes("Rain") && !PrecipType.includes("Freezing")) ctx.fillStyle = "rgba(50,255,50,1)";
-    else if (PrecipType.includes("Snow"))           ctx.fillStyle = "rgba(100,200,255,1)";
-    else if (PrecipType.includes("Freezing Rain"))  ctx.fillStyle = "rgba(255,50,255,1)";
-    else if (PrecipType.includes("Ice Pellets") || PrecipType.includes("Sleet")) ctx.fillStyle = "rgba(200,100,255,1)";
-    else                                            ctx.fillStyle = "rgba(255,255,100,1)";
+    if      (PrecipType.includes("Rain") && !PrecipType.includes("Freezing")) ctx.fillStyle = cff("rgba(50,255,50,1)","rgba(25,100,25,1)");
+    else if (PrecipType.includes("Snow"))           ctx.fillStyle = cff("rgba(100,200,255,1)", "rgba(50,100,125,1)");
+    else if (PrecipType.includes("Freezing Rain"))  ctx.fillStyle = cff("rgba(255,50,255,1)","rgba(125,0,125,1)");
+    else if (PrecipType.includes("Ice Pellets") || PrecipType.includes("Sleet")) ctx.fillStyle = cff("rgba(200,100,255,1)","rgba(100,50,125,1)");
+    else                                            ctx.fillStyle = cff("rgba(255,255,100,1)", "rgba(125,125,50,1)");
     ctx.fillText(`${PrecipType}`, cx, yPos);
 }
 
@@ -4968,7 +5201,7 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
 
     const fs = (frac) => `${Math.round(Math.min(H, W) * frac)}px`; 
 
-    ctx.fillStyle = "rgba(0,0,0,1)";
+    ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx.fillRect(0, 0, W, H);
 
     let Parcels = { SB: Info.SBParcel };
@@ -4987,7 +5220,7 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
 
         // Header
         ctx.font = `bold ${fs(0.052)} ${globalFont}`;
-        ctx.fillStyle = "rgba(255,255,255,1)";
+        ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
         ctx.textAlign = "center";
         ctx.fillText(`Tornado Climatology ${currentEFScale} (2003-2024)`, cx, H * 0.055);
         ctx.fillRect(W * 0.03, H * 0.075, W * 0.94, 1);
@@ -5009,7 +5242,7 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
                 [`STP Fixed: ${stpf.toFixed(2)}`,                                     [0,15],   Array.from({length:16},(_,i)=>i),      ClimoSwitch(stpfc2,stpfc),    stpf],
                 [`MLCape: ${Info.MLParcel.Cape.toFixed(0)} J/kg`,                      [0,6000], Array.from({length:7}, (_,i)=>i*1000), ClimoSwitch(mlcapec2,mlcapec), Info.MLParcel.Cape],
                 [`Eff. SRH: ${Wnd.ESRH==false?0:Wnd.ESRH.toFixed(0)} m²/s²`,         [0,1000], Array.from({length:11},(_,i)=>i*100),  ClimoSwitch(effsrhc2,effsrhc), Wnd.ESRH==false?0:Wnd.ESRH],
-                [`Eff. Shear: ${Wnd.BWDE==false?0:Mag(Wnd.BWDE).toFixed(0)} kts`,     [0,70],   Array.from({length:8}, (_,i)=>i*10),   ClimoSwitch(effshrc2,effshrc), Wnd.BWDE==false?0:Mag(Wnd.BWDE)],
+                [`Eff. Shear: ${Wnd.Shear==false?0:Mag(Wnd.ShearE).toFixed(0)} kts`,     [0,70],   Array.from({length:8}, (_,i)=>i*10),   ClimoSwitch(effshrc2,effshrc), Wnd.ShearE==false?0:Mag(Wnd.ShearE)],
             ];
 
             Datasets.forEach((P, Idx) => {
@@ -5022,14 +5255,14 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
 
                 // --- Label (centered) ---
                 ctx.font = `bold ${fs(0.046)} ${globalFont}`;
-                ctx.fillStyle = "rgba(255,255,255,1)";
+                ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
                 ctx.textAlign = "center";
                 ctx.fillText(P[0], cx, labelY);
 
                 // --- Percentile (top-right of chunk) ---
                 let Gotten = false;
                 ctx.font = `bold ${fs(0.060)} ${globalFont}`;
-                ctx.fillStyle = "rgba(47,255,0,1)";
+                ctx.fillStyle = cff("rgba(47,255,0,1)","rgba(0,125,0,1)");
                 ctx.textAlign = "right";
                 for (let x = 0; x < P[3][LatB][LonB].length; x++) {
                     if (P[4] <= P[3][LatB][LonB][x]) {
@@ -5041,7 +5274,7 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
                 if (!Gotten) ctx.fillText(`>99th`, W * 0.98, labelY);
 
                 // --- Bar background (thin line) ---
-                ctx.fillStyle = "rgba(255,255,255,0.25)";
+                ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
                 ctx.fillRect(barX, barY, barW, 1);
 
                 const P0   = P[3][LatB][LonB][0];
@@ -5053,29 +5286,29 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
                 const P100 = P[3][LatB][LonB][20];
 
                 // --- Axis tick labels ---
-                ctx.fillStyle = "rgba(255,255,255,0.7)";
+                ctx.fillStyle = cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
                 ctx.font = `${fs(0.028)} ${globalFont}`;
                 ctx.textAlign = "center";
                 P[2].forEach(v => {
                     const x = barX + barW * pct(v);
                     ctx.fillText(v, x, tickY);
-                    ctx.fillStyle = "rgba(255,255,255,0.3)";
+                    ctx.fillStyle = cff("rgba(255,255,255,0.3)", "rgba(5, 0, 0, 0.3)");
                     ctx.fillRect(x, barY - 2, 1, 5);
-                    ctx.fillStyle = "rgba(255,255,255,0.7)";
+                    ctx.fillStyle = cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
                 });
 
                 // --- Min/Max dots ---
-                ctx.fillStyle = "rgba(255,0,0,1)";
+                ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
                 ctx.fillRect(barX + barW * pct(P0),   barY - 1, 2, 4);
                 ctx.fillRect(barX + barW * pct(P100), barY - 1, 2, 4);
 
                 // --- IQR box (30th–70th) — thin ---
                 const boxStart = barX + barW * pct(P30);
-                ctx.fillStyle = "rgba(255,0,0,0.75)";
+                ctx.fillStyle = cff("rgba(255,0,0,0.75)", "rgba(100, 0, 0, 0.75)");
                 ctx.fillRect(boxStart, barY - 7, barW * (pct(P70) - pct(P30)), 7);
 
                 // --- Median line ---
-                ctx.fillStyle = "rgba(255,255,255,1)";
+                ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
                 ctx.fillRect(barX + barW * pct(P50), barY - 8, 2, 8);
 
                 // --- Whiskers (10th–90th) ---
@@ -5086,7 +5319,7 @@ function DrawTornadoClimo(ctx, Canv, Sounding, Info, Wnd) {
                 ctx.fillRect(w2, barY - 3, 2, 7);
 
                 // --- Current value (yellow) ---
-                ctx.fillStyle = "rgba(255,234,0,1)";
+                ctx.fillStyle = cff("rgba(255,234,0,1)", "rgba(125,100,0,1)");
                 ctx.fillRect(barX + barW * pct(P[4]), barY - 8, 3, 10);
             });
 
@@ -5134,10 +5367,10 @@ function DrawClimo(Sounding, Info, Wnd) {
       DrawTornadoClimo(ctx, FakeCanv, Sounding, Info, Wnd);
       return;
     }
-    ctx.fillStyle = "rgba(0,0,0,1)";
+    ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx.fillRect(0, 0, cssWidth, cssHeight);
     ctx.font = `${Math.round(Math.min(cssWidth, cssHeight) * 0.05)}px ${globalFont}`;
-    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.fillStyle = cff("rgba(255,255,255,0.8)", "rgba(0,0,0,0.8)");
     ctx.textAlign = "center";
     ctx.fillText("Loading tornado climatology…", cssWidth / 2, cssHeight / 2);
     if (!tornadoClimoRedrawQueued) {
@@ -5153,7 +5386,7 @@ function DrawClimo(Sounding, Info, Wnd) {
         .finally(() => { tornadoClimoRedrawQueued = false; });
     }
   } else {
-    ctx.fillStyle = "rgba(0,0,0,1)";
+    ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     ctx.fillRect(0, 0, cssWidth, cssHeight);
   }
 }
@@ -5191,9 +5424,9 @@ function DrawBoxes(Sounding, Info, wind) {
   let BoundsX = [0, 400];
   let BoundsY = [0, 400];
 
-  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.lineWidth = 3;
-  ctx.fillStyle = "rgba(0,0,0,1)";
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
   ctx.fillRect(0, 0, 400, 400);
   ctx.strokeRect(0, 0, 400, 400);
 
@@ -5206,8 +5439,8 @@ function DrawBoxes(Sounding, Info, wind) {
   ctx.beginPath();
   ctx.lineWidth = 5;
   ctx.setLineDash([5, 5]);
-  ctx.strokeStyle = "rgba(255,0,0,1)";
-  ctx.fillStyle = "rgba(255,0,0,0.1)";
+  ctx.strokeStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
+  ctx.fillStyle = cff("rgba(255,0,0,0.1)", "rgba(125,0,0,0.1)");
   ctx.lineTo(0, 400);
 
   let pl = 0;
@@ -5238,7 +5471,7 @@ function DrawBoxes(Sounding, Info, wind) {
 
 
   ctx.font = `bold ${400 * 30/400}px ${globalFont}`;
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.textAlign = "center";
   let Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
   ctx.fillText(`SR Wind (kt)`, Pos.x, Pos.y);
@@ -5265,9 +5498,9 @@ function DrawBoxes(Sounding, Info, wind) {
 
   //Next Box, Mean Mix ratio
   BoundsX = [400, 800];
-  ctx.fillStyle = "rgba(0,0,0,1)";
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
   ctx.fillRect(400, 0, 400, 400);
-  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.setLineDash([]);
   ctx.lineWidth = 3;
   ctx.strokeRect(400, 0, 400, 400);
@@ -5281,7 +5514,7 @@ function DrawBoxes(Sounding, Info, wind) {
 
 
   ctx.font = `bold ${400 * 0.08}px ${globalFont}`;
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.textAlign = "center";
   Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
 
@@ -5313,8 +5546,8 @@ function DrawBoxes(Sounding, Info, wind) {
 
   ctx.beginPath();
   ctx.lineWidth = 5;
-  ctx.strokeStyle = "rgba(0,255,0,0.7)";
-  ctx.fillStyle = "rgba(0,255,0,0.1)";
+  ctx.strokeStyle = cff("rgba(0,255,0,0.7)","rgba(0,125,0,0.7)");
+  ctx.fillStyle = cff("rgba(0,255,0,0.1)", "rgba(0,125,0,0.1)");
   
 
   for (let i = 0; i < Sound.DW.length; i++) {
@@ -5348,14 +5581,14 @@ function DrawBoxes(Sounding, Info, wind) {
   BoundsX = [0, 400];
   BoundsY = [400, 800];
 
-  ctx.fillStyle = "rgba(0,0,0,1)";
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
   ctx.fillRect(0, 400, 400, 400);
-  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.setLineDash([]);
   ctx.lineWidth = 3;
   ctx.strokeRect(0, 400, 400, 400);
   ctx.font = `${400 * 0.08}px ${globalFont}`;
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.textAlign = "center";
 
 
@@ -5398,8 +5631,8 @@ function DrawBoxes(Sounding, Info, wind) {
 
   ctx.beginPath();
   ctx.lineWidth = 5;
-  ctx.strokeStyle = "rgba(255,0,0,0.7)";
-  ctx.fillStyle = "rgba(255, 0, 0, 0.1)";
+  ctx.strokeStyle = cff("rgba(255,0,0,0.7)", "rgba(125,0,0,0.7)");
+  ctx.fillStyle = cff("rgba(255, 0, 0, 0.1)", "rgba(125, 0, 0, 0.1)");
   let PosL = 50;
 
 
@@ -5426,7 +5659,7 @@ function DrawBoxes(Sounding, Info, wind) {
   ctx.lineTo(0, PosL);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = "rgba(255, 255, 255, 1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   for (let i = 320; i < 400; i += 10) {
     let Lerped = (i - MinTta) / (MaxTta - MinTta);
@@ -5442,7 +5675,7 @@ function DrawBoxes(Sounding, Info, wind) {
   }
 
   ctx.font = `bold ${400 * 0.08}px ${globalFont}`;
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.textAlign = "center";
   Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
 
@@ -5451,14 +5684,14 @@ function DrawBoxes(Sounding, Info, wind) {
   //Last Box
   BoundsX = [400, 800];
 
-  ctx.fillStyle = "rgba(0,0,0,1)";
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
   ctx.fillRect(400, 400, 400, 400);
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.strokeRect(400, 400, 400, 400);
 
   ctx.font = `${400 * 0.1}px ${globalFont}`;
-  ctx.fillStyle = "rgba(255,0,0,0.1)";
+  ctx.fillStyle = cff("rgba(255,0,0,0.1)", "rgba(125,0,0,0.1)");
   ctx.textAlign = "center";
 
   let Nn = [
@@ -5468,7 +5701,7 @@ function DrawBoxes(Sounding, Info, wind) {
   if (Presets['Vertical'] == "Default" || Presets['Vertical'] == "Severe") {
     ctx.beginPath();
     ctx.lineWidth = 5;
-    ctx.strokeStyle = "rgba(255,0,0,0.7)";
+    ctx.strokeStyle = cff("rgba(255,0,0,0.7)","rgba(125,0,0,0.7)");
     BoundsX = [400, 600];
     //ctx.moveTo(400,800);
     let LPos = 0;
@@ -5501,7 +5734,7 @@ function DrawBoxes(Sounding, Info, wind) {
 
     ctx.beginPath();
     ctx.lineWidth = 4;
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
+    ctx.strokeStyle = cff("rgba(0, 255, 255, 0.5)", "rgba(0, 125, 125, 0.5)");
     //ctx.moveTo(400,800);
     LPos = 0;
     Switch = false;
@@ -5529,10 +5762,10 @@ function DrawBoxes(Sounding, Info, wind) {
     ctx.stroke();
 
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,1)";
+    ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.strokeRect(400, 400, 200, 400);
 
-    ctx.fillStyle = "rgba(255, 255, 255 ,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
     BoundsX = [400, 800];
 
@@ -5573,7 +5806,7 @@ function DrawBoxes(Sounding, Info, wind) {
     }
 
     ctx.font = `bold ${400 * 0.08}px ${globalFont}`;
-    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.textAlign = "center";
     Pos = GetBoxPos([400, 600], BoundsY, 50, 20);
     ctx.fillText(`SW%`, Pos.x, Pos.y);
@@ -5582,7 +5815,7 @@ function DrawBoxes(Sounding, Info, wind) {
   } else if (Presets['Vertical'] == "Fire") {
     ctx.beginPath();
     ctx.lineWidth = 5;
-    ctx.strokeStyle = "rgba(255,0,0,0.7)";
+    ctx.strokeStyle = cff("rgba(255,0,0,0.7)","rgba(125,0,0,0.7)");
     //ctx.moveTo(400,800);
 
     for (let i = 0; i < Sound.DW.length; i++) {
@@ -5619,10 +5852,10 @@ function DrawBoxes(Sounding, Info, wind) {
     ctx.stroke();
     ctx.fill();
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,1)";
+    ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.strokeRect(400, 400, 400, 400);
 
-    ctx.fillStyle = "rgba(255, 255, 255 ,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
     for (let i = 0.5; i < 3; i += 0.5) {
       let Pos = GetBoxPos(BoundsX, BoundsY, 0, 100 * (1 - (i / 3)));
@@ -5647,7 +5880,7 @@ function DrawBoxes(Sounding, Info, wind) {
     }
 
     ctx.font = `bold ${400 * 0.1}px ${globalFont}`;
-    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.textAlign = "center";
     Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
 
@@ -5662,11 +5895,11 @@ function DrawBoxes(Sounding, Info, wind) {
     ctx.fillStyle = "rgba(68, 255, 0, 0.5)";
     ctx.fillRect(400 + 400 * 20 / 30, 400, 400 * 10 / 30, 400)
 
-    ctx.fillStyle = "rgba(255,0,0,0.1)";
+    ctx.fillStyle = cff("rgba(255,0,0,0.1)", "rgba(125,0,0,0.1)");
 
     ctx.beginPath();
     ctx.lineWidth = 4;
-    ctx.strokeStyle = "rgba(255, 100, 100, 0.7)";
+    ctx.strokeStyle = cff("rgba(255, 100, 100, 0.7)", "rgba(125, 50, 50, 0.7)");
     //ctx.moveTo(400,800);
 
     for (let i = 0; i < Sound.DW.length; i++) {
@@ -5701,7 +5934,7 @@ function DrawBoxes(Sounding, Info, wind) {
     //now WB
     ctx.beginPath();
     ctx.lineWidth = 4;
-    ctx.strokeStyle = "rgba(147, 255, 237, 0.7)";
+    ctx.strokeStyle = cff("rgba(147, 255, 237, 0.7)", "rgba(75, 125, 121, 0.7)");
     //ctx.moveTo(400,800);
 
     for (let i = 0; i < Sound.DW.length; i++) {
@@ -5735,10 +5968,10 @@ function DrawBoxes(Sounding, Info, wind) {
     ctx.fill();
 
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,1)";
+    ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.strokeRect(400, 400, 400, 400);
 
-    ctx.fillStyle = "rgba(255, 255, 255 ,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
     for (let i = 0.5; i < 3; i += 0.5) {
       let Pos = GetBoxPos(BoundsX, BoundsY, 0, 100 * (1 - (i / 3)));
@@ -5763,7 +5996,7 @@ function DrawBoxes(Sounding, Info, wind) {
     }
 
     ctx.font = `bold ${400 * 0.1}px ${globalFont}`;
-    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     ctx.textAlign = "center";
     Pos = GetBoxPos(BoundsX, BoundsY, 50, 20);
 
@@ -5771,7 +6004,7 @@ function DrawBoxes(Sounding, Info, wind) {
   }
 
 
-  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.lineWidth = 3;
   ctx.strokeRect(0, 0, 400, 400);
   ctx.strokeRect(0, 400, 400, 400);
@@ -6148,8 +6381,8 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   const dropMuted = DarkMode ? "#8ea3b3" : "#5a6b78";
   let P = dropsondeMode
     ? dropBg
-    : (DarkMode == true && "rgba(0,0,0,1)" || "rgba(255,255,255,1)");
-  let PR = DarkMode == false && "rgba(0,0,0,1)" || "rgba(255,255,255,1)"
+    : (cff("rgba(0,0,0,1)", "rgba(255,255,255,1)"));
+  let PR = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
   ctx.fillStyle = P;
   ctx.fillRect(0, 0, 1000, 1000);
@@ -6163,8 +6396,9 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
     ? { lineWidth: 1, strokeStyle: DarkMode ? "rgba(255,255,255,0.055)" : "rgba(0,0,0,0.06)" }
     : null;
   for (var th = -30; th < 230; th += 20) {
-    dry_adiabat(th, adiabatStyle)
-  };
+    if (SKEWT_DISPLAY_SETTINGS.showSkewTDryAdiabats) dry_adiabat(th, adiabatStyle);
+    if (SKEWT_DISPLAY_SETTINGS.showSkewTMoistAdiabats) moist_adiabat(th + 10, adiabatStyle);
+  }
 
   ctx.font = `600 ${Canv.width / (dropsondeMode ? 55 : 65)}px ${globalFont}`;
   (skv.plevels || PRESSURE_LABEL_CANDIDATES).forEach((object) => {
@@ -6209,7 +6443,7 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
       ctx.lineWidth = dropsondeMode ? 1.25 : 2;
       ctx.strokeStyle = dropsondeMode
         ? (DarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)")
-        : (DarkMode == true && "rgba(255,255,255,0.25)" || "rgba(0,0,0,0.25)");
+        : (DarkMode == true && cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)") || "rgba(0,0,0,0.25)");
     }
 
     ctx.beginPath();
@@ -6225,13 +6459,13 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   }
 
   if (!dropsondeMode && (!comparisonSoundings || comparisonSoundings.length === 0)) {
-    if (DisplayParcel.ECape.Path != false) {
+    if (SKEWT_DISPLAY_SETTINGS.showSkewTECapeParcel && DisplayParcel.ECape.Path != false) {
       //EcapePrcl
       ctx.beginPath();
       ctx.setLineDash([7, 7]);
       ctx.lineWidth = 3;
 
-      ctx.strokeStyle = `rgba(177, 214, 255, 0.66)`;
+      ctx.strokeStyle = cff(`rgba(177, 214, 255, 0.66)`, `rgba(50, 75, 100, 0.66)`);
 
       for (let i = 0; i < DisplayParcel.ECape.Path.length - 1; i++) {
         let N = DisplayParcel.ECape.Path[i];
@@ -6255,30 +6489,31 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
     }
 
 
-    ctx.beginPath();
-    ctx.setLineDash([14, 7]);
-    ctx.lineWidth = 3;
+    if (SKEWT_DISPLAY_SETTINGS.showSkewTParcelPath) {
+      ctx.beginPath();
+      ctx.setLineDash([14, 7]);
+      ctx.lineWidth = 3;
 
-    ctx.strokeStyle = PR;
+      ctx.strokeStyle = PR;
 
-    for (let i = 0; i < DisplayParcel.Path.length - 1; i++) {
-      let N = DisplayParcel.Path[i];
-      let PX = LevelToSkewNum(DisplayParcel.Start.P - i, DisplayParcel.Start.P);
-      let PY = PressuretoSkew(DisplayParcel.Start.P - i, DisplayParcel.Start.P);
-      let R = GetSkewRatio(N);
+      for (let i = 0; i < DisplayParcel.Path.length - 1; i++) {
+        let N = DisplayParcel.Path[i];
+        let PX = LevelToSkewNum(DisplayParcel.Start.P - i, DisplayParcel.Start.P);
+        let PY = PressuretoSkew(DisplayParcel.Start.P - i, DisplayParcel.Start.P);
+        let R = GetSkewRatio(N);
 
-      let N2 = DisplayParcel.Path[i + 1];
-      let PX2 = LevelToSkewNum(DisplayParcel.Start.P - (i + 1), DisplayParcel.Start.P);
-      let PY2 = PressuretoSkew(DisplayParcel.Start.P - (i + 1), DisplayParcel.Start.P);
-      let R2 = GetSkewRatio(N2);
+        let N2 = DisplayParcel.Path[i + 1];
+        let PX2 = LevelToSkewNum(DisplayParcel.Start.P - (i + 1), DisplayParcel.Start.P);
+        let PY2 = PressuretoSkew(DisplayParcel.Start.P - (i + 1), DisplayParcel.Start.P);
+        let R2 = GetSkewRatio(N2);
 
-      if (i == 0) {
-        ctx.moveTo((R + PX) * Canv.width, PY * Canv.height);
+        if (i == 0) {
+          ctx.moveTo((R + PX) * Canv.width, PY * Canv.height);
+        }
+        ctx.lineTo((R2 + PX2) * Canv.width, PY2 * Canv.height);
       }
-      ctx.lineTo((R2 + PX2) * Canv.width, PY2 * Canv.height);
+      ctx.stroke();
     }
-
-    ctx.stroke();
   }
 
   if (!dropsondeMode) {
@@ -6291,43 +6526,45 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
     ctx.setLineDash([2, 2]);
     ctx.strokeStyle = CheckMode("rgba(200,0,125,1)", "rgba(100,0,75,1)");
 
+
     DrawValuesKey();
     DrawValues("SB", Info.SBParcel, Info.SBParcel == DisplayParcel);
     DrawValues("ML", Info.MLParcel, Info.MLParcel == DisplayParcel);
     DrawValues("MU", Info.MUParcel, Info.MUParcel == DisplayParcel);
     DrawValues("CU", CUPrcl, CUPrcl == DisplayParcel);
 
-    let DCapeProf = Info.DCapeProf;
+    if (SKEWT_DISPLAY_SETTINGS.showSkewTDCapeParcel) {
+      let DCapeProf = Info.DCapeProf;
 
-    for (let i = 0; i < DCapeProf.PresTrace.length; i++) {
-      let N = DCapeProf.TempTrace[i];
-      let PX = LevelToSkewNum(DCapeProf.StartPres.P + i, DCapeProf.StartPres.P);
-      let PY = PressuretoSkew(DCapeProf.StartPres.P + i, DCapeProf.StartPres.P);
-      let R = GetSkewRatio(N);
+      for (let i = 0; i < DCapeProf.PresTrace.length; i++) {
+        let N = DCapeProf.TempTrace[i];
+        let PX = LevelToSkewNum(DCapeProf.StartPres.P + i, DCapeProf.StartPres.P);
+        let PY = PressuretoSkew(DCapeProf.StartPres.P + i, DCapeProf.StartPres.P);
+        let R = GetSkewRatio(N);
 
-      let N2 = DCapeProf.TempTrace[i + 1];
-      let PX2 = LevelToSkewNum(DCapeProf.StartPres.P + (i + 1), DCapeProf.StartPres.P);
-      let PY2 = PressuretoSkew(DCapeProf.StartPres.P + (i + 1), DCapeProf.StartPres.P);
-      let R2 = GetSkewRatio(N2);
-      if (i == 0) {
-        ctx.moveTo((R + PX) * Canv.width, PY * Canv.height);
+        let N2 = DCapeProf.TempTrace[i + 1];
+        let PX2 = LevelToSkewNum(DCapeProf.StartPres.P + (i + 1), DCapeProf.StartPres.P);
+        let PY2 = PressuretoSkew(DCapeProf.StartPres.P + (i + 1), DCapeProf.StartPres.P);
+        let R2 = GetSkewRatio(N2);
+        if (i == 0) {
+          ctx.moveTo((R + PX) * Canv.width, PY * Canv.height);
+        }
+        ctx.lineTo((R2 + PX2) * Canv.width, PY2 * Canv.height);
       }
-      ctx.lineTo((R2 + PX2) * Canv.width, PY2 * Canv.height);
+      ctx.stroke();
     }
-
-    ctx.stroke();
   }
 
   ctx.setLineDash([]);
 
   ctx.save();
   ctx.restore();
-  if (!dropsondeMode) {
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTMixingRatio && !dropsondeMode) {
     ctx.font = `bold ${Canv.width / 75}px ${globalFont}`;
     for (var w of [2, 5, 10, 15, 20, 25]) {
       MixRatioLine(w);
     }
-  } else {
+  } else if (SKEWT_DISPLAY_SETTINGS.showSkewTMixingRatio && dropsondeMode) {
     // Softer mixing-ratio traces for dropsonde charts
     ctx.font = `600 ${Canv.width / 70}px ${globalFont}`;
     for (var w of [10, 15, 20]) {
@@ -6364,37 +6601,33 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   }
 
   ctx.font = `${dropsondeMode ? 600 : 700} ${Canv.width / (dropsondeMode ? 48 : 52)}px ${globalFont}`;
-  [0, 1, 3, 6, 9, 12, 15].forEach((object) => {
-    if (EndSlice.H / 1000 < object) {
-      return;
-    }
-    let GetPresLayer = GetLayerByHght(Sound, object * 1000);
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTHeights) {
+    const heightLevels = useImperialUnits === 2
+      ? [1, 2, 5, 10, 15, 20, 25, 30].map((kft) => ({ height: kft * 1000 * 0.3048, label: `${kft} kft` }))
+      : [0, 1, 3, 6, 9, 12, 15].map((km) => ({ height: km * 1000, label: km === 0 ? 'SFC' : `${km} km` }));
+    heightLevels.forEach(({ height, label }) => {
+      if (EndSlice.H < height) return;
+      let GetPresLayer = GetLayerByHght(Sound, height);
 
-    if (GetPresLayer != null) {
-      let Loc = pres_to_pix(GetPresLayer.P, Sound.DW[0].P);
+      if (GetPresLayer != null) {
+        let Loc = pres_to_pix(GetPresLayer.P, Sound.DW[0].P);
 
-      ctx.fillStyle = dropsondeMode ? "rgba(255, 107, 90, 0.9)" : "rgba(255,10,10,1)";
-      const labelX = dropsondeMode ? 0.135 * Canv.width : 0.13 * Canv.width;
-      ctx.textAlign = dropsondeMode ? "left" : "center";
+        ctx.fillStyle = dropsondeMode ? "rgba(255, 107, 90, 0.9)" : cff("rgba(255,10,10,1)", "rgba(50, 5, 5, 1)");
+        const labelX = dropsondeMode ? 0.135 * Canv.width : 0.13 * Canv.width;
+        ctx.textAlign = dropsondeMode ? "left" : "center";
 
-      if (object == 0) {
-        ctx.fillText(`SFC`, labelX, Loc);
-        ctx.fillRect(0.09 * Canv.width, (Loc - 1) - 5, 0.02 * Canv.width, dropsondeMode ? 2.5 : 2);
-      } else {
-        ctx.fillText(`${object} km`, labelX, Loc);
+        ctx.fillText(label, labelX, Loc);
         ctx.fillRect(0.09 * Canv.width, (Loc - 1) - 5, 0.02 * Canv.width, dropsondeMode ? 2.5 : 2);
       }
-
-    }
-
-  });
+    });
+  }
 
   
 
   if (comparisonSoundings && comparisonSoundings.length > 0) {
     comparisonSoundings.forEach(comp => {
       if (!comp.metadata.isVisible) return;
-      const color = comp.metadata.comparisonColor || "rgba(0, 191, 255, 0.9)";
+      const color = comp.metadata.comparisonColor || cff("rgba(0, 191, 255, 0.9)", "rgba(0, 100, 125, 0.9)");
       if (comp.sounding) {
         DrawLine(comp.sounding, "Temp", false, color);
         DrawLine(comp.sounding, "Dew", false, color);
@@ -6410,8 +6643,8 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   DrawLine(Sounding, "Dew");
   
   if (!dropsondeMode && (!comparisonSoundings || comparisonSoundings.length === 0)) {
-    DrawLine(Sounding, "WetBulb");
-    DrawLine(Sounding, "VTemp");
+    if (SKEWT_DISPLAY_SETTINGS.showSkewTWetBulb) DrawLine(Sounding, "WetBulb");
+    if (SKEWT_DISPLAY_SETTINGS.showSkewTVirtualTemperature) DrawLine(Sounding, "VTemp");
   }
 
   DrawLine(Sounding, "Temp");
@@ -6419,7 +6652,7 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   if (!dropsondeMode) {
     let sp = pres_to_pix(StartSlice.P);
     let ep = pres_to_pix(EndSlice.P);
-    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillStyle = cff("rgba(255,255,255,0.5)", "rgba(0,0,0,0.5)");
     ctx.fillRect(0.065 * Canv.width, sp, 2, (ep - sp));
 
     if (Sound.OMEGA.length > 0) {
@@ -6429,9 +6662,9 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
         let Center = 0.065;
 
         if (Omg > 0) {
-          ctx.fillStyle = "rgba(255,0,0,0.8)";
+          ctx.fillStyle = cff("rgba(255,0,0,0.8)", "rgba(125,0,0,0.8)");
         } else {
-          ctx.fillStyle = "rgba(125,125,255,0.8)";
+          ctx.fillStyle = cff("rgba(125,125,255,0.8)", "rgba(125,125,255,0.8)");
         }
         let pp = pres_to_pix(Pres);
         ctx.fillRect(Center * Canv.width + 1, pp, Omg * Canv.width, 5);
@@ -6443,25 +6676,30 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
     if (omgDgzTop && omgDgzBottom) {
       const y_top = pres_to_pix(omgDgzTop.P);
       const y_bottom = pres_to_pix(omgDgzBottom.P);
-      ctx.fillStyle = "rgba(255, 175, 126, 1)";
+      ctx.fillStyle = cff("rgba(255, 175, 126, 1)", "rgba(125, 85, 63, 1)");
       ctx.fillRect(0, y_top - 1, 0.1 * Canv.width, 2);
       ctx.fillRect(0, y_bottom - 1, 0.1 * Canv.width, 2);
     }
 
-    DrawInflow(Sounding.Sounding, Info.EffInflow);
+    DrawInflow(
+      Sounding.Sounding,
+      Info.EffInflow,
+      SKEWT_DISPLAY_SETTINGS.showSkewTInflowLayer,
+      SKEWT_DISPLAY_SETTINGS.showSkewTPBL,
+    );
   }
 
   ctx.font = `bold ${Canv.width / 40}px ${globalFont}`;
 
   if (!dropsondeMode && (!comparisonSoundings || comparisonSoundings.length === 0)) {
-    ctx.fillStyle = `rgba(0,200,200,1)`;
+    ctx.fillStyle = cff(`rgba(0,200,200,1)`, `rgba(0,75,75,1)`);
     let ddx = (GetSkewRatio(StartSlice.WB) + LevelToSkewNum(StartSlice.P)) * Canv.width;
     let ddy = pres_to_pix(StartSlice.P) + 0.025 * Canv.height;
     const wbLabel = Math.round(useImperialUnits === 1 ? StartSlice.WB : CToF(StartSlice.WB));
     ctx.fillText(`${wbLabel}`, ddx, ddy);
   }
 
-  ctx.fillStyle = `rgba(255,0,0,1)`;
+  ctx.fillStyle = cff(`rgba(255,0,0,1)`, `rgba(125,0,0,1)`);
   ctx.textAlign = "left";
   let ddx = (GetSkewRatio(StartSlice.T) + LevelToSkewNum(StartSlice.P)) * Canv.width;
   let ddy = pres_to_pix(StartSlice.P) + 0.025 * Canv.height;
@@ -6469,7 +6707,7 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   ctx.fillText(`${tLabel}`, ddx, ddy);
 
   ctx.textAlign = "right";
-  ctx.fillStyle = `rgba(0,255,0,1)`;
+  ctx.fillStyle = cff(`rgba(0,255,0,1)`, `rgba(0,125,0,1)`);
   ddx = (GetSkewRatio(StartSlice.D) + LevelToSkewNum(StartSlice.P)) * Canv.width;
   ddy = pres_to_pix(StartSlice.P) + 0.025 * Canv.height;
   const dLabel = Math.round(useImperialUnits === 1 ? StartSlice.D : CToF(StartSlice.D));
@@ -6493,27 +6731,26 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
 
   //LFC, LCL, EL
   let LCL = false; let LFC = false; let EL = false; let MPL = false;
-
   try {
     if (DisplayParcel.LCL == -9999) {
       LCL = false;
     } else {
-      LCL = GetLayerByHght(Sound, DisplayParcel.LCL + DisplayParcel.Start.H, true);
+      LCL = GetLayerByHght(Sound, DisplayParcel.LCL + DisplayParcel.Start.H, false);
     }
     if (DisplayParcel.LFC == -9999) {
       LFC = false;
     } else {
-      LFC = GetLayerByHght(Sound, DisplayParcel.LFC + DisplayParcel.Start.H, true);
+      LFC = GetLayerByHght(Sound, DisplayParcel.LFC + DisplayParcel.Start.H, false);
     }
     if (DisplayParcel.EL == -9999) {
       EL = false;
     } else {
-      EL = GetLayerByHght(Sound, DisplayParcel.EL + DisplayParcel.Start.H, true);
+      EL = GetLayerByHght(Sound, DisplayParcel.EL + DisplayParcel.Start.H, false);
     }
     if (DisplayParcel.MPL == -9999) {
       MPL = false;
     } else {
-      MPL = GetLayerByHght(Sound, DisplayParcel.MPL + DisplayParcel.Start.H, true);
+      MPL = GetLayerByHght(Sound, DisplayParcel.MPL + DisplayParcel.Start.H, false);
     }
   } catch (E) {
 
@@ -6545,7 +6782,7 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
 
   if (DisplayOnMapCape){
     if (Presets['Vertical'] == 'Winter'){
-      ctx.fillStyle = `rgba(200,200,200,1)`;
+      ctx.fillStyle = cff(`rgba(200,200,200,1)`, `rgba(100,100,100,1)`);
       ddy = pres_to_pix(T12.P);
       ctx.fillText(`<- ${Math.round(DisplayParcel.PreDGZCape)}`, 0.75 * Canv.width, ddy + 0.005 * Canv.height);
       ddy = (pres_to_pix(T18.P) + pres_to_pix(T12.P)) / 2;
@@ -6556,7 +6793,7 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
       ddy = pres_to_pix(T18.P);
       ctx.fillText(`<- ${Math.round(DisplayParcel.DGZCape + DisplayParcel.PreDGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
     } else {
-      ctx.fillStyle = `rgba(200,200,200,1)`;
+      ctx.fillStyle = cff(`rgba(200,200,200,1)`, `rgba(100,100,100,1)`);
       ddy = pres_to_pix(T10.P);
       ctx.fillText(`<- ${Math.round(DisplayParcel.PreHGZCape)}`, 0.75 * Canv.width, ddy - 0.005 * Canv.height);
       ddy = (pres_to_pix(T30.P) + pres_to_pix(T10.P)) / 2;
@@ -6571,31 +6808,37 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   
   const InitPosTemps = 0.83;
   ctx.font = `bold ${Canv.width / 45}px ${globalFont}`;
-  ctx.fillStyle = `rgba(200,0,200,1)`;
+  ctx.fillStyle = cff(`rgba(200,0,200,1)`, `rgba(100,0,100,1)`);
   ddy = pres_to_pix(T10.P);
-  ctx.fillRect((0.01 + InitPosTemps) * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
-  ctx.fillText(`${t10Label}`, (0.03 + InitPosTemps) * Canv.width, ddy - 0.005 * Canv.height);
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTTemperatureLines) {
+    ctx.fillRect((0.01 + InitPosTemps) * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
+    ctx.fillText(`${t10Label}`, (0.03 + InitPosTemps) * Canv.width, ddy - 0.005 * Canv.height);
+  }
 
   ddy = pres_to_pix(T20.P);
-  ctx.fillRect((0.01 + InitPosTemps) * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
-  ctx.fillText(`${t20Label}`, (0.03 + InitPosTemps) * Canv.width, ddy - 0.005 * Canv.height);
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTTemperatureLines) {
+    ctx.fillRect((0.01 + InitPosTemps) * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
+    ctx.fillText(`${t20Label}`, (0.03 + InitPosTemps) * Canv.width, ddy - 0.005 * Canv.height);
+  }
 
   ddy = pres_to_pix(T30.P);
-  ctx.fillRect((0.01 + InitPosTemps) * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
-  ctx.fillText(`${t30Label}`, (0.03 + InitPosTemps) * Canv.width, ddy - 0.005 * Canv.height);
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTTemperatureLines) {
+    ctx.fillRect((0.01 + InitPosTemps) * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
+    ctx.fillText(`${t30Label}`, (0.03 + InitPosTemps) * Canv.width, ddy - 0.005 * Canv.height);
+  }
 
   ctx.font = `bold ${Canv.width / 50}px ${globalFont}`;
-  if (FZL && FZL.H < EndSlice.H) {
-    ctx.fillStyle = `rgba(0,100,200,1)`;
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTFZL && FZL && FZL.H < EndSlice.H) {
+    ctx.fillStyle = cff(`rgba(0,100,200,1)`, `rgba(0,50,100,1)`);
     ddy = pres_to_pix(FZL.P);
     ctx.fillRect(InitPosTemps * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
     ctx.fillText(`FZL ${fzlHeight}${heightUnit}`, (0.03 + InitPosTemps) * Canv.width, ddy - 0.005 * Canv.height);
   }
 
-  if (WBZ0 && WBZ0.H < EndSlice.H) {
-    ctx.fillStyle = `rgb(0, 200, 180)`;
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTWBZ0 && WBZ0 && WBZ0.H < EndSlice.H) {
+    ctx.fillStyle = cff(`rgb(0, 200, 180)`, `rgb(0, 100, 90)`);
     ddy = pres_to_pix(WBZ0.P);
-    if (ddy - pres_to_pix(FZL.P) < 0.05 * Canv.height){
+    if (FZL && ddy - pres_to_pix(FZL.P) < 0.05 * Canv.height){
       ctx.fillRect(InitPosTemps * Canv.width, ddy, 0.05 * Canv.width, 1 + 0.002 * Canv.height);
       ctx.fillText(`WBZ0 ${wb0}${heightUnit}`, (0.03 + InitPosTemps) * Canv.width, ddy + Canv.height/60 + 0.005 * Canv.height);
     } else {
@@ -6630,27 +6873,27 @@ function LoadWithParcel(Sounding, DisplayParcel, Info, ghst = false, comparisonS
   }
   // --- END of DGZ RH code ---
   ctx.textAlign = "center";
-  if (LCL != false) {
-    ctx.fillStyle = `rgba(0,200,0,1)`;
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTLCLLFC && LCL != false) {
+    ctx.fillStyle = cff(`rgba(0,200,0,1)`, `rgba(0,100,0,1)`);
     ddy = pres_to_pix(LCL.P);
     ctx.fillRect(0.92 * Canv.width, ddy, 0.06 * Canv.width, 1 + 0.002 * Canv.height);
     ctx.fillText(`LCL`, 0.95 * Canv.width, ddy + 0.02 * Canv.height);
   }
-  if (LFC != false) {
-    ctx.fillStyle = `rgba(200,200,0,1)`;
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTLCLLFC && LFC != false) {
+    ctx.fillStyle = cff(`rgba(200,200,0,1)` ,`rgba(100,100,0,1)`);
     ddy = pres_to_pix(LFC.P);
     ctx.fillRect(0.93 * Canv.width, ddy, 0.04 * Canv.width, 1 + 0.002 * Canv.height);
     ctx.fillText(`LFC`, 0.95 * Canv.width, ddy - 0.005 * Canv.height);
   }
 
-  if (EL != false) {
-    ctx.fillStyle = `rgba(200,0,200,1)`;
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTEL && EL != false) {
+    ctx.fillStyle = cff(`rgba(200,0,200,1)`, `rgba(65,0,100,1)`);
     ddy = pres_to_pix(EL.P);
     ctx.fillRect(0.93 * Canv.width, ddy, 0.04 * Canv.width, 1 + 0.002 * Canv.height);
     ctx.fillText(`EL`, 0.95 * Canv.width, ddy - 0.005 * Canv.height);
   }
-  if (MPL != false) {
-    ctx.fillStyle = `rgba(255,0,255,1)`;
+  if (SKEWT_DISPLAY_SETTINGS.showSkewTEL && MPL != false) {
+    ctx.fillStyle = cff(`rgba(255,0,255,1)`, `rgba(125,0,75,1)`);
     ddy = pres_to_pix(MPL.P);
     ctx.fillRect(0.93 * Canv.width, ddy, 0.04 * Canv.width, 1 + 0.002 * Canv.height);
     ctx.fillText(`MPL`, 0.95 * Canv.width, ddy - 0.005 * Canv.height);
@@ -6699,6 +6942,7 @@ function LoadWithWind(Sounding, Info, ghost = false, comparisonSoundings = []) {
     DCapeProf: Info.DCapeProf,
   };
 
+  setColorMode(DarkMode);
   DrawInsetParams(Sounding, WindParams, TPerms, Info.SBParcel, Info.MLParcel, Info.MUParcel, false, Presets, $("Values3"), useImperialUnits === 1 ? 'metric' : 'default');
 
   //let SRH03 = GetSRH(Sound, 0, 3000, "Hght");
@@ -6759,14 +7003,14 @@ function HodographMouseMoved(e) {
     dEnd = { x: 0, y: 0 };
 
 
-    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
     ctx.fillRect(dStart2.x, dStart2.y, dEnd2.x - dStart2.x, dEnd2.y - dStart2.y);
   } else if (ChangeMod && !activeChange2) {
     const Canv = $("hodographOverHang3");
     const ctx = Canv.getContext("2d");
 
     ctx.clearRect(0, 0, 1000, 1000);
-    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
     ctx.fillRect(dStart2.x, dStart2.y, dEnd2.x - dStart2.x, dEnd2.y - dStart2.y);
   }
 }
@@ -6821,7 +7065,7 @@ function SkewTMouseMoved(e) {
     dStart2 = { x: 0, y: 0 };
     dEnd2 = { x: 0, y: 0 };
 
-    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
     ctx.fillRect(dStart.x, dStart.y, dEnd.x - dStart.x, dEnd.y - dStart.y);
   } else if (ChangeMod && !activeChange) {
     const Canv = $("skewTOverHang2");
@@ -6829,7 +7073,7 @@ function SkewTMouseMoved(e) {
 
     ctx.clearRect(0, 0, 1000, 1000);
 
-    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
     ctx.fillRect(dStart.x, dStart.y, dEnd.x - dStart.x, dEnd.y - dStart.y);
   }
 }
@@ -7244,7 +7488,7 @@ function FinishMouseSkew(e, PosC) {
   }
 
 
-  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
   ctx.fillRect(dStart.x, dStart.y, dEnd.x - dStart.x, dEnd.y - dStart.y);
 }
 
@@ -7312,7 +7556,7 @@ function FinishMouseHodo(e, PosC) {
     Slices = [];
   }
 
-  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
   ctx.fillRect(dStart2.x, dStart2.y, dEnd2.x - dStart2.x, dEnd2.y - dStart2.y);
 }
 
@@ -7344,7 +7588,7 @@ const onWindowMouseUp = (e) => {
       dEnd = PosC;
 
       if (PosC.x >= Canv.width / SkewTScale && PosC.x <= 0 && PosC.y >= Canv.height / SkewTScale && PosC.y <= 0) {
-        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
         ctx.fillRect(dStart.x, dStart.y, dEnd.x - dStart.x, dEnd.y - dStart.y);
 
         dEnd2 = { x: 0, y: 0 };
@@ -7359,7 +7603,7 @@ const onWindowMouseUp = (e) => {
       dEnd2 = PosC2;
 
       if (PosC2.x >= Canv2.width / HodographScaleMulti && PosC2.x <= 0 && PosC2.y >= Canv2.height / HodographScaleMulti && PosC2.y <= 0) {
-        ctx2.fillStyle = "rgba(255,255,255,0.25)";
+        ctx2.fillStyle = cff("rgba(255,255,255,0.25)", "rgba(0,0,0,0.25)");
         ctx2.fillRect(dStart2.x, dStart2.y, dEnd2.x - dStart2.x, dEnd2.y - dStart2.y);
 
         dEnd = { x: 0, y: 0 };
@@ -7642,7 +7886,7 @@ function CursorReadout(e, just = false, n = false) {
       }
 
       PosC.y = n == true && Lerp(0, Canv.height, (pres_to_pix(LastPres) - Bounds.l) / (Bounds.u - Bounds.l)) || PosC.y;
-      ctx.fillStyle = "rgba(255,255,255,1)";
+      ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
       ctx.fillRect(0, PosC.y, Canv.width, 2);
       ctx.textAlign = "right";
@@ -7680,8 +7924,8 @@ function CursorReadout(e, just = false, n = false) {
       let LR = Math.round(100 * LapseRatePres(Snding.Sounding, Prs, Prs - 1, false, 100)) / 100;
       LR = LR == null ? "--" : LR;
 
-      ctx.fillStyle = "rgba(255,255,255,1)";
-      ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
+      ctx.strokeStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
       ctx.lineWidth = 2;
 
       let LocOfText = [
@@ -7727,7 +7971,7 @@ function CursorReadout(e, just = false, n = false) {
       const hodoHeightLabel = Lyr.H === undefined ? "--" : Math.round(useImperialUnits === 2 ? MToFt(Lyr.H) : Lyr.H);
 
       ctx2.strokeStyle = "rgba(255,255,255,0.6)";
-      ctx2.fillStyle = "rgba(255,255,255,1)";
+      ctx2.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
       ctx2.font = `bold ${Canv.width / 80}px ${globalFont}`;
       ctx2.lineWidth = 8;
       ctx2.beginPath();
@@ -7742,7 +7986,7 @@ function CursorReadout(e, just = false, n = false) {
       ]
 
       ctx2.font = `bold ${Canv.width / 75}px ${globalFont}`;
-      ctx2.strokeStyle = "rgba(0,0,0,1)";
+      ctx2.strokeStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
       ctx2.lineWidth = 2;
       LocOfText.forEach((ps) => {
         ctx2.textAlign = ps[3];
@@ -8093,13 +8337,13 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
   Canv.height = 800;
 
   ctx.clearRect(0, 0, Canv.width, Canv.height);
-  ctx.fillStyle = "rgba(0,0,0,1)";
+  ctx.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
   ctx.fillRect(0, 0, Canv.width, Canv.height);
   ctx.save();
   ctx.scale(1, SkewTScale);
   ctx.translate(0, SkewTPosition.y);
 
-  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.lineWidth = 3;
   ctx.strokeRect(0, 0, 100, 800);   // Wind Speed
   ctx.strokeRect(100, 0, 150, 800); // RH
@@ -8107,7 +8351,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
 
   const soundData = Sounding.Sounding.Slice;
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   var lowestPN, highestPN;
 
   // --- 1. WIND SPEED PLOT [X: 0-150] ---
@@ -8149,7 +8393,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
   }
   ctx.stroke();
 
-  // ctx.fillStyle = "rgba(255,255,255,1)";
+  // ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   // ctx.font = "bold 30px Arial"; // Increased font size
   // ctx.textAlign = "center";
   // ctx.fillText("Wind Spd", 75, 25);
@@ -8199,10 +8443,10 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
   } else {
     var LATD;
     ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.strokeStyle = cff("rgba(255,255,255,0.5)", "rgba(0,0,0,0.5)");
     ctx.strokeRect(175, 0, 1, 800); // RH
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,1)";
+    ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
     //TEMP ADV
     if (Sounding.Location2 == null){
       LATD = 35;
@@ -8274,10 +8518,10 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
     var TAdVMax2W;
     var LATDW;
     ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.strokeStyle = cff("rgba(255,255,255,0.5)", "rgba(0,0,0,0.5)");
     ctx.strokeRect(325, 0, 1, 800);
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,1)";
+    ctx.strokeStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
 
     if (Sounding.Location2 == null) {
       LATDW = 35;
@@ -8383,7 +8627,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
   if (comparisonSoundings && comparisonSoundings.length > 0) {
     comparisonSoundings.forEach(comp => {
       if (!comp.metadata.isVisible) return;
-      ctx.strokeStyle = comp.metadata.comparisonColor || "rgba(0, 191, 255, 1)";
+      ctx.strokeStyle = comp.metadata.comparisonColor || cff("rgba(0, 191, 255, 1)", "rgba(0, 60, 80, 1)");
       ctx.lineWidth = 8;
       const compSounding = comp.sounding.Sounding;
       const compS_Slice = GetLayerByHght(compSounding, "SFC");
@@ -8440,7 +8684,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "rgba(255,255,255,1)";
+  ctx.fillStyle = cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   ctx.font = `bold 20px ${globalFont}`;
   ctx.textAlign = "center";
   ctx.fillText("Wind Spd", 45, 25);
@@ -8477,7 +8721,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
   if (dgzTopLayer && dgzBottomLayer) {
     const y_top = pres_to_pix(dgzTopLayer.P);
     const y_bottom = pres_to_pix(dgzBottomLayer.P);
-    ctx.fillStyle = "rgba(255, 175, 126, 1)";
+    ctx.fillStyle = cff("rgba(255, 175, 126, 1)", "rgba(125, 85, 63, 1)");
     ctx.fillRect(5, y_top - 1, 440, 2);
     ctx.fillRect(5, y_bottom - 1, 440, 2);
   }
@@ -8486,7 +8730,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for text
-  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.fillStyle = cff("rgba(255,255,255,0.7)", "rgba(0, 0, 0, 0.7)");
   ctx.font = `900 20px ${globalFont}`;
   const labelY = Canv.height - 8;
 
@@ -8539,7 +8783,7 @@ function drawVerticalBars(Sounding, comparisonSoundings = [], fromVwpRedraw = fa
  * @param {*} showWindSpeed Parameter for ChangeWBox.
  * @returns {*} Result of the function.
  */
-function ChangeWBox(showWindSpeed){
+function ChangeWBox(showWindSpeed=false){
   noWSBox = typeof showWindSpeed === 'boolean' ? !showWindSpeed : !noWSBox;
   if (Snding && Snding.Sounding) drawVerticalBars(Snding, currentComparisonSoundings, false);
   return !noWSBox;
@@ -8746,6 +8990,7 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
   if (typeof document === "undefined" || !$("skewT")) {
     return;
   }
+  changeBGColor();
   setSkewTDomainsFromSounding(Sounding, comparisonSoundings);
   Clean();
   drawVerticalBars(Sounding, comparisonSoundings, vwpactive === true);
@@ -8809,7 +9054,7 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
     DSnding = JSON.parse(JSON.stringify(Sounding));
   }
   Set();
-  ctx.fillStyle = DarkMode == true && "rgba(0,0,0,1)" || "rgba(255,255,255,1)";
+  ctx.fillStyle = "rgba(0,0,0,1)"
   ctx.fillRect(0, 0, 1000, 1000);
 
   Canv.width = 800;//Canv.style.width;
@@ -8952,8 +9197,8 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
   CustomWindLayer.EHI = GetParams({ DP, SRHAmn: (CustomWindLayer.SRH.SRHP + CustomWindLayer.SRH.SRHM) }, "EHI")
 
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(255,255,255,0.5)";
-  ctx.fillStyle = "rgba(255,0,0,1)";
+  ctx.strokeStyle = cff("rgba(255,255,255,0.5)", "rgba(0,0,0,0.5)");
+  ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
 
   Info = { DCapeProf, EffInflow, SBParcel, MLParcel, MUParcel };
   Snding = Sounding;
@@ -8978,22 +9223,22 @@ function DrawSkewT(Sounding, resetStart = false, modify = false, modify2 = false
       LoadWithWind(Sounding, Info, true, comparisonSoundings);
 
       ctx.lineWidth = 2;
-      ctx.strokeStyle = "rgba(255,255,255,0.5)";
-      ctx.fillStyle = "rgba(255,0,0,1)";
+      ctx.strokeStyle = cff("rgba(255,255,255,0.5)", "rgba(0,0,0,0.5)");
+      ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
       LoadWithParcel(Sounding, displayParcel, Info, true, comparisonSoundings);
   } else {
       LoadWithWind(Sounding, Info, false, comparisonSoundings);
 
       ctx.lineWidth = 2;
-      ctx.strokeStyle = "rgba(255,255,255,0.5)";
-      ctx.fillStyle = "rgba(255,0,0,1)";
+      ctx.strokeStyle = cff("rgba(255,255,255,0.5)", "rgba(0,0,0,0.5)");
+      ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
       LoadWithParcel(Sounding, displayParcel, Info, false, comparisonSoundings);
   }
 
   ChangeStateSkewTSkew(false);
 
   if (modify) {
-    ctx.fillStyle = "rgba(255,0,0,1)";
+    ctx.fillStyle = cff("rgba(255,0,0,1)", "rgba(125,0,0,1)");
     ctx.fillText("Custom Surface Data", 0.5 * Canv.width, 0.027 * Canv.height);
   }
 }
@@ -9898,7 +10143,7 @@ function LoadNewWind(N, activateChanges=true, custom=null) {
   
 }
 
-let DarkMode = true;
+
 let ModifiedWind = false;
 
 /** Convert a temperature in `mode` units ("F", "C" or "K") to Celsius.
@@ -10094,8 +10339,8 @@ function SetTitle(K) {
   const ctx = Canv.getContext("2d");
   if (!ctx) return;
   const dropsondeMode = isDropsondeSounding(K);
-  const bg = dropsondeMode ? (DarkMode ? "#0a0c0e" : "#f7f8fa") : "rgba(0,0,0,1)";
-  const fg = dropsondeMode ? (DarkMode ? "#e8eef2" : "#1a2228") : "rgba(255,255,255,1)";
+  const bg = dropsondeMode ? (DarkMode ? "#0a0c0e" : "#f7f8fa") : cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
+  const fg = dropsondeMode ? (DarkMode ? "#e8eef2" : "#1a2228") : cff("rgba(255,255,255,1)", "rgba(0,0,0,1)");
   const muted = DarkMode ? "#8ea3b3" : "#5a6b78";
 
   Canv.width = 800;
@@ -10106,11 +10351,15 @@ function SetTitle(K) {
     lat: Number(K?.Coords?.lat ?? K?.Location?.[0]),
     lon: Number(K?.Coords?.lon ?? K?.Location?.[1]),
   };
+
   const locationKey = Number.isFinite(location.lat) && Math.abs(location.lat) <= 90
     && Number.isFinite(location.lon) && Math.abs(location.lon) <= 180
     ? `${location.lat.toFixed(5)},${location.lon.toFixed(5)}`
     : null;
   activeTitleLocationKey = locationKey;
+  const coordinatesText = locationKey
+    ? `${Math.abs(location.lat).toFixed(2)}°${location.lat >= 0 ? 'N' : 'S'}, ${Math.abs(location.lon).toFixed(2)}°${location.lon >= 0 ? 'E' : 'W'}`
+    : '';
 
   if (locationKey && !titleLocationLookups.has(locationKey)) {
     const lookup = { text: 'Looking up nearby town…' };
@@ -10131,7 +10380,8 @@ function SetTitle(K) {
       if (activeTitleLocationKey === locationKey) SetTitle(activeTitleSounding);
     });
   }
-  const locationText = locationKey ? titleLocationLookups.get(locationKey)?.text : '';
+  const nearbyTownText = locationKey ? titleLocationLookups.get(locationKey)?.text : '';
+  const locationText = [coordinatesText, nearbyTownText].filter(Boolean).join(' · ');
 
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, Canv.width, Canv.height);
@@ -10351,7 +10601,7 @@ const GetColorComp = [
   "rgb(246, 255, 0)",
   "rgb(85, 255, 0)",
   "rgb(170, 0, 255)",
-  "rgba(255, 255, 255, 1)",
+  cff("rgba(255,255,255,1)", "rgba(0,0,0,1)"),
 ]
 
 /** Replace the comparison soundings ({ sounding, metadata } items) and redraw.
@@ -10474,7 +10724,7 @@ function Screenshot(del = true, scale = 1) {
     const dImg = downloadedImg.getContext("2d");
     downloadedImg.width = 2000 * scale;
     downloadedImg.height = 1200 * scale;
-    dImg.fillStyle = "rgba(0,0,0,1)";
+    dImg.fillStyle = cff("rgba(0,0,0,1)", "rgba(255,255,255,1)");
     dImg.fillRect(0, 0, downloadedImg.width, downloadedImg.height);
 
     // Convert a single canvas entry to a drawn image — all in parallel
@@ -10527,13 +10777,13 @@ function Screenshot(del = true, scale = 1) {
         newImg.onload = () => {
           dImg.drawImage(newImg, img[1], img[2], img[3] || 0, img[4] || 0);
           if (!["skewT", 'skewTNumbers', 'skewTTitle', 'verticalBar', 'barbs'].includes(img[0].dataset.sjs)) {
-            dImg.strokeStyle = "rgba(125,125,125,1)";
+            dImg.strokeStyle = cff("rgba(125,125,125,1)", "rgba(80,80,80,1)");
             dImg.lineWidth = 3;
             dImg.strokeRect(img[1], img[2], img[3] || 0, img[4] || 0);
           }
           if (["skewTTitle"].includes(img[0].dataset.sjs)){
-            dImg.fillStyle = "rgb(255, 255, 255)";
-            dImg.fillRect(25/800 * 1200 * scale, 28/30 * 40 * scale, 795/800 * 1200 * scale, 2/30 * 40 * scale);
+            dImg.fillStyle = cff("rgb(255,255,255)", "rgb(0,0,0)");
+            dImg.fillRect(25/800 * 1200 * scale, 28/30 * 40 * scale, 710/800 * 1200 * scale, 2/30 * 40 * scale);
           }
           URL.revokeObjectURL(url);
           newImg.remove();
@@ -10738,11 +10988,14 @@ function getState() {
   return {
     units: UNIT_SYSTEMS[useImperialUnits] || 'default',
     skewTSkew: UserSkewNumber,
+    ...SKEWT_DISPLAY_SETTINGS,
+    ...HODOGRAPH_DISPLAY_SETTINGS,
     hodographNumbers: DisplayHodographNumbers,
     hodographColorTable: HodographColorTable,
     hodographScaleMode: HodographScaleMode,
     hodographTrimWindProfile: HodographTrimWindProfile,
     hodographMode: HodoMode ? 'Relative' : 'Storm',
+    darkMode: DarkMode,
     readOut: ReadOutOn,
     verticalBarsWindSpeed: !noWSBox,
     showStormMotions: DisplayStormMotions,
@@ -10802,7 +11055,30 @@ function applyState(next = {}, { redraw: doRedraw = true } = {}) {
     readOutOn: next.readOut,
     skewTSkew: next.skewTSkew,
   });
+  for (const key of Object.keys(SKEWT_DISPLAY_SETTINGS)) {
+    if (typeof next[key] === 'boolean') SKEWT_DISPLAY_SETTINGS[key] = next[key];
+  }
+  for (const key of [
+    'showHodographBunkersMotions',
+    'showHodographCustomMeanMotions',
+    'showHodographCorfidiMotions',
+    'showHodographDeviantMotions',
+    'showHodographInflowRegion',
+    'showHodographMap',
+  ]) {
+    if (typeof next[key] === 'boolean') HODOGRAPH_DISPLAY_SETTINGS[key] = next[key];
+  }
+  if ([10, 20, 40, 0].includes(next.hodographRingSpacing)) {
+    HODOGRAPH_DISPLAY_SETTINGS.hodographRingSpacing = next.hodographRingSpacing;
+  }
+  if ([12000, 18000, 24000].includes(next.hodographMaxHeight)) {
+    HODOGRAPH_DISPLAY_SETTINGS.hodographMaxHeight = next.hodographMaxHeight;
+  }
   if (next.hodographMode === 'Relative' || next.hodographMode === 'Storm') HodoMode = next.hodographMode === 'Relative';
+  if (typeof next.darkMode === 'boolean') {
+    DarkMode = next.darkMode;
+    setColorMode(next.darkMode);
+  }
   if (typeof next.verticalBarsWindSpeed === 'boolean') noWSBox = !next.verticalBarsWindSpeed;
   if (typeof next.showStormMotions === 'boolean') DisplayStormMotions = next.showStormMotions;
   if (typeof next.showEhiInWindBox === 'boolean') DisplayEHI = next.showEhiInWindBox;
@@ -10898,6 +11174,7 @@ const api = {
   SetHodoMode,
   SetEFScale,
   ChangeStateSkewTSkew,
+  changeBGColor,
   ChangeStateDynamicHodo,
   ChangeStateHodographColorTable,
   ChangeStateHodographNumbers,

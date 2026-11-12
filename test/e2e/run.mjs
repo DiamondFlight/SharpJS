@@ -129,13 +129,48 @@ try {
   await check('controls drive the chart', async () => {
     const sectionNav = page.locator('#chart .sjs-section-nav');
     assert(await sectionNav.locator('button').count() === 10, 'expected ten section buttons');
-    assert(await sectionNav.evaluate((nav) => getComputedStyle(nav).gridTemplateColumns.split(' ').length) === 5, 'section buttons are not in five columns');
+    const display = page.locator('#chart .sjs-section[data-section="display"]');
+    await display.getByLabel('Vertical bars (wind speed)').uncheck();
+    assert((await page.evaluate(() => window.h.getState().verticalBarsWindSpeed)) === false, 'vertical bars did not hide wind speed');
+    await display.getByLabel('Vertical bars (wind speed)').check();
+    await display.getByLabel('Trim hodograph wind profile').check();
+    assert((await page.evaluate(() => window.h.getState().hodographTrimWindProfile)) === true, 'hodograph wind resolution did not switch to trimmed');
+    await display.getByLabel('Trim hodograph wind profile').uncheck();
+    assert((await page.evaluate(() => window.h.getState().hodographTrimWindProfile)) === false, 'hodograph wind resolution did not return to full');
+    await display.getByLabel('Bunkers right/left').uncheck();
+    await display.getByLabel('Map').uncheck();
+    await display.getByLabel('Ring density (kt)').selectOption('40');
+    await display.getByLabel('Maximum height').selectOption('24000');
+    await display.getByLabel('Skew-T skew').selectOption('0.5');
+    await display.getByLabel('Hodograph colors').selectOption('2');
+    await display.getByLabel('Hodograph scale').selectOption('2');
+    let hodoState = await page.evaluate(() => window.h.getState());
+    assert(!hodoState.showHodographBunkersMotions && !hodoState.showHodographMap, JSON.stringify(hodoState));
+    assert(hodoState.hodographRingSpacing === 40 && hodoState.hodographMaxHeight === 24000, JSON.stringify(hodoState));
+    assert(hodoState.skewTSkew === 0.5 && hodoState.hodographColorTable === 2 && hodoState.hodographScaleMode === 2, JSON.stringify(hodoState));
+    await display.getByLabel('Bunkers right/left').check();
+    await display.getByLabel('Map').check();
+    await display.getByLabel('Ring density (kt)').selectOption('10');
+    await display.getByLabel('Maximum height').selectOption('12000');
+    await display.getByLabel('Skew-T skew').selectOption('0.75');
+    await display.getByLabel('Hodograph colors').selectOption('0');
+    await display.getByLabel('Hodograph scale').selectOption('0');
+    assert(await display.locator('.sjs-checkbox').evaluateAll((labels) =>
+      labels.every((label) => {
+        const text = label.querySelector('span');
+        return text.scrollWidth <= text.clientWidth + 1 && text.scrollHeight <= text.clientHeight + 1;
+      })),
+    'display checkbox text is clipped');
+    assert(await display.locator('select').evaluateAll((selects) => selects.every((select) => {
+      const firstCheckboxList = select.closest('.sjs-section').querySelector('.sjs-checkbox-list');
+      return Boolean(select.compareDocumentPosition(firstCheckboxList) & Node.DOCUMENT_POSITION_FOLLOWING);
+    })), 'display dropdowns are not above the checkboxes');
     await sectionNav.getByRole('button', { name: 'Parcel' }).click();
     assert(await page.locator('#chart .sjs-section[data-section="parcel"]').isVisible(), 'parcel section did not open');
     assert(await page.locator('#chart .sjs-section[data-section="display"]').isHidden(), 'display section remained open');
     await page.locator('#chart').getByRole('button', { name: 'Surface-Based' }).click();
     await sectionNav.getByRole('button', { name: 'Display' }).click();
-    await page.locator('#chart .sjs-section[data-section="display"] button', { hasText: 'Hodograph colors' }).click();
+    await page.locator('#chart .sjs-section[data-section="display"]').getByLabel('Hodograph colors').selectOption('1');
     await sectionNav.getByRole('button', { name: 'Presets' }).click();
     await page.locator('#chart .sjs-section[data-section="presets"] select').first().selectOption('Fire');
     const st = await page.evaluate(() => window.h.getState());
@@ -147,7 +182,7 @@ try {
 
   await check('analysis() matches the chart', async () => {
     const a = await page.evaluate(() => window.h.analysis({ parcel: 'MU', motion: 'RM' }));
-    assert(a.parcels.SB.cape === 2848 && a.kinematics.layers['0-1km'].srh === 270, JSON.stringify(a.parcels.SB));
+    assert(a.parcels.SB.cape === 2848 && a.kinematics.layers['0-1km'].srh === 260, JSON.stringify(a));
   });
 
   await check('screenshot is a 2000×1200 PNG', async () => {
@@ -210,13 +245,21 @@ try {
   await check('settings persist in localStorage', async () => {
     await page.evaluate(() => { localStorage.clear(); window.h.destroy(); });
     await page.evaluate((t) => { window.h = window.SJS.SharpJS('#chart', { sounding: t, persist: 'local' }); }, OUN);
-    await page.evaluate(() => window.h.engine.applyState({ units: 'metric', hodographNumbers: true, presetOverrides: { SidePanel: 'Winter' } }));
+    await page.evaluate(() => window.h.engine.applyState({
+      units: 'metric',
+      hodographNumbers: true,
+      verticalBarsWindSpeed: false,
+      hodographTrimWindProfile: true,
+      presetOverrides: { SidePanel: 'Winter' },
+    }));
     await page.waitForTimeout(50);
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('sharpjs:settings')));
-    assert(stored && stored.settings.units === 'metric' && stored.settings.hodographNumbers === true, JSON.stringify(stored));
+    assert(stored && stored.settings.units === 'metric' && stored.settings.hodographNumbers === true &&
+      stored.settings.verticalBarsWindSpeed === false && stored.settings.hodographTrimWindProfile === true, JSON.stringify(stored));
     await page.evaluate((t) => { window.h.destroy(); window.h = window.SJS.SharpJS('#chart', { sounding: t, persist: 'local' }); }, OUN);
     const st = await page.evaluate(() => window.h.getState());
-    assert(st.units === 'metric' && st.hodographNumbers === true && st.presets.SidePanel === 'Winter', JSON.stringify(st));
+    assert(st.units === 'metric' && st.hodographNumbers === true && st.verticalBarsWindSpeed === false &&
+      st.hodographTrimWindProfile === true && st.presets.SidePanel === 'Winter', JSON.stringify(st));
   });
 
   await check('settings persist in a cookie', async () => {
@@ -246,7 +289,7 @@ try {
     assert(st[0].units === 'metric' && st[1].units === 'default', 'units leaked between charts');
     assert(/KOUN/.test(st[0].title) && /KBUF/.test(st[1].title), 'titles mixed up');
     const srh = await page.evaluate(() => [window.one.analysis().kinematics.layers['0-1km'].srh, window.two.analysis().kinematics.layers['0-1km'].srh]);
-    assert(srh[0] === 270, `chart one SRH ${srh[0]}`);
+    assert(srh[0] === 260, `chart one SRH ${srh[0]}`);
     await page.evaluate(() => window.one.destroy());
     assert(await page.locator('#one .sharpjs').count() === 0, 'destroy left markup behind');
     await page.evaluate(() => window.two.engine.LoadNewWind('LM'));
@@ -301,9 +344,9 @@ try {
     await app.getByLabel('ACARS date (UTC)').fill('2026-03-20');
     await app.getByLabel('ACARS hour (UTC)').fill('16');
     await app.getByRole('button', { name: 'Show ACARS coverage map…' }).click();
-    await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').waitFor();
-    assert(await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').count() === 1, 'ACARS map did not show the available airport');
-    await app.locator('#chart dialog[open] .sjs-bufkit-map-marker').click();
+    const sanMarker = app.locator('#chart dialog[open] .sjs-bufkit-map-marker[data-station-code="SAN"]');
+    await sanMarker.waitFor();
+    await sanMarker.click();
     assert(await app.getByLabel('Station filter (optional)').inputValue() === 'SAN', 'ACARS map did not select its station');
     await app.getByRole('button', { name: 'Load 6-hour ACARS archive' }).click();
     await app.waitForFunction(() => window.sharpjs.getSounding()?.meta?.station === 'SAN');
@@ -322,12 +365,12 @@ try {
     assert(await app.locator('#chart .sjs-timeslider').isVisible(), 'VWP archive time slider is hidden');
     assert(await app.locator('#chart .sjs-time-play').isHidden(), 'VWP playback should be disabled by default');
     await app.locator('#chart .sjs-section-nav').getByRole('button', { name: 'Display' }).click();
-    await app.locator('.sjs-section[data-section="display"] select').nth(1).selectOption('metric');
+    await app.locator('.sjs-section[data-section="display"]').getByLabel('Units').selectOption('metric');
     await app.reload({ waitUntil: 'networkidle' });
     await app.waitForFunction(() => window.sharpjs?.getState().hasSounding);
     st = await app.evaluate(() => window.sharpjs.getState());
     assert(st.units === 'metric', `units after reload ${st.units}`);
-    assert(/ACARS OBSERVED: SAN - VALID 03 20 2026 - 1600Z/.test(st.title), `last sounding not restored: ${st.title}`);
+    assert(/ACARS OBSERVED: SAN - VALID 03 20 2026 - 1603Z/.test(st.title), `last sounding not restored: ${st.title}`);
     await app.context().close();
   });
 

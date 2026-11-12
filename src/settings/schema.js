@@ -8,7 +8,7 @@
  * Bump SETTINGS_VERSION and add a step to MIGRATIONS only when a key changes meaning or name.
  */
 
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
 
 const oneOf = (...values) => (v) => values.includes(v);
 const isBool = (v) => typeof v === 'boolean';
@@ -23,11 +23,36 @@ const PRESET_VALUES = {
 export const SETTINGS_SCHEMA = {
   units: oneOf('default', 'metric', 'imperial'),
   skewTSkew: oneOf(0.5, 0.625, 0.75, 0.825),
+  showSkewTTemperatureLines: isBool,
+  showSkewTFZL: isBool,
+  showSkewTWBZ0: isBool,
+  showSkewTMixingRatio: isBool,
+  showSkewTDryAdiabats: isBool,
+  showSkewTMoistAdiabats: isBool,
+  showSkewTEL: isBool,
+  showSkewTPBL: isBool,
+  showSkewTInflowLayer: isBool,
+  showSkewTWetBulb: isBool,
+  showSkewTVirtualTemperature: isBool,
+  showSkewTECapeParcel: isBool,
+  showSkewTDCapeParcel: isBool,
+  showSkewTLCLLFC: isBool,
+  showSkewTHeights: isBool,
+  showSkewTParcelPath: isBool,
+  showHodographBunkersMotions: isBool,
+  showHodographCustomMeanMotions: isBool,
+  showHodographCorfidiMotions: isBool,
+  showHodographDeviantMotions: isBool,
+  showHodographInflowRegion: isBool,
+  hodographRingSpacing: oneOf(10, 20, 40, 0),
+  hodographMaxHeight: oneOf(12000, 18000, 24000),
+  showHodographMap: isBool,
   hodographNumbers: isBool,
   hodographColorTable: oneOf(0, 1, 2, 3),
   hodographScaleMode: oneOf(0, 1, 2),
   hodographTrimWindProfile: isBool,
   hodographMode: oneOf('Relative', 'Storm'),
+  darkMode: isBool,
   readOut: isBool,
   verticalBarsWindSpeed: isBool,
   showStormMotions: isBool,
@@ -52,11 +77,36 @@ export const SETTINGS_SCHEMA = {
 export const DEFAULT_SETTINGS = Object.freeze({
   units: 'default',
   skewTSkew: 0.75,
+  showSkewTTemperatureLines: true,
+  showSkewTFZL: true,
+  showSkewTWBZ0: true,
+  showSkewTMixingRatio: true,
+  showSkewTDryAdiabats: true,
+  showSkewTMoistAdiabats: true,
+  showSkewTEL: true,
+  showSkewTPBL: true,
+  showSkewTInflowLayer: true,
+  showSkewTWetBulb: true,
+  showSkewTVirtualTemperature: true,
+  showSkewTECapeParcel: true,
+  showSkewTDCapeParcel: true,
+  showSkewTLCLLFC: true,
+  showSkewTHeights: true,
+  showSkewTParcelPath: true,
+  showHodographBunkersMotions: true,
+  showHodographCustomMeanMotions: true,
+  showHodographCorfidiMotions: true,
+  showHodographDeviantMotions: true,
+  showHodographInflowRegion: true,
+  hodographRingSpacing: 10,
+  hodographMaxHeight: 12000,
+  showHodographMap: true,
   hodographNumbers: false,
   hodographColorTable: 0,
   hodographScaleMode: 0,
-  hodographTrimWindProfile: true,
+  hodographTrimWindProfile: false,
   hodographMode: 'Relative',
+  darkMode: true,
   readOut: true,
   verticalBarsWindSpeed: true,
   showStormMotions: false,
@@ -78,7 +128,22 @@ export const DEFAULT_SETTINGS = Object.freeze({
 export { PRESET_VALUES };
 
 /** Steps from version n to n + 1. MIGRATIONS[1] would upgrade a v1 payload to v2. */
-const MIGRATIONS = {};
+const MIGRATIONS = {
+  1: (settings) => {
+    const migrated = { ...settings };
+    if (migrated.showSkewTTemperatureLines === undefined) {
+      migrated.showSkewTTemperatureLines = ![
+        migrated.showSkewTMinus10,
+        migrated.showSkewTMinus20,
+        migrated.showSkewTMinus30,
+      ].includes(false);
+    }
+    delete migrated.showSkewTMinus10;
+    delete migrated.showSkewTMinus20;
+    delete migrated.showSkewTMinus30;
+    return migrated;
+  },
+};
 
 /** Upgrade a stored payload ({ v, settings }) to the current version. */
 export function migrate(payload) {

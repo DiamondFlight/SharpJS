@@ -6,11 +6,13 @@
  *   - CM1 input_sounding files
  *   - Chaser Archive JSON ({ level, hght, temp, dwpt, wdir, wspd })
  *   - BUFKIT model files
+ *   
  *
  * Pure functions: no DOM, no network.
  */
 import { Process } from './sharppy.js';
 import { isBufkitText, parseBufkit } from './bufkit.js';
+
 
 export { Process };
 
@@ -35,7 +37,7 @@ export function parseSounding(text, options = {}) {
     const looksSupported =
       text.includes('%RAW%') || text.includes('"level"') || !/\p{L}/u.test(text);
     if (!looksSupported) {
-      throw new Error('SharpJS: unrecognized sounding format (expected SHARPpy text, CM1, Chaser Archive JSON or BUFKIT)');
+      throw new Error('SharpJS: unrecognized sounding format (expected SHARPpy text, CM1, Chaser Archive JSON, BUFKIT or OTHER)');
     }
     sounding = Process(text);
   }

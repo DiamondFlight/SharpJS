@@ -199,7 +199,7 @@ export function analyze(input, options = {}) {
           topHeightAgl: round(effTop.H - sfc.H, 0),
           srh: srhTotal(Wnd.ESRH),
           /** shear across the inflow layer (the chart's "Eff Inflow" row) */
-          bulkShear: polar(Wnd.BWDE),
+          bulkShear: polar(Wnd.ShearE),
           /** effective bulk wind difference: inflow base to half the parcel EL height */
           ebwd: polar(Wnd.EBWD),
           meanWind: polar(Wnd.MeanWind.ME),

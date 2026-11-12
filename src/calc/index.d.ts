@@ -11,6 +11,7 @@ export declare function GetLayerByPres(sound: unknown, level: number | 'SFC' | '
 export declare function GetLayerByHght(sound: unknown, level: number | 'SFC', addTo?: boolean): any;
 export declare function GetParams(info: unknown, type: string): any;
 export declare function wetbulb(pres: number, temp: number, dew: number): number;
+export declare function wetlift(pres: number, temp: number, targetPressure: number): number;
 export declare function thetae(pres: number, temp: number, dew: number): number;
 export declare function RelHum(temp: number, dew: number): number;
 export declare function DewFromTRh(temp: number, rh: number): number;

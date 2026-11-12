@@ -1,6 +1,6 @@
 {
   "name": "sharpjs",
-  "version": "v1.7.2",
+  "version": "v1.8.0",
   "description": "Interactive Skew-T / hodograph sounding analysis for the browser, with a headless calculation core.",
   "keywords": [
     "meteorology",

@@ -1,5 +1,34 @@
 # Changelog
 
+#### 1.8 - 2026-11-11
+
+### Added
+- Light Mode: See your soundings in a new mode inspired by the SPC
+- Over 40 new settings for hodographs and skew-t to increase customization of soundings
+- PBL indicator based on SHARPpy calculations
+- The `fileLocation` chart option for fetching and loading a CORS-accessible text sounding. viewable within main_urlparams.js
+- Persistent, independent visibility settings for Skew-T overlays and hodograph components, plus
+  configurable hodograph ring spacing and maximum height.
+- The `wetlift` helper from the `sharpjs/calc` entry point.
+
+### Changed
+- Sounding titles show latitude/longitude with hemisphere suffixes before the nearest-town text.
+- The Display/Graphics controls are organized into Skew-T and hodograph groups, with a persistent
+  dark/light theme.
+- Updated parameter-inset colors and rendering for light mode, and refreshed tornado climatology tables.
+- Effective-inflow bulk shear now uses the effective-layer shear calculation; the standalone
+  URL-parameter entry configures its ACARS archive proxy.
+- Settings schema version 2 migrates the former individual temperature-line settings into one
+  temperature-lines visibility setting.
+- Added new moist-adiabatic lapse rate lines
+- Massive improvements to processing time (up to 5x faster)
+
+### Fixed
+- Max percentile on Tornado climatology bounds now displays
+- LCL/LFC/EL/MPL heights now respect parcel height and display truely
+- Scaling for inset parameters are now consistant across panels
+
+
 ## 1.7.2 - 2026-11-4
 
 ### Added
@@ -66,7 +95,7 @@ First Public Release
 - Corrected parcel and thermodynamic edge cases in LCL, virtual-temperature, layer, and buoyancy
   calculations.
 
-## 1.61.0 — 2026-10-02
+#### 1.61.0 — 2026-10-02
 
 First open-source release of SharpJS.
 

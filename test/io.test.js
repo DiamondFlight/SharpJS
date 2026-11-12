@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseSounding, fromArrays, exportSounding, parseBufkit, listBufkitForecastHours, isBufkitText,
+  parseSounding, fromArrays, exportSounding, parseBufkit, listBufkitForecastHours, isBufkitText, parseCod, isCodText,
   parseIemRaob, buildVwpSounding, toSounding, withLocation,
 } from '../src/core.js';
 import { fixture, sample } from './helpers.js';

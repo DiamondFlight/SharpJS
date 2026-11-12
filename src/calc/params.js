@@ -30,7 +30,7 @@ export function computeThermo(Sound) {
  * Wind parameters keyed the way the chart panels read them, e.g.
  *   SRH01 / BWD01 / EHI01 / MeanWind.M01   (0-1 km AGL)
  *   SRHEb03 …                               (0-3 km above the effective inflow base)
- *   ESRH, EBWD, BWDE, EHIE, LCLELSHR, BRM
+ *   ESRH, EBWD, ShearE, EHIE, LCLELSHR, BRM
  *
  * @param {object} Sounding  full sounding object ({ Sounding: {...} })
  * @param {object} Info      result of computeThermo()
@@ -90,11 +90,11 @@ export function computeWindParams(Sounding, Info, DP, CSMot, WindParams = { Mean
 
   if (Info.EffInflow != false) {
     WindParams['EHIE'] = GetParams({ DP: DP !== null ? DP : Info.SBParcel, SRHAmn: (ESRH) }, "EHI");
-    WindParams['BWDE'] = WindShearFindP(Sound, Info.EffInflow.Bot, Info.EffInflow.Top)
+    WindParams['ShearE'] = WindShearFindP(Sound, Info.EffInflow.Bot, Info.EffInflow.Top)
     WindParams['MeanWind']['ME'] = WindShearFindP(Sound, Info.EffInflow.Bot, Info.EffInflow.Top, true)
   } else {
     WindParams['EHIE'] = "--";
-    WindParams['BWDE'] = "--";
+    WindParams['ShearE'] = "--";
     WindParams['MeanWind']['ME'] = "--";
   }
 

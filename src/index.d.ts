@@ -85,6 +85,8 @@ export function toCm1Text(sounding: Sounding): { text: string; filename: string 
 export function isBufkitText(text: string): boolean;
 export function listBufkitForecastHours(text: string): number[];
 export function parseBufkit(text: string, options?: { forecastHour?: number; model?: string; station?: string; fileName?: string }): Sounding;
+export function isCodText(text: string): boolean;
+export function parseCod(text: string, options?: { title?: string }): Sounding;
 export function parseIemRaob(json: unknown, index?: number): Sounding;
 export function parseVWP(raw: ArrayBuffer | Uint8Array): unknown;
 export function buildVwpSounding(
@@ -170,11 +172,36 @@ export type PresetValue<T extends string> = 'auto' | T;
 export interface Settings {
   units: 'default' | 'metric' | 'imperial';
   skewTSkew: 0.5 | 0.625 | 0.75 | 0.825;
+  showSkewTTemperatureLines: boolean;
+  showSkewTFZL: boolean;
+  showSkewTWBZ0: boolean;
+  showSkewTMixingRatio: boolean;
+  showSkewTDryAdiabats: boolean;
+  showSkewTMoistAdiabats: boolean;
+  showSkewTEL: boolean;
+  showSkewTPBL: boolean;
+  showSkewTInflowLayer: boolean;
+  showSkewTWetBulb: boolean;
+  showSkewTVirtualTemperature: boolean;
+  showSkewTECapeParcel: boolean;
+  showSkewTDCapeParcel: boolean;
+  showSkewTLCLLFC: boolean;
+  showSkewTHeights: boolean;
+  showSkewTParcelPath: boolean;
+  showHodographBunkersMotions: boolean;
+  showHodographCustomMeanMotions: boolean;
+  showHodographCorfidiMotions: boolean;
+  showHodographDeviantMotions: boolean;
+  showHodographInflowRegion: boolean;
+  hodographRingSpacing: 0 | 10 | 20 | 40;
+  hodographMaxHeight: 12000 | 18000 | 24000;
+  showHodographMap: boolean;
   hodographNumbers: boolean;
   hodographColorTable: 0 | 1 | 2 | 3;
   hodographScaleMode: 0 | 1 | 2;
   hodographTrimWindProfile: boolean;
   hodographMode: 'Relative' | 'Storm';
+  darkMode: boolean;
   readOut: boolean;
   verticalBarsWindSpeed: boolean;
   showStormMotions: boolean;
@@ -236,7 +263,16 @@ export function resolveAdapter(persist: PersistOption, key?: string): StorageAda
 // ───────────────────────────────── viewer ─────────────────────────────────
 
 export interface ChartState extends Pick<Settings,
-  'units' | 'skewTSkew' | 'hodographNumbers' | 'hodographColorTable' | 'hodographScaleMode' | 'hodographTrimWindProfile'
+  'units' | 'skewTSkew' | 'showSkewTTemperatureLines'
+  | 'showSkewTFZL' | 'showSkewTWBZ0' | 'showSkewTMixingRatio' | 'showSkewTDryAdiabats'
+  | 'showSkewTMoistAdiabats' | 'showSkewTEL' | 'showSkewTPBL' | 'showSkewTInflowLayer'
+  | 'showSkewTWetBulb' | 'showSkewTVirtualTemperature' | 'showSkewTECapeParcel'
+  | 'showSkewTDCapeParcel' | 'showSkewTLCLLFC' | 'showSkewTHeights' | 'showSkewTParcelPath'
+  | 'showHodographBunkersMotions' | 'showHodographCustomMeanMotions'
+  | 'showHodographCorfidiMotions' | 'showHodographDeviantMotions'
+  | 'showHodographInflowRegion' | 'hodographRingSpacing' | 'hodographMaxHeight' | 'showHodographMap'
+  | 'darkMode'
+  | 'hodographNumbers' | 'hodographColorTable' | 'hodographScaleMode' | 'hodographTrimWindProfile'
   | 'hodographMode' | 'readOut' | 'verticalBarsWindSpeed' | 'showStormMotions' | 'show3DHodograph' | 'show3DHodoArrows' | 'showEhiInWindBox' | 'presetOverrides' | 'efScale'
   | 'defaultParcel' | 'defaultMotion' | 'exportFormat'> {
   presets: { WindLapse: string; Inset: string; Vertical: string; SidePanel: string };
@@ -286,6 +322,8 @@ export interface Sources {
 export interface SharpJSProps {
   /** The sounding to draw (null clears the chart). */
   sounding?: SoundingInput | null;
+  /** URL of a CORS-accessible text sounding file to fetch and load. Ignored when `sounding` is provided. */
+  fileLocation?: string | null;
   /** Same key as the previous sounding = same place, new time: keep parcel / motion choices. */
   soundingKey?: string;
   title?: string;
