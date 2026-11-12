@@ -43,6 +43,7 @@ test('fetchIemBufkit picks the archive path for the model', async () => {
   const s = await fetchIemBufkit({ model: 'rap', station: 'kdsm', run: '2024-05-26T12:00:00Z', forecastHour: 3, fetch });
   assert.equal(fetch.calls[0], 'https://mtarchive.geol.iastate.edu/2024/05/26/bufkit/12/rap/rap_kdsm.buf');
   assert.match(s.Title, /F003/);
+  assert.match(s.Title, /Location: 41\.53N, 93\.65W$/);
   await assert.rejects(
     fetchIemBufkit({ model: 'gfs', station: 'kdsm', run: '2024-05-26T06:00:00Z', fetch }),
     /No GFS BUFKIT for KDSM at 06Z 2024-05-26/,
@@ -56,11 +57,16 @@ test('fetchIemBufkitForecasts parses every forecast from one archive download', 
     model: 'rap',
     station: 'kdsm',
     run: '2024-05-26T12:00:00Z',
+    location: { lat: -34.9, lon: 138.6 },
     fetch,
   });
   assert.equal(fetch.calls.length, 1);
   assert.ok(soundings.length > 1);
   assert.deepEqual(soundings.map((sounding) => sounding.meta.forecastHour), soundings.map((sounding) => sounding.meta.forecastHour).sort((a, b) => a - b));
+  assert.deepEqual(soundings[0].Coords, { lat: -34.9, lon: 138.6 });
+  assert.deepEqual(soundings[0].Location, [-34.9, 138.6]);
+  assert.deepEqual(soundings[0].Location2, [-34.9, -138.6]);
+  assert.match(soundings[0].Title, /Location: 34\.90S, 138\.60E$/);
 });
 
 test('fetchNexradVwp lists the hour and loads the newest volume', async () => {

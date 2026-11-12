@@ -88,6 +88,7 @@ const mdy = (d) => `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}-${pad(d.g
  * @param {string} [options.model]         model name for the title (default: from fileName, else "BUFKIT")
  * @param {string} [options.station]       station id for files with an empty STID
  * @param {string} [options.fileName]      e.g. "rap_kdsm.buf"
+ * @param {{lat:number,lon:number}} [options.location] Map-selected coordinates to use instead of file coordinates.
  * @returns {object} sounding
  */
 export function parseBufkit(text, options = {}) {
@@ -153,8 +154,19 @@ export function parseBufkit(text, options = {}) {
   const valid = parseBufkitTime(meta.TIME);
   const run = valid ? new Date(valid.getTime() - FHour * 3600 * 1000) : null;
   const station = meta.STID || '';
+  const fileLat = parseFloat(meta.SLAT);
+  const fileLon = parseFloat(meta.SLON);
+  const hasLocationOverride = options.location
+    && options.location.lat != null && options.location.lon != null
+    && Number.isFinite(Number(options.location.lat)) && Math.abs(Number(options.location.lat)) <= 90
+    && Number.isFinite(Number(options.location.lon)) && Math.abs(Number(options.location.lon)) <= 180;
+  const lat = hasLocationOverride ? Number(options.location.lat) : fileLat;
+  const lon = hasLocationOverride ? Number(options.location.lon) : fileLon;
+  const locationTitle = Number.isFinite(lat) && Number.isFinite(lon)
+    ? `; Location: ${Math.abs(lat).toFixed(2)}${lat < 0 ? 'S' : 'N'}, ${Math.abs(lon).toFixed(2)}${lon < 0 ? 'W' : 'E'}`
+    : '';
   const Title = run
-    ? `${model.toUpperCase()} ${mdy(run)} ${pad(run.getUTCHours())}Z - F${pad(FHour, 3)}; Valid: ${mdy(valid)} ${pad(valid.getUTCHours())}Z; Location: ${meta.SLAT}N, ${meta.SLON}W`
+    ? `${model.toUpperCase()} ${mdy(run)} ${pad(run.getUTCHours())}Z - F${pad(FHour, 3)}; Valid: ${mdy(valid)} ${pad(valid.getUTCHours())}Z${locationTitle}`
     : `${model.toUpperCase()} ${station} F${pad(FHour, 3)}`;
 
   const text2 = `%TITLE%
@@ -166,12 +178,9 @@ export function parseBufkit(text, options = {}) {
   ${InfoString}%END%`;
 
   const ProcessedSounding = Process(text2);
-  const lat = parseFloat(meta.SLAT);
-  const lon = parseFloat(meta.SLON);
   if (Number.isFinite(lat) && Number.isFinite(lon)) {
-    // Location keeps the original SharpJS BUFKIT convention (west-positive longitude).
-    ProcessedSounding.Location = [lat, -lon];
-    ProcessedSounding.Location2 = ProcessedSounding.Location;
+    ProcessedSounding.Location = [lat, lon];
+    ProcessedSounding.Location2 = [lat, -lon];
     ProcessedSounding.Coords = { lat, lon };
   }
   ProcessedSounding.Sounding.OMEGA = Slices.map((k) => k[6]);

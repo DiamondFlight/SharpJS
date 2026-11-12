@@ -26,7 +26,7 @@ const US_STATE_NAMES = {
  * @param {Document} options.document Document used to create the picker UI.
  * @param {HTMLElement} options.host SharpJS host used for theming and dialog placement.
  * @param {() => Promise<object[]|{stations:object[],message?:string}>} options.getStations Loads map-ready stations.
- * @param {(station: string) => void} options.onSelect Receives the selected station code.
+ * @param {(station: string, metadata: object) => void} options.onSelect Receives the selected station code and map metadata.
  * @param {string} [options.title] Dialog heading.
  * @param {string} [options.buttonLabel] Map button text.
  * @param {string} [options.mapLabel] Name used in map status text.
@@ -407,7 +407,7 @@ export function createStationMapButton({
    */
   function selectStation(event, station) {
     event.stopPropagation();
-    onSelect(station.code);
+    onSelect(station.code, station);
     dialog.close();
   }
 
@@ -568,7 +568,7 @@ export function createStationMapButton({
  * @param {HTMLElement} options.host SharpJS host used for theming and dialog placement.
  * @param {() => string} options.getModel Returns the selected BUFKIT model.
  * @param {() => Date} options.getRun Returns the selected BUFKIT run date and hour.
- * @param {(station: string) => void} options.onSelect Receives the selected station code.
+ * @param {(station: string, metadata: object) => void} options.onSelect Receives the selected station code and map metadata.
  * @returns {{button: HTMLButtonElement, destroy: () => void}} Picker button and cleanup function.
  */
 export function createBufkitMapButton({ document: doc, host, getModel, getRun, onSelect }) {

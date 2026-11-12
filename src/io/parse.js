@@ -24,6 +24,7 @@ export { Process };
  * @param {number} [options.forecastHour]  BUFKIT only: which forecast hour to pull (default: first in file).
  * @param {string} [options.title]         Override the sounding title.
  * @param {string} [options.fileName]      Used as a hint for BUFKIT model/station names.
+ * @param {{lat:number,lon:number}} [options.location] BUFKIT coordinates to use instead of file coordinates.
  * @returns {object} sounding
  */
 export function parseSounding(text, options = {}) {

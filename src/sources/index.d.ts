@@ -20,8 +20,8 @@ export interface AcarsArchiveReport {
 
 export const BUFKIT_MODELS: string[];
 export function fetchIemRaob(query: { station: string; time: Date | string | number; location?: { lat: number; lon: number } | false; fetch?: FetchLike }): Promise<Sounding>;
-export function fetchIemBufkit(query: { model?: string; station: string; run: Date | string | number; forecastHour?: number; fetch?: FetchLike }): Promise<Sounding>;
-export function fetchIemBufkitForecasts(query: { model?: string; station: string; run: Date | string | number; fetch?: FetchLike }): Promise<Sounding[]>;
+export function fetchIemBufkit(query: { model?: string; station: string; run: Date | string | number; forecastHour?: number; location?: { lat: number; lon: number }; fetch?: FetchLike }): Promise<Sounding>;
+export function fetchIemBufkitForecasts(query: { model?: string; station: string; run: Date | string | number; location?: { lat: number; lon: number }; fetch?: FetchLike }): Promise<Sounding[]>;
 export function listAcarsArchive(query: {
   time: ArchiveTime;
   hours?: number;

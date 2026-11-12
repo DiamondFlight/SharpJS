@@ -91,7 +91,7 @@ test('BUFKIT: columns from SNPARM, forecast hours, location', () => {
   const hours = listBufkitForecastHours(text);
   assert.deepEqual(hours.slice(0, 4), [0, 1, 2, 3]);
   const s = parseBufkit(text, { forecastHour: 3, model: 'rap' });
-  assert.equal(s.Title.trim(), 'RAP 05-26-2024 12Z - F003; Valid: 05-26-2024 15Z; Location: 41.53N, -93.65W');
+  assert.equal(s.Title.trim(), 'RAP 05-26-2024 12Z - F003; Valid: 05-26-2024 15Z; Location: 41.53N, 93.65W');
   assert.equal(s.Sounding.Slice.length, 50);
   assert.deepEqual(s.Coords, { lat: 41.53, lon: -93.65 });
   assert.equal(s.meta.forecastHour, 3);

@@ -66,6 +66,8 @@ export interface ParseOptions {
   title?: string;
   /** Hint for BUFKIT model / station names, e.g. "rap_kdsm.buf". */
   fileName?: string;
+  /** BUFKIT: station-map coordinates to use instead of coordinates in the file. */
+  location?: { lat: number; lon: number };
 }
 
 export function parseSounding(text: string, options?: ParseOptions): Sounding;
@@ -84,7 +86,7 @@ export function toCm1Text(sounding: Sounding): { text: string; filename: string 
 
 export function isBufkitText(text: string): boolean;
 export function listBufkitForecastHours(text: string): number[];
-export function parseBufkit(text: string, options?: { forecastHour?: number; model?: string; station?: string; fileName?: string }): Sounding;
+export function parseBufkit(text: string, options?: { forecastHour?: number; model?: string; station?: string; fileName?: string; location?: { lat: number; lon: number } }): Sounding;
 export function isCodText(text: string): boolean;
 export function parseCod(text: string, options?: { title?: string }): Sounding;
 export function parseIemRaob(json: unknown, index?: number): Sounding;

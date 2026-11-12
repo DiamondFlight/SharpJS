@@ -113,11 +113,12 @@ export const BUFKIT_MODELS = ['hrrr', 'rap', 'ruc', 'nam', 'nam4km', 'gfs'];
  * @param {string} q.station       BUFKIT site, e.g. "kdsm" (RAP/RUC) or "dvn" (HRRR/NAM)
  * @param {Date|string|number} q.run  model run time (UTC)
  * @param {number} [q.forecastHour=0]
+ * @param {{lat:number,lon:number}} [q.location] Station-map coordinates to use instead of file coordinates.
  * @param {Function} [q.fetch]
  */
-export async function fetchIemBufkit({ model = 'hrrr', station, run, forecastHour = 0, fetch: fetchImpl }) {
+export async function fetchIemBufkit({ model = 'hrrr', station, run, forecastHour = 0, location, fetch: fetchImpl }) {
   const { id, text } = await fetchIemBufkitText({ model, station, run, fetch: fetchImpl });
-  return parseBufkit(text, { forecastHour, model, station: id });
+  return parseBufkit(text, { forecastHour, model, station: id, location });
 }
 
 /**
@@ -126,14 +127,15 @@ export async function fetchIemBufkit({ model = 'hrrr', station, run, forecastHou
  * @param {string} q.model Model identifier.
  * @param {string} q.station BUFKIT station identifier.
  * @param {Date|string|number} q.run Model run time (UTC).
+ * @param {{lat:number,lon:number}} [q.location] Station-map coordinates to use instead of file coordinates.
  * @param {Function} [q.fetch] Fetch-compatible function.
  * @returns {Promise<object[]>} Soundings for each forecast hour, in file order.
  */
-export async function fetchIemBufkitForecasts({ model = 'hrrr', station, run, fetch: fetchImpl }) {
+export async function fetchIemBufkitForecasts({ model = 'hrrr', station, run, location, fetch: fetchImpl }) {
   const { id, text } = await fetchIemBufkitText({ model, station, run, fetch: fetchImpl });
   const hours = listBufkitForecastHours(text);
   if (hours.length === 0) throw new Error('SharpJS: no forecasts found in BUFKIT file');
-  return hours.map((forecastHour) => parseBufkit(text, { forecastHour, model, station: id }));
+  return hours.map((forecastHour) => parseBufkit(text, { forecastHour, model, station: id, location }));
 }
 
 /**

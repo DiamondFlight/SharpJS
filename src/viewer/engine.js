@@ -181,7 +181,6 @@ function drawHodographLocationInset(ctx, canvas, sounding, onTilesReady, bounds)
   const lat = Number(location?.lat ?? sounding?.Location?.[0]);
   const lon = Number(location?.lon ?? sounding?.Location?.[1]);
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
-
   const insetWidth = bounds?.width ?? 200;
   const insetHeight = bounds?.height ?? 200;
   const insetX = bounds?.x ?? canvas.width - insetWidth;
@@ -10357,6 +10356,9 @@ function SetTitle(K) {
     ? `${location.lat.toFixed(5)},${location.lon.toFixed(5)}`
     : null;
   activeTitleLocationKey = locationKey;
+  const baseTitle = String(K?.Title || '').trim();
+  const titleHasLocation = /\bLocation\s*:/i.test(baseTitle)
+    || /\d{1,2}(?:\.\d+)?°?\s*[NS]\s*,\s*-?\d{1,3}(?:\.\d+)?°?\s*[EW]/i.test(baseTitle);
   const coordinatesText = locationKey
     ? `${Math.abs(location.lat).toFixed(2)}°${location.lat >= 0 ? 'N' : 'S'}, ${Math.abs(location.lon).toFixed(2)}°${location.lon >= 0 ? 'E' : 'W'}`
     : '';
@@ -10381,12 +10383,16 @@ function SetTitle(K) {
     });
   }
   const nearbyTownText = locationKey ? titleLocationLookups.get(locationKey)?.text : '';
-  const locationText = [coordinatesText, nearbyTownText].filter(Boolean).join(' · ');
+  const townFound = nearbyTownText
+    && !/^(?:Looking up nearby town|No nearby town found|Nearby-town lookup unavailable)/.test(nearbyTownText);
+  const locationText = titleHasLocation
+    ? (townFound ? nearbyTownText : '')
+    : [coordinatesText && `Location: ${coordinatesText}`, nearbyTownText].filter(Boolean).join(' · ');
 
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, Canv.width, Canv.height);
 
-  const title = `${K.Title || ""}${locationText ? ` · ${locationText}` : ''}`;
+  const title = `${baseTitle}${locationText ? ` · ${locationText}` : ''}`;
   const padX = 0.02 * Canv.width;
 
   if (!dropsondeMode) {

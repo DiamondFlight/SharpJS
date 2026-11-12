@@ -140,6 +140,7 @@ export function createControls(host, {
   const opts = options && typeof options === 'object' ? options : {};
   let currentSources = sources;
   let bufkitMap = null;
+  let bufkitLocation = null;
   let acarsMap = null;
   let vwpMap = null;
   const bufkitCache = new Map();
@@ -305,7 +306,10 @@ export function createControls(host, {
         host,
         getModel: () => refs.bufkitModel.value,
         getRun: () => new Date(`${refs.bufkitDate.value}T${String(refs.bufkitRun.value || 0).padStart(2, '0')}:00:00Z`),
-        onSelect: (station) => { refs.bufkitStation.value = station; },
+        onSelect: (station, metadata) => {
+          refs.bufkitStation.value = station;
+          bufkitLocation = { lat: metadata.lat, lon: metadata.lon };
+        },
       });
       children.push(
         H('div', { class: 'sjs-sub' }, 'Model BUFKIT (IEM)'),
@@ -313,7 +317,12 @@ export function createControls(host, {
           field('Model', select('bufkitModel', BUFKIT_MODELS)),
           field('Run date', input('bufkitDate', { type: 'date', value: utcDate(syn) })),
         fieldRow(2,
-          field('Station', input('bufkitStation', { placeholder: 'dsm', value: opts.bufkitStation || 'kdsm', autocomplete: 'off' }))),
+          field('Station', input('bufkitStation', {
+            placeholder: 'dsm',
+            value: opts.bufkitStation || 'kdsm',
+            autocomplete: 'off',
+            oninput: () => { bufkitLocation = null; },
+          }))),
           row(1, bufkitMap.button),
         ),
         fieldRow(2,
@@ -326,9 +335,11 @@ export function createControls(host, {
             model: refs.bufkitModel.value,
             station: refs.bufkitStation.value,
             run,
+            ...(bufkitLocation ? { location: bufkitLocation } : {}),
           };
           if (currentSources.fetchIemBufkitForecasts) {
-            const cacheKey = `${query.model}|${query.station.trim().toLowerCase()}|${run.toISOString()}`;
+            const locationKey = bufkitLocation ? `|${bufkitLocation.lat},${bufkitLocation.lon}` : '';
+            const cacheKey = `${query.model}|${query.station.trim().toLowerCase()}|${run.toISOString()}${locationKey}`;
             if (!bufkitCache.has(cacheKey)) {
               const promise = currentSources.fetchIemBufkitForecasts(query);
               bufkitCache.set(cacheKey, promise);
