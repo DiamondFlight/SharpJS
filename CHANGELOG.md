@@ -1,6 +1,6 @@
 # Changelog
 
-#### 1.8 - 2026-11-11
+# 1.8 - 2026-11-11
 
 ### Added
 - Light Mode: See your soundings in a new mode inspired by the SPC
@@ -64,7 +64,7 @@
 - Prevent negative layer contributions from reducing integrated parcel CAPE.
 - Controls now switch between sections using navigation buttons rather than nested dropdowns.
 
-## 1.7.0 — 2026-10-15
+# 1.7.0 — 2026-10-15
 
 First Public Release
 
@@ -95,7 +95,7 @@ First Public Release
 - Corrected parcel and thermodynamic edge cases in LCL, virtual-temperature, layer, and buoyancy
   calculations.
 
-#### 1.61.0 — 2026-10-02
+# 1.61.0 — 2026-10-02
 
 First open-source release of SharpJS.
 
