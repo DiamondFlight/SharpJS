@@ -7,7 +7,7 @@ calculation core for Node and workers.
 
 **Try it:** <https://diamondflight.github.io/sharpjs/>. Open a sounding file or drop it on the chart, pick a sample, or pull archived data.
 
-This repository is the standalone, open-source SharpJS sounding viewer: no accounts, no servers, no API keys.
+This repository is the standalone, open-source SharpJS sounding viewer: no accounts, no servers, no API keys, just npm and a browser.
 
 ## Features
 
