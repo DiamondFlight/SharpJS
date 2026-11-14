@@ -146,7 +146,6 @@ function breakdownCM1(Text){
   --------------------------------------------------------------------------------
   %RAW%
   ${InfoString}%END%`;
-
   return txt;
 }
 
@@ -215,6 +214,15 @@ export function Process(text) {
   let Lines = Info.split("\n");
   let Split = Info.split("%RAW%");
 
+  if (Info.includes("%LOCATION%")){
+    let loc = Info.split("%LOCATION%")[1].split("%RAW%\n")[0].replace(/[^0-9+,.-]/g, "").split(",");
+    let Lat = Number(loc[0]);
+    let Lon = Number(loc[1]);
+    Json.Location = [Lat, Lon];
+    Json.Location2 = [Lat, -Lon];
+    Json.Coords = { lat:Lat, lon:Lon };
+  }
+
   Json.Title = Lines[1];
   Json.STitle = Lines[1];
 
@@ -237,6 +245,7 @@ export function Process(text) {
 
     Json.Location = [Lat, Lon];
     Json.Location2 = [Lat, -Lon];
+    Json.Coords = { lat:Lat, lon:Lon };
   }
   
 

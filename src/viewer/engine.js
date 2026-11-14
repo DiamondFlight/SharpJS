@@ -2253,7 +2253,6 @@ function DrawHodograph(Json, ghst = false, comparisonSoundings = []) {
     ctx.fillText("Storm-Relative", Center.x / 2 + (Mod.x + CSMot.x) * (Scale / 10) - 180, Center.y / 2 - (-Mod.y + CSMot.y) * (Scale / 10) + P);
   }
   ctx.textAlign = "center";
-
   if (!VWPActive && HODOGRAPH_DISPLAY_SETTINGS.showHodographMap) {
     drawHodographLocationInset(ctx, Canv, Json, () => {
       scheduleHodographMapRedraw(Json, ghst, comparisonSoundings, drawVersion);
@@ -10357,7 +10356,7 @@ function SetTitle(K) {
     : null;
   activeTitleLocationKey = locationKey;
   const baseTitle = String(K?.Title || '').trim();
-  const titleHasLocation = /\bLocation\s*:/i.test(baseTitle)
+  var titleHasLocation = /\bLocation\s*:/i.test(baseTitle)
     || /\d{1,2}(?:\.\d+)?°?\s*[NS]\s*,\s*-?\d{1,3}(?:\.\d+)?°?\s*[EW]/i.test(baseTitle);
   const coordinatesText = locationKey
     ? `${Math.abs(location.lat).toFixed(2)}°${location.lat >= 0 ? 'N' : 'S'}, ${Math.abs(location.lon).toFixed(2)}°${location.lon >= 0 ? 'E' : 'W'}`
@@ -10385,10 +10384,12 @@ function SetTitle(K) {
   const nearbyTownText = locationKey ? titleLocationLookups.get(locationKey)?.text : '';
   const townFound = nearbyTownText
     && !/^(?:Looking up nearby town|No nearby town found|Nearby-town lookup unavailable)/.test(nearbyTownText);
-  const locationText = titleHasLocation
+  var locationText = titleHasLocation
     ? (townFound ? nearbyTownText : '')
     : [coordinatesText && `Location: ${coordinatesText}`, nearbyTownText].filter(Boolean).join(' · ');
-
+  if (baseTitle.includes(`${(location.lat).toFixed(2)}, ${(location.lon).toFixed(2)}`)){
+    locationText = (townFound ? nearbyTownText : '')
+  }
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, Canv.width, Canv.height);
 
