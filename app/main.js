@@ -4,14 +4,6 @@ import * as sources from '../src/sources/index.js';
 const LAST_SOUNDING_KEY = 'sharpjs:lastSounding';
 const samplesSelect = document.getElementById('samples');
 document.getElementById('version').textContent = `v${VERSION}`;
-const urlParams = new URLSearchParams(window.location.search);
-const readBoolean = (name, defaultValue) => {
-  const value = urlParams.get(name);
-  if (value === null) return defaultValue;
-  return value !== '0' && value.toLowerCase() !== 'false';
-};
-
-
 
 const storage = {
   get(key) {
@@ -29,8 +21,8 @@ const chart = SharpJS('#chart', {
   controls,
   persist: 'auto',
   engineOptions: {
-    navBar: true,//readBoolean('navBar', true),
-    showSampleBar: true, //readBoolean('showSampleBar', true),
+    navBar: true,
+    showSampleBar: true,
   },
   onLoad(sounding) {
     // Remember the last sounding so a reload brings it back (best effort; the text is small).
