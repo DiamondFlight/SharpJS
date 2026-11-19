@@ -29,8 +29,8 @@ const chart = SharpJS('#chart', {
   controls,
   persist: 'auto',
   engineOptions: {
-    navBar: readBoolean('navBar', true),
-    showSampleBar: readBoolean('showSampleBar', true),
+    navBar: true,//readBoolean('navBar', true),
+    showSampleBar: true, //readBoolean('showSampleBar', true),
   },
   onLoad(sounding) {
     // Remember the last sounding so a reload brings it back (best effort; the text is small).
