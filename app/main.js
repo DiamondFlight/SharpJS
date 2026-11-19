@@ -29,7 +29,7 @@ const chart = SharpJS('#chart', {
   controls,
   persist: 'auto',
   engineOptions: {
-    navBar: readBoolean('navBar', false),
+    navBar: readBoolean('navBar', true),
     showSampleBar: readBoolean('showSampleBar', true),
   },
   onLoad(sounding) {
