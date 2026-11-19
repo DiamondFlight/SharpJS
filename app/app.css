@@ -6,6 +6,7 @@
   --app-header-h: 52px;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--app-bg); color: var(--app-text); font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif; }
 
 .app-header {
@@ -13,6 +14,8 @@ html, body { margin: 0; background: var(--app-bg); color: var(--app-text); font-
   min-height: var(--app-header-h); padding: 8px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
+html:not(.app-navbar-on) .app-header { display: none; }
+html.app-navbar-on .app-header { display: flex; }
 .brand { display: flex; align-items: baseline; gap: 8px; }
 .brand h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.02em; }
 .logo { width: 18px; height: 18px; align-self: center; border-radius: 4px; background:
@@ -20,6 +23,8 @@ html, body { margin: 0; background: var(--app-bg); color: var(--app-text); font-
   linear-gradient(125deg, transparent 47%, #00d26a 47%, #00d26a 57%, transparent 57%), #000; }
 .version { color: var(--app-muted); font-size: 0.78rem; }
 .sample-picker { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--app-muted); }
+html:not(.app-navbar-on) .sample-picker,
+html.app-navbar-on:not(.app-sample-bar-on) .sample-picker { display: none; }
 .sample-picker select {
   max-width: min(360px, 60vw); padding: 5px 8px; border-radius: 4px;
   color: var(--app-text); background: #161b21; border: 1px solid rgba(255, 255, 255, 0.14); font: inherit;
@@ -29,11 +34,16 @@ html, body { margin: 0; background: var(--app-bg); color: var(--app-text); font-
 .links a:hover { text-decoration: underline; }
 
 .app-main { padding: 10px 16px 16px; }
+html:not(.app-navbar-on) .app-main { height: 100vh; padding: 0; }
+html:not(.app-navbar-on) .app-main .sharpjs { height: 100%; }
+html:not(.app-navbar-on) .app-main .sjs-controls { height: 100vh; max-height: 100vh; }
+html:not(.app-navbar-on) .app-main .sjs-stage { height: 100vh; max-width: min(100%, calc(100vh * 1.5)); }
 
-/* Fit the 3:2 chart to the viewport height on wide screens. */
 @media (min-width: 901px) {
   .app-main .sharpjs { --sjs-controls-max-height: calc(100vh - var(--app-header-h) - 34px); }
   .app-main .sjs-stage { max-width: calc((100vh - var(--app-header-h) - 34px) * 1.5); }
+  html:not(.app-navbar-on) .app-main .sharpjs { --sjs-controls-max-height: 100vh; }
+  html:not(.app-navbar-on) .app-main .sjs-stage { max-width: calc(100vh * 1.5); }
 }
 @media (max-width: 600px) {
   .app-header { gap: 10px; }

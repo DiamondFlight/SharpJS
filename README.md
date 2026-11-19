@@ -131,6 +131,8 @@ SharpJS('#chart', {
 | `controls` | `true` | Built-in controls panel. |
 | `sources` | – | Data loaders for the Archive section, e.g. `import * as sources from 'sharpjs/sources'`. |
 | `brandLabel`, `savedBy`, `filePrefix` | – | Branding on the chart, the "Saved by:" export line, file names. |
+| `engineOptions.navBar` | `false` | Standalone app: show the top navbar with `true`; without it, the controls and chart stage use viewport height while the chart keeps its aspect ratio. |
+| `engineOptions.showSampleBar` | `true` | Standalone app: hide the sample-sounding picker while the navbar is enabled. |
 | `fileDrop` | `true` | Drop files on the chart to load them (Shift+drop adds comparisons). |
 | `injectStyles` | `true` | Add the stylesheet automatically (set `false` to ship your own). |
 | `onChange`, `onSettingsChange`, `onLoad`, `onError` | – | Callbacks (also available through `handle.on(event, fn)`). |

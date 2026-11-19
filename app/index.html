@@ -6,6 +6,15 @@
     <title>SharpJS Sounding Viewer</title>
     <meta name="description" content="SharpJS: an interactive Skew-T and hodograph sounding analysis tool that runs in your browser." />
     <meta name="color-scheme" content="dark" />
+    <script>
+      const options = new URLSearchParams(location.search);
+      const enabled = (name, fallback) => {
+        const value = options.get(name);
+        return value === null ? fallback : value !== '0' && value.toLowerCase() !== 'false';
+      };
+      document.documentElement.classList.toggle('app-navbar-on', enabled('navBar', false));
+      document.documentElement.classList.toggle('app-sample-bar-on', enabled('showSampleBar', true));
+    </script>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23000'/%3E%3Cpath d='M6 28 L26 4' stroke='%23ff4d4d' stroke-width='3'/%3E%3Cpath d='M4 28 L20 6' stroke='%2300d26a' stroke-width='3'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

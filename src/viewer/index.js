@@ -131,6 +131,7 @@ function mount(el, initialProps) {
   const root = el.ownerDocument.createElement('div');
   root.className = 'sharpjs';
   if (props.className) root.classList.add(...String(props.className).split(/\s+/).filter(Boolean));
+  root.classList.toggle('sjs-navbar-off', props.engineOptions?.navBar === false);
   const controlsHost = el.ownerDocument.createElement('aside');
   controlsHost.className = 'sjs-controls';
   controlsHost.setAttribute('aria-label', 'Sounding controls');
@@ -749,6 +750,7 @@ function mount(el, initialProps) {
     if (destroyed) return handle;
     const fileLocationChanged = 'fileLocation' in next && next.fileLocation !== props.fileLocation;
     props = { ...props, ...next };
+    if ('engineOptions' in next) root.classList.toggle('sjs-navbar-off', props.engineOptions?.navBar === false);
     if ('brandLabel' in next) engineOptions.brandLabel = next.brandLabel;
     if ('savedBy' in next) engineOptions.savedBy = next.savedBy;
     if ('filePrefix' in next) engineOptions.filePrefix = next.filePrefix;

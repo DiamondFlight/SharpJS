@@ -1,6 +1,17 @@
 # Changelog
 
-# 1.8 - 2026-11-11
+## 1.8.1 — 2026-11-19
+
+### Added
+- The `engineOptions.navBar` setting for standalone viewers: set it to `false` to remove the top navbar,
+  size the controls and chart stage to viewport height without changing chart aspect ratio, and access
+  Read Me, Docs, and GitHub from the chart Help menu.
+- The `engineOptions.showSampleBar` setting for toggling the sample-sounding picker when the navbar is enabled.
+
+### Changed
+- Standardized the 1.8.1 release heading format.
+
+## 1.8 — 2026-11-11
 
 ### Added
 - Light Mode: See your soundings in a new mode inspired by the SPC

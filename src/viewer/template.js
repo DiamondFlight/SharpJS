@@ -11,6 +11,11 @@ const HELP_HTML = `
       <h3>Keyboard, Mouse Controls &amp; Credits</h3>
       <button type="button" class="sjs-help-close" data-sjs-action="help-close" aria-label="Close">&times;</button>
     </div>
+    <nav class="sjs-help-links" aria-label="SharpJS resources">
+      <a href="https://diamondflight.github.io/SharpJSDocs/index.html">Docs</a>
+      <a href="https://github.com/DiamondFlight/sharpjs#readme" target="_blank" rel="noopener">Read Me</a>
+      <a href="https://github.com/DiamondFlight/sharpjs" target="_blank" rel="noopener">GitHub</a>
+    </nav>
     <div class="sjs-help-content">
       <section>
         <h4>Skew-T Controls</h4>

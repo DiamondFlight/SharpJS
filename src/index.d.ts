@@ -362,6 +362,11 @@ export interface SharpJSProps {
   fileDrop?: boolean;
   injectStyles?: boolean;
   className?: string;
+  /** Standalone viewer layout options. */
+  engineOptions?: {
+    navBar?: boolean;
+    showSampleBar?: boolean;
+  };
   emptyTitle?: string;
   emptyMessage?: string;
   onChange?(state: ChartState): void;
